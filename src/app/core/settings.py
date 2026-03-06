@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     app_version: str = "0.1.0"
     log_level: str = "INFO"
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/app_db"
+    embedding_dim: int = 768
 
     ai_provider: Literal["openai", "ollama"] = "ollama"
 
@@ -36,23 +37,15 @@ class Settings(BaseSettings):
         """Validate provider-specific required settings."""
         if self.ai_provider == "openai":
             if not self.openai_api_key:
-                raise ValueError(
-                    "OPENAI_API_KEY must be set when AI_PROVIDER=openai."
-                )
+                raise ValueError("OPENAI_API_KEY must be set when AI_PROVIDER=openai.")
             if not self.openai_chat_model:
-                raise ValueError(
-                    "OPENAI_CHAT_MODEL must be set when AI_PROVIDER=openai."
-                )
+                raise ValueError("OPENAI_CHAT_MODEL must be set when AI_PROVIDER=openai.")
 
         if self.ai_provider == "ollama":
             if not self.ollama_openai_base_url:
-                raise ValueError(
-                    "OLLAMA_OPENAI_BASE_URL must be set when AI_PROVIDER=ollama."
-                )
+                raise ValueError("OLLAMA_OPENAI_BASE_URL must be set when AI_PROVIDER=ollama.")
             if not self.ollama_chat_model:
-                raise ValueError(
-                    "OLLAMA_CHAT_MODEL must be set when AI_PROVIDER=ollama."
-                )
+                raise ValueError("OLLAMA_CHAT_MODEL must be set when AI_PROVIDER=ollama.")
 
         return self
 
