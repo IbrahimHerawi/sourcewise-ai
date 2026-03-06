@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/app_db"
     embedding_dim: int = 768
+    ingest_workers: int = Field(default=2, gt=0)
     chunk_size_chars: int = Field(default=1200, gt=0)
     chunk_overlap_chars: int = Field(default=200, ge=0)
 
