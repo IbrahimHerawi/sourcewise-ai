@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     app_title: str = "Backend Technical Evaluation API"
     app_version: str = "0.1.0"
     log_level: str = "INFO"
+    database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/app_db"
 
     ai_provider: Literal["openai", "ollama"] = "ollama"
 
