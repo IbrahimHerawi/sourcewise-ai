@@ -3,7 +3,7 @@
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import SecretStr, model_validator
+from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -31,6 +31,8 @@ class Settings(BaseSettings):
 
     ollama_openai_base_url: str = "http://localhost:11434/v1"
     ollama_chat_model: str = "llama3.2:1b"
+    max_upload_mb: int = Field(default=10, gt=0)
+    upload_root_dir: str = "/data/uploads"
 
     @model_validator(mode="after")
     def validate_provider_requirements(self) -> "Settings":
@@ -46,6 +48,9 @@ class Settings(BaseSettings):
                 raise ValueError("OLLAMA_OPENAI_BASE_URL must be set when AI_PROVIDER=ollama.")
             if not self.ollama_chat_model:
                 raise ValueError("OLLAMA_CHAT_MODEL must be set when AI_PROVIDER=ollama.")
+
+        if not self.upload_root_dir.strip():
+            raise ValueError("UPLOAD_ROOT_DIR must not be empty.")
 
         return self
 
