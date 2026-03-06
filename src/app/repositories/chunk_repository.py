@@ -52,7 +52,7 @@ class ChunkRepository:
         if document_ids is not None and not document_ids:
             return []
 
-        distance_expr = DocumentChunk.embedding.op("<=>")(query_embedding)
+        distance_expr = DocumentChunk.embedding.cosine_distance(query_embedding)
         stmt = select(DocumentChunk, distance_expr.label("distance"))
         if document_ids is not None:
             stmt = stmt.where(DocumentChunk.document_id.in_(document_ids))
