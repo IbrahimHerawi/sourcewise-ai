@@ -19,6 +19,7 @@ class DocumentRepository:
     async def create_document(
         self,
         *,
+        id: uuid.UUID | None = None,
         filename: str,
         original_extension: str,
         content_type: str,
@@ -29,6 +30,10 @@ class DocumentRepository:
         error_message: str | None = None,
     ) -> Document:
         """Create and flush a document row."""
+        document_kwargs: dict[str, object] = {}
+        if id is not None:
+            document_kwargs["id"] = id
+
         document = Document(
             filename=filename,
             original_extension=original_extension,
@@ -38,6 +43,7 @@ class DocumentRepository:
             extracted_text=extracted_text,
             status=status,
             error_message=error_message,
+            **document_kwargs,
         )
         self._session.add(document)
         await self._session.flush()
