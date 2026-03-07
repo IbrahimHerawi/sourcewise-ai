@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     ai_provider: Literal["openai", "ollama"] = "ollama"
 
     openai_api_key: SecretStr | None = None
+    openai_base_url: str = "https://api.openai.com/v1"
     openai_chat_model: str | None = None
 
     ollama_openai_base_url: str = "http://localhost:11434/v1"
@@ -52,6 +53,8 @@ class Settings(BaseSettings):
         if self.ai_provider == "openai":
             if not self.openai_api_key:
                 raise ValueError("OPENAI_API_KEY must be set when AI_PROVIDER=openai.")
+            if not self.openai_base_url.strip():
+                raise ValueError("OPENAI_BASE_URL must be set when AI_PROVIDER=openai.")
             if not self.openai_chat_model:
                 raise ValueError("OPENAI_CHAT_MODEL must be set when AI_PROVIDER=openai.")
 
