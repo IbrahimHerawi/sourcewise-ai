@@ -8,6 +8,10 @@ from app.services.embeddings import (
     get_embeddings_client,
 )
 from app.services.llm import build_openai_client, generate_answer
+from app.services.question_answering import (
+    QuestionAnsweringError,
+    answer_question,
+)
 
 __all__ = [
     "OllamaEmbeddingClient",
@@ -17,4 +21,6 @@ __all__ = [
     "embed_query",
     "generate_answer",
     "get_embeddings_client",
+    "QuestionAnsweringError",
+    "answer_question",
 ]

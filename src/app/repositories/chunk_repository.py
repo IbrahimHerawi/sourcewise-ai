@@ -9,6 +9,7 @@ from sqlalchemy import insert, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.document_chunks import DocumentChunk
+from app.db.models.documents import Document, DocumentStatus
 from app.repositories.types import ChunkWithEmbedding
 
 
@@ -45,6 +46,8 @@ class ChunkRepository:
         query_embedding: list[float],
         top_k: int,
         document_ids: Sequence[uuid.UUID] | None = None,
+        *,
+        ready_only: bool = False,
     ) -> list[tuple[DocumentChunk, float]]:
         """Search chunks by vector distance using pgvector `<=>` ordering."""
         if top_k <= 0:
@@ -54,6 +57,10 @@ class ChunkRepository:
 
         distance_expr = DocumentChunk.embedding.cosine_distance(query_embedding)
         stmt = select(DocumentChunk, distance_expr.label("distance"))
+        if ready_only:
+            stmt = stmt.join(Document, Document.id == DocumentChunk.document_id).where(
+                Document.status == DocumentStatus.READY
+            )
         if document_ids is not None:
             stmt = stmt.where(DocumentChunk.document_id.in_(document_ids))
 
