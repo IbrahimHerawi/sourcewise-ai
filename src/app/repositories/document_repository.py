@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.documents import Document, DocumentStatus
@@ -53,9 +53,20 @@ class DocumentRepository:
     async def list_documents(self, limit: int, offset: int) -> list[Document]:
         """Return documents ordered from newest to oldest."""
         self._validate_pagination(limit=limit, offset=offset)
-        stmt = select(Document).order_by(Document.created_at.desc()).limit(limit).offset(offset)
+        stmt = (
+            select(Document)
+            .order_by(Document.created_at.desc(), Document.id.desc())
+            .limit(limit)
+            .offset(offset)
+        )
         result = await self._session.scalars(stmt)
         return list(result.all())
+
+    async def count_documents(self) -> int:
+        """Return the total number of documents."""
+        stmt = select(func.count()).select_from(Document)
+        total = await self._session.scalar(stmt)
+        return int(total or 0)
 
     async def get_document(self, id: uuid.UUID) -> Document | None:
         """Get one document by primary key."""

@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 import pytest
+from sqlalchemy import update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -34,6 +37,18 @@ async def _create_document(
     )
 
 
+async def _set_created_at(
+    session: AsyncSession,
+    document: Document,
+    created_at: datetime,
+) -> None:
+    await session.execute(
+        update(Document).where(Document.id == document.id).values(created_at=created_at)
+    )
+    await session.flush()
+    await session.refresh(document)
+
+
 @pytest.mark.asyncio
 async def test_document_repository_crud_create_get_update_status(db_session: AsyncSession) -> None:
     repository = DocumentRepository(db_session)
@@ -58,6 +73,27 @@ async def test_document_repository_crud_create_get_update_status(db_session: Asy
     assert updated.status == DocumentStatus.READY
     assert fetched_after_update is not None
     assert fetched_after_update.status == DocumentStatus.READY
+
+
+@pytest.mark.asyncio
+async def test_document_repository_list_documents_orders_newest_first_and_counts_total(
+    db_session: AsyncSession,
+) -> None:
+    repository = DocumentRepository(db_session)
+
+    oldest = await _create_document(db_session, filename="oldest.txt")
+    middle = await _create_document(db_session, filename="middle.txt")
+    newest = await _create_document(db_session, filename="newest.txt")
+
+    await _set_created_at(db_session, oldest, datetime(2026, 1, 1, 12, 0, tzinfo=UTC))
+    await _set_created_at(db_session, middle, datetime(2026, 1, 2, 12, 0, tzinfo=UTC))
+    await _set_created_at(db_session, newest, datetime(2026, 1, 3, 12, 0, tzinfo=UTC))
+
+    listed = await repository.list_documents(limit=2, offset=1)
+    total = await repository.count_documents()
+
+    assert [document.id for document in listed] == [middle.id, oldest.id]
+    assert total == 3
 
 
 @pytest.mark.asyncio

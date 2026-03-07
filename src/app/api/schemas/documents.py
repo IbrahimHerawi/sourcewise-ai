@@ -27,6 +27,28 @@ class DocumentUploadResponse(BaseModel):
     status: DocumentStatus
 
 
+class DocumentSummaryResponse(BaseModel):
+    """Compact document metadata for list responses."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    filename: str
+    original_extension: str
+    size_bytes: int
+    status: DocumentStatus
+    created_at: datetime
+
+
+class PaginatedDocumentListResponse(BaseModel):
+    """Paginated document list response payload."""
+
+    items: list[DocumentSummaryResponse]
+    limit: int
+    offset: int
+    total: int
+
+
 class DocumentDetailsResponse(BaseModel):
     """Document metadata response without full extracted text payload."""
 

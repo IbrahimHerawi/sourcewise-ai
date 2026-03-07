@@ -7,13 +7,15 @@ import uuid
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.schemas.documents import (
     DocumentDetailsResponse,
+    DocumentSummaryResponse,
     DocumentUploadRequest,
     DocumentUploadResponse,
+    PaginatedDocumentListResponse,
 )
 from app.db.models.documents import DocumentStatus
 from app.db.models.ingestion_jobs import IngestionJobStatus
@@ -71,6 +73,25 @@ def _cleanup_saved_file(storage_path: str) -> None:
             path.parent.rmdir()
     except OSError:
         logger.warning("Failed to cleanup upload file after persistence error: %s", storage_path)
+
+
+@router.get("", response_model=PaginatedDocumentListResponse)
+async def list_documents(
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> PaginatedDocumentListResponse:
+    """Return paginated document summaries ordered from newest to oldest."""
+    document_repo = DocumentRepository(session)
+    items = await document_repo.list_documents(limit=limit, offset=offset)
+    total = await document_repo.count_documents()
+
+    return PaginatedDocumentListResponse(
+        items=[DocumentSummaryResponse.model_validate(document) for document in items],
+        limit=limit,
+        offset=offset,
+        total=total,
+    )
 
 
 @router.post("/upload", response_model=DocumentUploadResponse)
@@ -154,7 +175,6 @@ async def upload_document(
         filename=document.filename,
         status=document.status,
     )
-
 
 @router.get("/{document_id:uuid}", response_model=DocumentDetailsResponse)
 async def get_document(
