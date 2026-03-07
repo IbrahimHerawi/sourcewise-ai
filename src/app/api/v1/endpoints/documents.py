@@ -60,7 +60,7 @@ def _get_ingestion_manager(request: Request) -> IngestionManager:
 def _upload_exception(error: UploadValidationError | TextExtractionError) -> HTTPException:
     message = str(error)
     if "MAX_UPLOAD_MB" in message:
-        return HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail=message)
+        return HTTPException(status_code=status.HTTP_413_CONTENT_TOO_LARGE, detail=message)
     return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=message)
 
 
