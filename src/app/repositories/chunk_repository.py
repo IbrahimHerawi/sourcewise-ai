@@ -48,12 +48,15 @@ class ChunkRepository:
         document_ids: Sequence[uuid.UUID] | None = None,
         *,
         ready_only: bool = False,
+        max_distance: float | None = None,
     ) -> list[tuple[DocumentChunk, float]]:
         """Search chunks by vector distance using pgvector `<=>` ordering."""
         if top_k <= 0:
             raise ValueError("top_k must be greater than 0")
         if document_ids is not None and not document_ids:
             return []
+        if max_distance is not None and max_distance < 0:
+            raise ValueError("max_distance must be greater than or equal to 0")
 
         distance_expr = DocumentChunk.embedding.cosine_distance(query_embedding)
         stmt = select(DocumentChunk, distance_expr.label("distance"))
@@ -63,6 +66,8 @@ class ChunkRepository:
             )
         if document_ids is not None:
             stmt = stmt.where(DocumentChunk.document_id.in_(document_ids))
+        if max_distance is not None:
+            stmt = stmt.where(distance_expr <= max_distance)
 
         stmt = stmt.order_by(distance_expr).limit(top_k)
         result = await self._session.execute(stmt)

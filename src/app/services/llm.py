@@ -9,8 +9,13 @@ from openai.types.responses import Response
 
 from app.core.settings import Settings, get_settings
 
-SYSTEM_PROMPT = "Answer using ONLY the provided context. If not in context, say you don't know."
-EMPTY_ANSWER_FALLBACK = "I don't know."
+SYSTEM_PROMPT = (
+    "Answer using ONLY the provided context. "
+    "If the context does not contain a supported answer then do not provide any extra information, reply exactly with: "
+    "I don't know based on the uploaded documents."
+    
+)
+EMPTY_ANSWER_FALLBACK = "I don't know based on the uploaded documents."
 
 
 @dataclass(frozen=True, slots=True)

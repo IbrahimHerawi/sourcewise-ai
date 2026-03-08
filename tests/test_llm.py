@@ -95,9 +95,7 @@ async def test_generate_answer_switches_provider_by_client_config_only(
     assert client.api_key == expected_api_key
     assert client.closed is True
     assert client.recorder["model"] == expected_model
-    assert client.recorder["instructions"] == (
-        "Answer using ONLY the provided context. If not in context, say you don't know."
-    )
+    assert client.recorder["instructions"] == llm.SYSTEM_PROMPT
     assert client.recorder["input"] == "CONTEXT:\nalpha facts\n\nQUESTION:\nWhat does alpha say?"
 
 
@@ -140,5 +138,5 @@ async def test_generate_answer_returns_safe_fallback_when_content_is_missing(
         ),
     )
 
-    assert answer_text == "I don't know."
+    assert answer_text == "I don't know based on the uploaded documents."
     assert model_used == "response-model"

@@ -176,7 +176,7 @@ def _message_for_missing_requested_chunks(
             )
         return "None of the requested documents are READY for retrieval."
 
-    return "No indexed chunks were found in the requested READY documents."
+    return "No related content was found in the requested READY documents."
 
 
 def _message_for_missing_global_chunks(status_counts: dict[DocumentStatus, int]) -> str:
@@ -193,7 +193,7 @@ def _message_for_missing_global_chunks(status_counts: dict[DocumentStatus, int])
         )
     if ready_count == 0:
         return "No READY documents are available for question answering."
-    return "No indexed chunks were found in READY documents."
+    return "No related content was found in READY documents."
 
 
 async def answer_question(
@@ -274,6 +274,7 @@ async def _answer_question_in_transaction(
             top_k=top_k,
             document_ids=ready_document_ids,
             ready_only=True,
+            max_distance=settings.retrieval_max_cosine_distance,
         )
 
     if not search_results:
