@@ -25,6 +25,8 @@ htmlcov/
 .env
 .env.*
 !.env.example
+secrets/*
+!secrets/README.md
 
 # IDE/editor files
 .idea/

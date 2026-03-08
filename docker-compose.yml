@@ -2,16 +2,18 @@ services:
   db:
     image: pgvector/pgvector:pg16
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: app_db
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-app_db}
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets:
+      - postgres_password
     ports:
-      - "5432:5432"
+      - "5432:5432"  
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./docker/db/init.sql:/docker-entrypoint-initdb.d/01-init-vector.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d app_db"]
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
       interval: 5s
       timeout: 5s
       retries: 20
@@ -19,8 +21,6 @@ services:
 
   ollama:
     image: ollama/ollama:latest
-    ports:
-      - "11434:11434"
     volumes:
       - ollama_data:/root/.ollama
     healthcheck:
@@ -39,15 +39,20 @@ services:
         condition: service_healthy
       ollama:
         condition: service_healthy
+    env_file:
+      - path: ./.env
+        required: true
     environment:
       APP_ENV: docker
-      LOG_LEVEL: INFO
-      DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/app_db
-      AI_PROVIDER: ollama
-      OLLAMA_BASE_URL: http://ollama:11434
+      POSTGRES_HOST: db
+      POSTGRES_PORT: "5432"
       OLLAMA_OPENAI_BASE_URL: http://ollama:11434/v1
-      OLLAMA_CHAT_MODEL: llama3.2:1b
-      OLLAMA_EMBED_MODEL: nomic-embed-text
+      OPENAI_API_KEY_FILE: /run/secrets/openai_api_key
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      UPLOAD_ROOT_DIR: /data/uploads
+    secrets:
+      - postgres_password
+      - openai_api_key
     ports:
       - "8000:8000"
     volumes:
@@ -62,3 +67,9 @@ services:
 volumes:
   postgres_data:
   ollama_data:
+
+secrets:
+  openai_api_key:
+    file: ${OPENAI_API_KEY_SECRET_FILE:-./secrets/openai_api_key.txt}
+  postgres_password:
+    file: ${POSTGRES_PASSWORD_SECRET_FILE:-./secrets/postgres_password.txt}

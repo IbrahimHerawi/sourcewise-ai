@@ -201,7 +201,7 @@ async def answer_question(
     *,
     question_text: str,
     document_ids: Sequence[uuid.UUID] | None = None,
-    top_k: int = DEFAULT_TOP_K,
+    top_k: int | None = None,
     max_context_chars: int = DEFAULT_MAX_CONTEXT_CHARS,
     settings: Settings | None = None,
 ) -> QuestionAnswerResponse:
@@ -209,12 +209,14 @@ async def answer_question(
     question = question_text.strip()
     if not question:
         raise ValueError("question_text must not be blank.")
-    if top_k <= 0:
-        raise ValueError("top_k must be greater than 0.")
     if max_context_chars <= 0:
         raise ValueError("max_context_chars must be greater than 0.")
 
     resolved_settings = settings or get_settings()
+    effective_top_k = top_k if top_k is not None else resolved_settings.top_k
+    if effective_top_k <= 0:
+        raise ValueError("top_k must be greater than 0.")
+
     normalized_document_ids = _normalize_document_ids(document_ids)
     query_embedding = await _embed_question(
         question,
@@ -227,7 +229,7 @@ async def answer_question(
             question=question,
             query_embedding=query_embedding,
             document_ids=normalized_document_ids,
-            top_k=top_k,
+            top_k=effective_top_k,
             max_context_chars=max_context_chars,
             settings=resolved_settings,
         )
@@ -238,7 +240,7 @@ async def answer_question(
             question=question,
             query_embedding=query_embedding,
             document_ids=normalized_document_ids,
-            top_k=top_k,
+            top_k=effective_top_k,
             max_context_chars=max_context_chars,
             settings=resolved_settings,
         )
