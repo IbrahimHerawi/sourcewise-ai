@@ -6,14 +6,21 @@ import uuid
 from collections.abc import Sequence
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import app.services.question_answering as question_answering_service
-from app.api.schemas.questions import QuestionAnswerRequest, QuestionAnswerResponse
+from app.api.schemas.questions import (
+    PaginatedQuestionHistoryResponse,
+    QuestionAnswerRequest,
+    QuestionAnswerResponse,
+    QuestionHistoryItemResponse,
+    QuestionSourceResponse,
+)
 from app.db.models.documents import Document
 from app.db.session import get_db_session
+from app.repositories.question_repository import QuestionRepository
 
 router = APIRouter()
 
@@ -71,3 +78,49 @@ async def ask_question(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(exc),
         ) from exc
+
+
+@router.get("/history", response_model=PaginatedQuestionHistoryResponse)
+async def list_question_history(
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    offset: Annotated[int, Query(ge=0)] = 0,
+    document_id: uuid.UUID | None = None,
+) -> PaginatedQuestionHistoryResponse:
+    """Return paginated question history, optionally filtered by source document id."""
+    question_repo = QuestionRepository(session)
+    items = await question_repo.list_questions(
+        limit=limit,
+        offset=offset,
+        document_id=document_id,
+    )
+    total = await question_repo.count_questions(document_id=document_id)
+
+    return PaginatedQuestionHistoryResponse(
+        items=[
+            QuestionHistoryItemResponse(
+                question_id=question.id,
+                question=question.question_text,
+                answer=question.answer_text,
+                provider=question.ai_provider,
+                model=question.model_used,
+                created_at=question.created_at,
+                sources=[
+                    QuestionSourceResponse(
+                        document_id=context_chunk.chunk.document_id,
+                        chunk_id=context_chunk.chunk_id,
+                        chunk_index=context_chunk.chunk.chunk_index,
+                        distance=context_chunk.similarity_score,
+                    )
+                    for context_chunk in sorted(
+                        question.context_chunks,
+                        key=lambda context_chunk: context_chunk.rank,
+                    )
+                ],
+            )
+            for question in items
+        ],
+        limit=limit,
+        offset=offset,
+        total=total,
+    )

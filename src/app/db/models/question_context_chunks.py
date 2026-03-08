@@ -30,6 +30,7 @@ class QuestionContextChunk(Base):
         UUID(as_uuid=True),
         ForeignKey("document_chunks.id", ondelete="CASCADE"),
         primary_key=True,
+        index=True,
     )
     similarity_score: Mapped[float] = mapped_column(Float, nullable=False)
     rank: Mapped[int] = mapped_column(Integer, nullable=False)

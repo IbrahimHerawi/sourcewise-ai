@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Annotated, Literal
 from uuid import UUID
 
@@ -42,6 +43,27 @@ class QuestionAnswerResponse(BaseModel):
     sources: list[QuestionSourceResponse]
     provider: Literal["openai", "ollama"]
     model: str
+
+
+class QuestionHistoryItemResponse(BaseModel):
+    """One persisted question-and-answer history item."""
+
+    question_id: UUID
+    question: str
+    answer: str
+    provider: Literal["openai", "ollama"]
+    model: str
+    created_at: datetime
+    sources: list[QuestionSourceResponse]
+
+
+class PaginatedQuestionHistoryResponse(BaseModel):
+    """Paginated question history response payload."""
+
+    items: list[QuestionHistoryItemResponse]
+    limit: int
+    offset: int
+    total: int
 
 
 QuestionAskRequest = QuestionAnswerRequest

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -52,21 +52,37 @@ class QuestionRepository:
         stmt = (
             select(Question)
             .options(selectinload(Question.context_chunks).selectinload(QuestionContextChunk.chunk))
-            .order_by(Question.created_at.desc())
+            .order_by(Question.created_at.desc(), Question.id.desc())
             .limit(limit)
             .offset(offset)
         )
         if document_id is not None:
-            matching_question_ids = (
-                select(QuestionContextChunk.question_id)
+            stmt = (
+                stmt.join(QuestionContextChunk, QuestionContextChunk.question_id == Question.id)
                 .join(DocumentChunk, DocumentChunk.id == QuestionContextChunk.chunk_id)
                 .where(DocumentChunk.document_id == document_id)
                 .distinct()
             )
-            stmt = stmt.where(Question.id.in_(matching_question_ids))
 
         result = await self._session.scalars(stmt)
-        return list(result.all())
+        return list(result.unique().all())
+
+    async def count_questions(self, document_id: uuid.UUID | None = None) -> int:
+        """Return total question count, optionally filtered by linked document id."""
+        if document_id is None:
+            stmt = select(func.count()).select_from(Question)
+            total = await self._session.scalar(stmt)
+            return int(total or 0)
+
+        stmt = (
+            select(func.count(func.distinct(Question.id)))
+            .select_from(Question)
+            .join(QuestionContextChunk, QuestionContextChunk.question_id == Question.id)
+            .join(DocumentChunk, DocumentChunk.id == QuestionContextChunk.chunk_id)
+            .where(DocumentChunk.document_id == document_id)
+        )
+        total = await self._session.scalar(stmt)
+        return int(total or 0)
 
     @staticmethod
     def _validate_pagination(*, limit: int, offset: int) -> None:

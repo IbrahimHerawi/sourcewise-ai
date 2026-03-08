@@ -38,7 +38,7 @@ class Question(Base):
     ai_provider: Mapped[str] = mapped_column(String(length=32), nullable=False)
     model_used: Mapped[str] = mapped_column(String(length=255), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now()
+        DateTime(timezone=True), nullable=False, server_default=func.now(), index=True
     )
 
     context_chunks: Mapped[list[QuestionContextChunk]] = relationship(
