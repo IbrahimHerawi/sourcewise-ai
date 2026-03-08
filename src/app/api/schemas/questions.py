@@ -2,16 +2,26 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, StringConstraints
+
+QuestionText = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=4_000),
+]
 
 
 class QuestionAnswerRequest(BaseModel):
     """Request payload for asking a question over indexed documents."""
 
-    question_text: str = Field(min_length=1)
+    model_config = ConfigDict(extra="forbid")
+
+    question: QuestionText = Field(
+        validation_alias=AliasChoices("question", "question_text"),
+        serialization_alias="question",
+    )
     document_ids: list[UUID] | None = None
 
 
@@ -33,3 +43,6 @@ class QuestionAnswerResponse(BaseModel):
     provider: Literal["openai", "ollama"]
     model: str
 
+
+QuestionAskRequest = QuestionAnswerRequest
+QuestionAskResponse = QuestionAnswerResponse

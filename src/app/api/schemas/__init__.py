@@ -10,6 +10,8 @@ from app.api.schemas.documents import (
 from app.api.schemas.questions import (
     QuestionAnswerRequest,
     QuestionAnswerResponse,
+    QuestionAskRequest,
+    QuestionAskResponse,
     QuestionSourceResponse,
 )
 
@@ -21,5 +23,7 @@ __all__ = [
     "PaginatedDocumentListResponse",
     "QuestionAnswerRequest",
     "QuestionAnswerResponse",
+    "QuestionAskRequest",
+    "QuestionAskResponse",
     "QuestionSourceResponse",
 ]
