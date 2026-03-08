@@ -288,9 +288,12 @@ async def test_ask_question_returns_404_when_any_document_id_is_missing(
 
     assert response.status_code == 404
     assert response.json() == {
-        "detail": {
+        "error": {
+            "code": "not_found",
             "message": "One or more documents were not found.",
-            "missing_document_ids": [str(missing_document_id)],
+            "details": {
+                "missing_document_ids": [str(missing_document_id)],
+            },
         }
     }
     assert called is False
@@ -315,9 +318,11 @@ async def test_ask_question_validates_question_length(
     )
 
     assert response.status_code == 422
-    detail = response.json()["detail"]
-    assert detail[0]["loc"] == ["body", "question"]
-    assert expected_message in detail[0]["msg"]
+    payload = response.json()
+    assert payload["error"]["code"] == "validation_error"
+    errors = payload["error"]["details"]["errors"]
+    assert errors[0]["loc"] == ["body", "question"]
+    assert expected_message in errors[0]["msg"]
 
 
 @pytest.mark.asyncio

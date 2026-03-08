@@ -6,7 +6,7 @@ import uuid
 from collections.abc import Sequence
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,6 +18,7 @@ from app.api.schemas.questions import (
     QuestionHistoryItemResponse,
     QuestionSourceResponse,
 )
+from app.core.errors import NotFoundError, ValidationError
 from app.db.models.documents import Document
 from app.db.session import get_db_session
 from app.repositories.question_repository import QuestionRepository
@@ -59,12 +60,9 @@ async def ask_question(
         document_ids=document_ids,
     )
     if missing_document_ids:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={
-                "message": "One or more documents were not found.",
-                "missing_document_ids": missing_document_ids,
-            },
+        raise NotFoundError(
+            "One or more documents were not found.",
+            details={"missing_document_ids": missing_document_ids},
         )
 
     try:
@@ -74,9 +72,9 @@ async def ask_question(
             document_ids=document_ids or None,
         )
     except question_answering_service.QuestionAnsweringError as exc:
-        raise HTTPException(
+        raise ValidationError(
+            str(exc),
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(exc),
         ) from exc
 
 

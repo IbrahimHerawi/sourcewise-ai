@@ -6,7 +6,9 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app.api.router import api_router
-from app.core.logging import RequestCorrelationIdMiddleware, setup_logging
+from app.core.errors import register_exception_handlers
+from app.core.logging import setup_logging
+from app.core.middleware import RequestLoggingMiddleware
 from app.core.settings import get_settings
 from app.services.embeddings import close_embeddings_client
 from app.workers.ingestion import IngestionManager
@@ -40,5 +42,6 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-app.add_middleware(RequestCorrelationIdMiddleware)
+register_exception_handlers(app)
+app.add_middleware(RequestLoggingMiddleware)
 app.include_router(api_router)

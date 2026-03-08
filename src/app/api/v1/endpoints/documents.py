@@ -7,7 +7,7 @@ import uuid
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
+from fastapi import APIRouter, Depends, File, Query, Request, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.schemas.documents import (
@@ -16,6 +16,13 @@ from app.api.schemas.documents import (
     DocumentUploadRequest,
     DocumentUploadResponse,
     PaginatedDocumentListResponse,
+)
+from app.core.errors import (
+    AppError,
+    ExternalServiceError,
+    IngestionError,
+    NotFoundError,
+    ValidationError,
 )
 from app.db.models.documents import DocumentStatus
 from app.db.models.ingestion_jobs import IngestionJobStatus
@@ -40,9 +47,9 @@ async def _build_upload_request(
     file: Annotated[UploadFile | None, File(description="Document file (.txt, .md, .pdf)")] = None,
 ) -> DocumentUploadRequest:
     if file is None:
-        raise HTTPException(
+        raise ValidationError(
+            "Multipart field 'file' is required.",
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Multipart field 'file' is required.",
         )
     return DocumentUploadRequest(file=file)
 
@@ -50,18 +57,19 @@ async def _build_upload_request(
 def _get_ingestion_manager(request: Request) -> IngestionManager:
     ingestion_manager = getattr(request.app.state, "ingestion_manager", None)
     if not isinstance(ingestion_manager, IngestionManager):
-        raise HTTPException(
+        raise IngestionError(
+            "Ingestion manager is not available.",
+            code="ingestion_unavailable",
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Ingestion manager is not available.",
         )
     return ingestion_manager
 
 
-def _upload_exception(error: UploadValidationError | TextExtractionError) -> HTTPException:
+def _upload_exception(error: UploadValidationError | TextExtractionError) -> ValidationError:
     message = str(error)
     if "MAX_UPLOAD_MB" in message:
-        return HTTPException(status_code=status.HTTP_413_CONTENT_TOO_LARGE, detail=message)
-    return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=message)
+        return ValidationError(message, status_code=status.HTTP_413_CONTENT_TOO_LARGE)
+    return ValidationError(message, status_code=status.HTTP_400_BAD_REQUEST)
 
 
 def _cleanup_saved_file(storage_path: str) -> None:
@@ -104,9 +112,9 @@ async def upload_document(
     upload_file = payload.file
     filename = Path(upload_file.filename or "").name.strip()
     if not filename:
-        raise HTTPException(
+        raise ValidationError(
+            "Filename is required.",
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Filename is required.",
         )
 
     file_bytes = await upload_file.read()
@@ -124,12 +132,16 @@ async def upload_document(
     try:
         storage_path = save_upload_to_disk(document_id, filename, file_bytes)
     except UploadValidationError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        raise ValidationError(
+            str(exc),
+            status_code=status.HTTP_400_BAD_REQUEST,
+        ) from exc
     except OSError as exc:
         logger.exception("Failed to persist uploaded file for document %s.", document_id)
-        raise HTTPException(
+        raise ExternalServiceError(
+            "Failed to persist uploaded file.",
+            code="file_persistence_error",
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to persist uploaded file.",
         ) from exc
     finally:
         await upload_file.close()
@@ -156,18 +168,20 @@ async def upload_document(
     except Exception as exc:
         _cleanup_saved_file(storage_path)
         logger.exception("Failed to persist document and ingestion job for %s.", document_id)
-        raise HTTPException(
+        raise AppError(
+            "Failed to persist document metadata.",
+            code="internal_server_error",
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to persist document metadata.",
         ) from exc
 
     try:
         await ingestion_manager.enqueue(job_id=job.id)
     except RuntimeError as exc:
         logger.exception("Failed to enqueue ingestion job %s.", job.id)
-        raise HTTPException(
+        raise IngestionError(
+            "Ingestion manager is not running.",
+            code="ingestion_unavailable",
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Ingestion manager is not running.",
         ) from exc
 
     return DocumentUploadResponse(
@@ -185,10 +199,7 @@ async def get_document(
     document_repo = DocumentRepository(session)
     document = await document_repo.get_document(document_id)
     if document is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Document not found.",
-        )
+        raise NotFoundError("Document not found.")
 
     return DocumentDetailsResponse(
         id=document.id,

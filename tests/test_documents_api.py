@@ -55,7 +55,7 @@ async def api_context(
 
     ingestion_manager = IngestionManager(settings=get_settings())
     enqueue_mock = AsyncMock(return_value=1)
-    setattr(ingestion_manager, "enqueue", enqueue_mock)
+    ingestion_manager.enqueue = enqueue_mock
 
     app.state.ingestion_manager = ingestion_manager
     app.dependency_overrides[get_db_session] = _override_get_db_session
@@ -101,6 +101,7 @@ async def test_upload_document_persists_document_and_pending_job(
     )
 
     assert response.status_code == 200
+    assert response.headers.get("X-Request-ID")
 
     payload = response.json()
     document_id = UUID(payload["document_id"])
@@ -129,6 +130,18 @@ async def test_upload_document_persists_document_and_pending_job(
     assert saved_path.read_text(encoding="utf-8") == "hello from the upload api test"
 
     api_context.enqueue_mock.assert_awaited_once_with(job_id=jobs[0].id)
+
+
+@pytest.mark.asyncio
+async def test_request_id_header_is_echoed(api_context: ApiTestContext) -> None:
+    request_id = "integration-test-request-id"
+    response = await api_context.client.get(
+        "/api/documents",
+        headers={"X-Request-ID": request_id},
+    )
+
+    assert response.status_code == 200
+    assert response.headers.get("X-Request-ID") == request_id
 
 
 @pytest.mark.asyncio
@@ -167,7 +180,9 @@ async def test_upload_document_rejects_unsupported_extension(
     )
 
     assert response.status_code == 400
-    assert "Unsupported file extension" in response.json()["detail"]
+    payload = response.json()
+    assert payload["error"]["code"] == "validation_error"
+    assert "Unsupported file extension" in payload["error"]["message"]
     assert await _count_rows(db_session, Document) == 0
     assert await _count_rows(db_session, IngestionJob) == 0
     api_context.enqueue_mock.assert_not_awaited()
@@ -186,7 +201,9 @@ async def test_upload_document_rejects_file_over_max_upload_size(
     )
 
     assert response.status_code == 413
-    assert "MAX_UPLOAD_MB" in response.json()["detail"]
+    payload = response.json()
+    assert payload["error"]["code"] == "validation_error"
+    assert "MAX_UPLOAD_MB" in payload["error"]["message"]
     assert await _count_rows(db_session, Document) == 0
     assert await _count_rows(db_session, IngestionJob) == 0
     api_context.enqueue_mock.assert_not_awaited()
