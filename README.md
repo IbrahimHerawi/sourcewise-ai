@@ -118,6 +118,11 @@ Question history:
 curl "$API_BASE/questions/history?limit=20&offset=0"
 ```
 
+## Demo
+- Run (Bash): `API_URL=http://localhost:8000 bash scripts/demo.sh`
+- Demonstrates the full flow: upload -> ingestion -> ask -> history
+- `demo/` contains the sample `.txt`, `.md`, and `.pdf` files used by the script
+
 ## 10. Testing
 Run all tests:
 
