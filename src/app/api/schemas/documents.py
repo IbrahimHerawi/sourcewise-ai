@@ -1,0 +1,61 @@
+"""Schemas for document upload and retrieval endpoints."""
+
+from __future__ import annotations
+
+from datetime import datetime
+from uuid import UUID
+
+from fastapi import UploadFile
+from pydantic import BaseModel, ConfigDict
+
+from app.db.models.documents import DocumentStatus
+
+
+class DocumentUploadRequest(BaseModel):
+    """Parsed multipart upload request payload."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    file: UploadFile
+
+
+class DocumentUploadResponse(BaseModel):
+    """Response payload for successful document upload."""
+
+    document_id: UUID
+    filename: str
+    status: DocumentStatus
+
+
+class DocumentSummaryResponse(BaseModel):
+    """Compact document metadata for list responses."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    filename: str
+    original_extension: str
+    size_bytes: int
+    status: DocumentStatus
+    created_at: datetime
+
+
+class PaginatedDocumentListResponse(BaseModel):
+    """Paginated document list response payload."""
+
+    items: list[DocumentSummaryResponse]
+    limit: int
+    offset: int
+    total: int
+
+
+class DocumentDetailsResponse(BaseModel):
+    """Document metadata response without full extracted text payload."""
+
+    id: UUID
+    filename: str
+    status: DocumentStatus
+    created_at: datetime
+    updated_at: datetime
+    error_message: str | None
+    text_length: int

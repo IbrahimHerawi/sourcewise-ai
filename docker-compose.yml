@@ -1,0 +1,99 @@
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-app_db}
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets:
+      - postgres_password
+    ports:
+      - "5432:5432"  
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/db/init.sql:/docker-entrypoint-initdb.d/01-init-vector.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 5s
+
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    profiles:
+      - tools
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - path: ./.env
+        required: true
+    environment:
+      APP_ENV: docker
+      POSTGRES_HOST: db
+      POSTGRES_PORT: "5432"
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      OPENAI_API_KEY_FILE: /app-secrets/openai_api_key.txt
+    secrets:
+      - postgres_password
+    volumes:
+      - ./secrets:/app-secrets:ro
+    command: ["uv", "run", "alembic", "upgrade", "head"]
+    restart: "no"
+
+  ollama:
+    image: ollama/ollama:latest
+    volumes:
+      - ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:11434/api/tags >/dev/null || wget -qO- http://127.0.0.1:11434/api/tags >/dev/null || ollama list >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      db:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
+    env_file:
+      - path: ./.env
+        required: true
+    environment:
+      APP_ENV: docker
+      POSTGRES_HOST: db
+      POSTGRES_PORT: "5432"
+      OLLAMA_OPENAI_BASE_URL: http://ollama:11434/v1
+      OPENAI_API_KEY_FILE: /app-secrets/openai_api_key.txt
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      UPLOAD_ROOT_DIR: /data/uploads
+    secrets:
+      - postgres_password
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/data
+      - ./secrets:/app-secrets:ro
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=2)\""]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  ollama_data:
+
+secrets:
+  postgres_password:
+    file: ${POSTGRES_PASSWORD_SECRET_FILE:-./secrets/postgres_password.txt}
