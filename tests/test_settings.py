@@ -56,3 +56,21 @@ def test_get_database_url_requires_password(monkeypatch: pytest.MonkeyPatch) -> 
 
     with pytest.raises(ValueError, match="POSTGRES_PASSWORD or POSTGRES_PASSWORD_FILE"):
         settings.get_database_url()
+
+
+def test_ollama_provider_does_not_read_openai_key_file(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    missing_key_file = tmp_path / "missing-openai-key.txt"
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    settings = Settings(
+        ai_provider="ollama",
+        openai_api_key_file=str(missing_key_file),
+        ollama_openai_base_url="http://ollama:11434/v1",
+        ollama_chat_model="llama3.2:1b",
+        ollama_embed_model="nomic-embed-text",
+        _env_file=None,
+    )
+
+    assert settings.openai_api_key is None

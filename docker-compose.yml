@@ -19,6 +19,31 @@ services:
       retries: 20
       start_period: 5s
 
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    profiles:
+      - tools
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - path: ./.env
+        required: true
+    environment:
+      APP_ENV: docker
+      POSTGRES_HOST: db
+      POSTGRES_PORT: "5432"
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      OPENAI_API_KEY_FILE: /app-secrets/openai_api_key.txt
+    secrets:
+      - postgres_password
+    volumes:
+      - ./secrets:/app-secrets:ro
+    command: ["uv", "run", "alembic", "upgrade", "head"]
+    restart: "no"
+
   ollama:
     image: ollama/ollama:latest
     volumes:
@@ -47,29 +72,28 @@ services:
       POSTGRES_HOST: db
       POSTGRES_PORT: "5432"
       OLLAMA_OPENAI_BASE_URL: http://ollama:11434/v1
-      OPENAI_API_KEY_FILE: /run/secrets/openai_api_key
+      OPENAI_API_KEY_FILE: /app-secrets/openai_api_key.txt
       POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
       UPLOAD_ROOT_DIR: /data/uploads
     secrets:
       - postgres_password
-      - openai_api_key
     ports:
       - "8000:8000"
     volumes:
       - ./data:/data
+      - ./secrets:/app-secrets:ro
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=2)\""]
       interval: 10s
       timeout: 5s
       retries: 10
       start_period: 10s
+    restart: unless-stopped
 
 volumes:
   postgres_data:
   ollama_data:
 
 secrets:
-  openai_api_key:
-    file: ${OPENAI_API_KEY_SECRET_FILE:-./secrets/openai_api_key.txt}
   postgres_password:
     file: ${POSTGRES_PASSWORD_SECRET_FILE:-./secrets/postgres_password.txt}

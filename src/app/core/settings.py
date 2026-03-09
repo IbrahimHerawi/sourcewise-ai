@@ -92,19 +92,23 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def validate_provider_requirements(self) -> "Settings":
         """Validate provider-specific required settings."""
-        self.openai_api_key = self._resolve_secret(
-            inline_secret=self.openai_api_key,
-            file_path=self.openai_api_key_file,
-            inline_env_name="OPENAI_API_KEY",
-            file_env_name="OPENAI_API_KEY_FILE",
-        )
         self.postgres_password = self._resolve_secret(
             inline_secret=self.postgres_password,
             file_path=self.postgres_password_file,
             inline_env_name="POSTGRES_PASSWORD",
             file_env_name="POSTGRES_PASSWORD_FILE",
         )
-
+        if self.ai_provider == "openai":
+            self.openai_api_key = self._resolve_secret(
+                inline_secret=self.openai_api_key,
+                file_path=self.openai_api_key_file,
+                inline_env_name="OPENAI_API_KEY",
+                file_env_name="OPENAI_API_KEY_FILE",
+            )
+        elif self.openai_api_key is not None:
+            normalized = self.openai_api_key.get_secret_value().strip()
+            self.openai_api_key = SecretStr(normalized) if normalized else None
+        
         self.postgres_host = self.postgres_host.strip()
         self.postgres_user = self.postgres_user.strip()
         self.postgres_db = self.postgres_db.strip()

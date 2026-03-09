@@ -46,16 +46,14 @@ The chat model is instructed to answer using only retrieved context.
 If retrieved content is insufficient or irrelevant, the response is a strict unknown-answer fallback: `I don't know based on the uploaded documents.`
 
 ## 7. AI Provider Switching
-`AI_PROVIDER` controls chat provider selection in the service layer while keeping one client call shape.
+`AI_PROVIDER` controls which chat backend is used.
 
 - `AI_PROVIDER=openai`
-  - Uses `OPENAI_BASE_URL`, `OPENAI_API_KEY`, `OPENAI_CHAT_MODEL`
-  - Typically answers faster and with stronger answer quality
+  - Uses the external OpenAI API (requires `OPENAI_API_KEY`)
+  - Uses `OPENAI_CHAT_MODEL`
 - `AI_PROVIDER=ollama`
-  - Still uses OpenAI Python client
-  - Sets `base_url` to `OLLAMA_OPENAI_BASE_URL` (OpenAI-compatible Ollama endpoint)
-  - Uses `OLLAMA_CHAT_MODEL` (default `llama3.2:1b`)
-  - Runs locally and may take a bit longer to answer
+  - Uses your local Ollama model set in `OLLAMA_CHAT_MODEL` (default `llama3.2:1b`)
+  - Requires a running local Ollama service (`OLLAMA_OPENAI_BASE_URL`)
 
 Embeddings are served by Ollama (`OLLAMA_EMBED_MODEL`, default `nomic-embed-text`) for both provider modes.
 
@@ -65,17 +63,15 @@ Embeddings are served by Ollama (`OLLAMA_EMBED_MODEL`, default `nomic-embed-text
    cp .env.example .env
    ```
 2. Create secret files:
-   - `secrets/openai_api_key.txt`
-   - `secrets/postgres_password.txt`
-3. Start services:
+   - `secrets/postgres_password.txt`  The file must contain a non-empty value; empty files will fail startup.
+   - `secrets/openai_api_key.txt`   is optional and only needed when `AI_PROVIDER=openai`.
+3. Run services in this order:
    ```bash
-   docker compose up --build
+   docker compose up -d --build db ollama
+   docker compose run --rm migrate
+   docker compose up -d api
    ```
-4. Run migrations (same startup flow):
-   ```bash
-   docker compose exec api uv run alembic upgrade head
-   ```
-5. Pull Ollama models used by this project:
+4. Pull Ollama models (usually once per machine, after `ollama` is running):
    ```bash
    docker compose exec ollama ollama pull nomic-embed-text
    docker compose exec ollama ollama pull llama3.2:1b
