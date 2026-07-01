@@ -1,4 +1,4 @@
-# Backend Technical Evaluation API
+# Sourcewise API
 
 ## 1. Overview
 This service accepts document uploads, extracts text, chunks it, and stores embeddings for vector retrieval.  
