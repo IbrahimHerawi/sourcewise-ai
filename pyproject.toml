@@ -1,7 +1,7 @@
 [project]
-name = "backend-technical-evaluation"
+name = "sourcewise"
 version = "0.1.0"
-description = "Backend technical evaluation bootstrap"
+description = "Sourcewise API"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [

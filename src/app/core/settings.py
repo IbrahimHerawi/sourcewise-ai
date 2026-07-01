@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     )
 
     app_env: str = "local"
-    app_title: str = "Backend Technical Evaluation API"
+    app_title: str = "Sourcewise API"
     app_version: str = "0.1.0"
     log_level: str = "INFO"
     postgres_host: str = "localhost"
