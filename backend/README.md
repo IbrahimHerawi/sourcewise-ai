@@ -66,6 +66,7 @@ Docker Compose remains at the repository root.
    ```
 2. Create secret files:
    - `secrets/postgres_password.txt`  The file must contain a non-empty value; empty files will fail startup.
+   - `secrets/secret_key.txt`  Required for Docker/non-local runs; use a high-entropy value of at least 32 characters.
    - `secrets/openai_api_key.txt`   is optional and only needed when `AI_PROVIDER=openai`.
 3. Run services in this order:
    ```bash

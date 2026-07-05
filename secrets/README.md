@@ -3,6 +3,7 @@
 Create this required file locally before running Docker Compose:
 
 - `secrets/postgres_password.txt`
+- `secrets/secret_key.txt` (at least 32 characters)
 
 Optional (only when `AI_PROVIDER=openai`):
 

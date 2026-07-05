@@ -8,6 +8,10 @@ from urllib.parse import quote_plus
 from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+_LOCAL_APP_ENVS = {"local", "test", "testing"}
+_LOCAL_SECRET_KEY = "sourcewise-local-test-secret-key-do-not-use-in-production"
+_MIN_SECRET_KEY_LENGTH = 32
+
 
 def _read_secret_file(path: str, *, env_var_name: str) -> str:
     """Read and normalize a secret value from disk."""
@@ -36,6 +40,14 @@ class Settings(BaseSettings):
     app_title: str = "Sourcewise API"
     app_version: str = "0.1.0"
     log_level: str = "INFO"
+    secret_key: SecretStr | None = None
+    secret_key_file: str | None = None
+    jwt_algorithm: str = "HS256"
+    access_token_expire_minutes: int = Field(default=30, gt=0)
+    email_verification_token_expire_minutes: int = Field(default=1440, gt=0)
+    password_reset_token_expire_minutes: int = Field(default=60, gt=0)
+    app_base_url: str = "http://localhost:8000"
+    frontend_base_url: str = "http://localhost:3000"
     postgres_host: str = "localhost"
     postgres_port: int = Field(default=5432, gt=0, le=65535)
     postgres_user: str = "postgres"
@@ -91,7 +103,47 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_provider_requirements(self) -> "Settings":
-        """Validate provider-specific required settings."""
+        """Validate required runtime settings."""
+        self.app_env = self.app_env.strip()
+        self.jwt_algorithm = self.jwt_algorithm.strip()
+        self.app_base_url = self.app_base_url.strip()
+        self.frontend_base_url = self.frontend_base_url.strip()
+
+        if not self.app_env:
+            raise ValueError("APP_ENV must not be empty.")
+        if not self.jwt_algorithm:
+            raise ValueError("JWT_ALGORITHM must not be empty.")
+        if not self.app_base_url:
+            raise ValueError("APP_BASE_URL must not be empty.")
+        if not self.frontend_base_url:
+            raise ValueError("FRONTEND_BASE_URL must not be empty.")
+
+        is_local_env = self.app_env.lower() in _LOCAL_APP_ENVS
+        self.secret_key = self._resolve_secret(
+            inline_secret=self.secret_key,
+            file_path=self.secret_key_file,
+            inline_env_name="SECRET_KEY",
+            file_env_name="SECRET_KEY_FILE",
+        )
+        if self.secret_key is None:
+            if is_local_env:
+                self.secret_key = SecretStr(_LOCAL_SECRET_KEY)
+            else:
+                raise ValueError(
+                    "SECRET_KEY or SECRET_KEY_FILE must be set when APP_ENV is not local/test."
+                )
+        elif not is_local_env:
+            secret_key_value = self.secret_key.get_secret_value()
+            if secret_key_value == _LOCAL_SECRET_KEY:
+                raise ValueError(
+                    "SECRET_KEY must not use the local/test default when APP_ENV is not "
+                    "local/test."
+                )
+            if len(secret_key_value) < _MIN_SECRET_KEY_LENGTH:
+                raise ValueError(
+                    "SECRET_KEY must be at least 32 characters when APP_ENV is not local/test."
+                )
+
         self.postgres_password = self._resolve_secret(
             inline_secret=self.postgres_password,
             file_path=self.postgres_password_file,
@@ -108,7 +160,7 @@ class Settings(BaseSettings):
         elif self.openai_api_key is not None:
             normalized = self.openai_api_key.get_secret_value().strip()
             self.openai_api_key = SecretStr(normalized) if normalized else None
-        
+
         self.postgres_host = self.postgres_host.strip()
         self.postgres_user = self.postgres_user.strip()
         self.postgres_db = self.postgres_db.strip()
