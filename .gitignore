@@ -21,6 +21,12 @@ dist/
 .coverage
 htmlcov/
 
+# Frontend artifacts
+node_modules/
+.next/
+out/
+npm-debug.log*
+
 # Environment files
 .env
 .env.*
