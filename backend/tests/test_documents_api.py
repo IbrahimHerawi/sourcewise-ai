@@ -80,7 +80,7 @@ async def _upload_text_file(
     content: str,
 ) -> httpx.Response:
     return await client.post(
-        "/api/documents/upload",
+        "/api/v1/documents/upload",
         files={"file": (filename, content.encode("utf-8"), "text/plain")},
     )
 
@@ -136,7 +136,7 @@ async def test_upload_document_persists_document_and_pending_job(
 async def test_request_id_header_is_echoed(api_context: ApiTestContext) -> None:
     request_id = "integration-test-request-id"
     response = await api_context.client.get(
-        "/api/documents",
+        "/api/v1/documents",
         headers={"X-Request-ID": request_id},
     )
 
@@ -155,7 +155,7 @@ async def test_get_document_returns_uploaded_document_metadata(
     )
     document_id = UUID(upload_response.json()["document_id"])
 
-    response = await api_context.client.get(f"/api/documents/{document_id}")
+    response = await api_context.client.get(f"/api/v1/documents/{document_id}")
 
     assert response.status_code == 200
 
@@ -175,7 +175,7 @@ async def test_upload_document_rejects_unsupported_extension(
     db_session: AsyncSession,
 ) -> None:
     response = await api_context.client.post(
-        "/api/documents/upload",
+        "/api/v1/documents/upload",
         files={"file": ("malware.exe", b"MZ", "application/octet-stream")},
     )
 
@@ -196,7 +196,7 @@ async def test_upload_document_rejects_file_over_max_upload_size(
     oversized_file = b"a" * ((1024 * 1024) + 1)
 
     response = await api_context.client.post(
-        "/api/documents/upload",
+        "/api/v1/documents/upload",
         files={"file": ("too-large.txt", oversized_file, "text/plain")},
     )
 

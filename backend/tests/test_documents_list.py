@@ -74,7 +74,7 @@ async def test_list_documents_returns_paginated_summaries(
     await _set_created_at(db_session, newest, datetime(2026, 1, 3, 12, 0, tzinfo=UTC))
 
     response = await api_client.get(
-        "/api/documents",
+        "/api/v1/documents",
         params={"limit": 2, "offset": 1},
     )
 

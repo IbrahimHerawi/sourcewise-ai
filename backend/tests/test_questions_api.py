@@ -333,7 +333,7 @@ async def test_question_history_returns_paginated_items(
     seeded = await _seed_question_history_data(db_session)
 
     response = await api_client.get(
-        "/api/questions/history",
+        "/api/v1/questions/history",
         params={"limit": 2, "offset": 1},
     )
 
@@ -367,7 +367,7 @@ async def test_question_history_filters_by_document_id_without_duplicate_items(
     seeded = await _seed_question_history_data(db_session)
 
     response = await api_client.get(
-        "/api/questions/history",
+        "/api/v1/questions/history",
         params={"document_id": str(seeded["first_document_id"])},
     )
 

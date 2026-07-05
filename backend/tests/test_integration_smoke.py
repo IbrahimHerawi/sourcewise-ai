@@ -90,7 +90,7 @@ async def _wait_until_ready(
     last_payload: dict[str, object] | None = None
 
     while monotonic() < deadline:
-        response = await client.get(f"/api/documents/{document_id}")
+        response = await client.get(f"/api/v1/documents/{document_id}")
         assert response.status_code == 200
         payload = response.json()
         status_value = payload["status"]
@@ -185,7 +185,7 @@ async def test_upload_ingest_ask_and_history_smoke(
     )
 
     upload_response = await smoke_context.client.post(
-        "/api/documents/upload",
+        "/api/v1/documents/upload",
         files={"file": ("smoke.txt", upload_text.encode("utf-8"), "text/plain")},
     )
 
@@ -200,7 +200,7 @@ async def test_upload_ingest_ask_and_history_smoke(
     assert await _count_document_chunks(postgres_database_url, document_id=document_id) >= 1
 
     ask_response = await smoke_context.client.post(
-        "/api/questions/ask",
+        "/api/v1/questions/ask",
         json={
             "question": "ORBIT778",
         },
@@ -213,7 +213,7 @@ async def test_upload_ingest_ask_and_history_smoke(
     assert ask_payload["sources"][0]["document_id"] == str(document_id)
     assert "ORBIT778 sentence" in smoke_context.llm_context_capture["context"]
 
-    history_response = await smoke_context.client.get("/api/questions/history")
+    history_response = await smoke_context.client.get("/api/v1/questions/history")
     assert history_response.status_code == 200
     history_payload = history_response.json()
     assert any(
