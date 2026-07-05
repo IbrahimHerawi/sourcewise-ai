@@ -14,7 +14,7 @@ Ingestion runs asynchronously, and each question/answer is persisted with source
 - Chat generation via OpenAI Python client with provider switching (`AI_PROVIDER`)
 
 ## 3. Project Layout
-This project uses a `src/app` package layout with layered architecture.
+The backend uses a `backend/src/app` package layout with layered architecture.
 
 - `api/`: FastAPI routers and request/response schemas
 - `services/`: application logic (RAG orchestration, embeddings, chat calls)
@@ -58,9 +58,11 @@ If retrieved content is insufficient or irrelevant, the response is a strict unk
 Embeddings are served by Ollama (`OLLAMA_EMBED_MODEL`, default `nomic-embed-text`) for both provider modes.
 
 ## 8. Running with Docker
+Docker Compose remains at the repository root.
+
 1. Copy environment template:
    ```bash
-   cp .env.example .env
+   cp backend/.env.example .env
    ```
 2. Create secret files:
    - `secrets/postgres_password.txt`  The file must contain a non-empty value; empty files will fail startup.
@@ -92,7 +94,7 @@ Upload document:
 
 ```bash
 curl -X POST "$API_BASE/documents/upload" \
-  -F "file=@./tests/assets/sample.pdf"
+  -F "file=@./backend/tests/assets/sample.pdf"
 ```
 
 List documents:
@@ -124,9 +126,10 @@ curl "$API_BASE/questions/history?limit=20&offset=0"
 - `demo/` contains the sample `.txt`, `.md`, and `.pdf` files used by the script
 
 ## 10. Testing
-Run all tests:
+Run all tests from the backend directory:
 
 ```bash
+cd backend
 uv run pytest -q
 ```
 

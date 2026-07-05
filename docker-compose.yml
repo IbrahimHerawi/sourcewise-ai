@@ -21,7 +21,7 @@ services:
 
   migrate:
     build:
-      context: .
+      context: ./backend
       dockerfile: Dockerfile
     profiles:
       - tools
@@ -57,7 +57,7 @@ services:
 
   api:
     build:
-      context: .
+      context: ./backend
       dockerfile: Dockerfile
     depends_on:
       db:
