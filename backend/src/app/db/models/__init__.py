@@ -1,5 +1,6 @@
 """ORM models exported for application usage and Alembic discovery."""
 
+from app.db.models.auth import EmailVerificationToken, PasswordResetToken, User
 from app.db.models.document_chunks import DocumentChunk
 from app.db.models.documents import Document, DocumentStatus
 from app.db.models.ingestion_jobs import IngestionJob, IngestionJobStatus
@@ -10,8 +11,11 @@ __all__ = [
     "Document",
     "DocumentChunk",
     "DocumentStatus",
+    "EmailVerificationToken",
     "IngestionJob",
     "IngestionJobStatus",
+    "PasswordResetToken",
     "Question",
     "QuestionContextChunk",
+    "User",
 ]
