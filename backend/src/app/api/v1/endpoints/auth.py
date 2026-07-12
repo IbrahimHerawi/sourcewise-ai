@@ -2,13 +2,22 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.schemas.auth import RegisterRequest, RegisterResponse, UserResponse
+from app.api.schemas.auth import (
+    MessageResponse,
+    RegisterRequest,
+    RegisterResponse,
+    ResendVerificationRequest,
+    ResendVerificationResponse,
+    UserResponse,
+    VerifyEmailRequest,
+)
 from app.core.errors import AppError, ValidationError
 from app.core.security import (
     SecurityError,
@@ -22,11 +31,17 @@ from app.repositories.user_repository import DuplicateUserEmailError, UserReposi
 from app.services.email import build_email_verification_link, send_registration_verification_email
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 _VERIFICATION_TOKEN_RESPONSE_ENVS = {"local", "test", "testing"}
 _MIN_PASSWORD_LENGTH = 12
 _MAX_PASSWORD_BYTES = 72
 _REGISTERED_MESSAGE = "Registration successful. Please verify your email."
+_VERIFIED_MESSAGE = "Email verified successfully."
+_INVALID_VERIFICATION_TOKEN_MESSAGE = "Verification token is invalid or expired."
+_RESEND_VERIFICATION_MESSAGE = (
+    "If the account exists and requires verification, a verification email has been sent."
+)
 
 
 def _validate_password_strength(password: str) -> None:
@@ -131,5 +146,109 @@ async def register(
     return RegisterResponse(
         user=UserResponse.model_validate(user),
         message=_REGISTERED_MESSAGE,
+        verification_token=verification_token,
+    )
+
+
+@router.post("/verify-email", response_model=MessageResponse)
+async def verify_email(
+    payload: VerifyEmailRequest,
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> MessageResponse:
+    """Consume a verification token and verify its associated user once."""
+    if not payload.token.strip():
+        raise AppError(
+            _INVALID_VERIFICATION_TOKEN_MESSAGE,
+            code="invalid_verification_token",
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        token_hash = hash_token(payload.token)
+    except SecurityError as exc:
+        raise AppError(
+            "Email verification could not be completed.",
+            code="internal_server_error",
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        ) from exc
+
+    repository = UserRepository(session)
+    async with session.begin():
+        verification_token = await repository.consume_valid_email_verification_token(token_hash)
+        if verification_token is not None:
+            await repository.mark_email_verified(verification_token.user_id)
+
+    if verification_token is None:
+        raise AppError(
+            _INVALID_VERIFICATION_TOKEN_MESSAGE,
+            code="invalid_verification_token",
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+    return MessageResponse(message=_VERIFIED_MESSAGE)
+
+
+@router.post(
+    "/resend-verification",
+    response_model=ResendVerificationResponse,
+    response_model_exclude_none=True,
+)
+async def resend_verification(
+    payload: ResendVerificationRequest,
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> ResendVerificationResponse:
+    """Replace an unverified user's tokens and send a generic resend response."""
+    settings = get_settings()
+    repository = UserRepository(session)
+    raw_verification_token: str | None = None
+    user = None
+
+    async with session.begin():
+        user = await repository.get_user_by_email(payload.email)
+        if user is not None and not user.is_email_verified:
+            await repository.invalidate_unused_email_verification_tokens(user.id)
+            try:
+                raw_verification_token = generate_secure_token()
+                verification_token_hash = hash_token(raw_verification_token)
+            except SecurityError as exc:
+                raise AppError(
+                    "Verification email could not be prepared.",
+                    code="internal_server_error",
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                ) from exc
+
+            token_expires_at = datetime.now(UTC) + timedelta(
+                minutes=settings.email_verification_token_expire_minutes
+            )
+            await repository.create_email_verification_token(
+                user.id,
+                verification_token_hash,
+                token_expires_at,
+            )
+
+    if user is None or raw_verification_token is None:
+        return ResendVerificationResponse(message=_RESEND_VERIFICATION_MESSAGE)
+
+    try:
+        verification_link = build_email_verification_link(
+            raw_token=raw_verification_token,
+            settings=settings,
+        )
+        await send_registration_verification_email(
+            to_email=user.email,
+            verification_link=verification_link,
+            settings=settings,
+        )
+    except Exception:
+        logger.warning(
+            "Verification email delivery failed for user_id=%s.",
+            user.id,
+        )
+
+    verification_token = (
+        raw_verification_token if _should_return_verification_token(settings.app_env) else None
+    )
+    return ResendVerificationResponse(
+        message=_RESEND_VERIFICATION_MESSAGE,
         verification_token=verification_token,
     )

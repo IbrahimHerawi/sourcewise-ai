@@ -57,8 +57,8 @@ If retrieved content is insufficient or irrelevant, the response is a strict unk
 
 Embeddings are served by Ollama (`OLLAMA_EMBED_MODEL`, default `nomic-embed-text`) for both provider modes.
 
-## 8. Registration Email Delivery
-Registration creates a hashed email verification token and sends a verification email. The verification endpoint is not part of this backend flow yet.
+## 8. Email Verification Delivery
+Registration and verification-email resends store only hashed verification tokens and send verification emails. Clients consume the raw one-time token through `POST /api/v1/auth/verify-email` and can request a replacement through `POST /api/v1/auth/resend-verification`.
 
 `APP_ENV` selects the email provider:
 

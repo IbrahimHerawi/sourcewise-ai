@@ -111,6 +111,38 @@ async def test_user_repository_expired_email_verification_token_is_not_valid(
 
 
 @pytest.mark.asyncio
+async def test_user_repository_consumes_and_invalidates_email_verification_tokens(
+    db_session: AsyncSession,
+) -> None:
+    repository = UserRepository(db_session)
+    user = await repository.create_user("consume-email-token@example.com", "hash")
+    consumed_token = await repository.create_email_verification_token(
+        user.id,
+        "consume-email-token-hash",
+        datetime.now(UTC) + timedelta(hours=1),
+    )
+    invalidated_token = await repository.create_email_verification_token(
+        user.id,
+        "invalidate-email-token-hash",
+        datetime.now(UTC) + timedelta(hours=1),
+    )
+
+    consumed = await repository.consume_valid_email_verification_token(consumed_token.token_hash)
+    consumed_again = await repository.consume_valid_email_verification_token(
+        consumed_token.token_hash
+    )
+    invalidated_count = await repository.invalidate_unused_email_verification_tokens(user.id)
+    await db_session.refresh(invalidated_token)
+
+    assert consumed is not None
+    assert consumed.id == consumed_token.id
+    assert consumed.used_at is not None
+    assert consumed_again is None
+    assert invalidated_count == 1
+    assert invalidated_token.used_at is not None
+
+
+@pytest.mark.asyncio
 async def test_user_repository_password_reset_token_validity_and_invalidation(
     db_session: AsyncSession,
 ) -> None:

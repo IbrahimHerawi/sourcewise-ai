@@ -54,3 +54,37 @@ class RegisterResponse(BaseModel):
     user: UserResponse
     message: str
     verification_token: str | None = None
+
+
+class VerifyEmailRequest(BaseModel):
+    """Request payload for consuming an email verification token."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    token: str
+
+
+class MessageResponse(BaseModel):
+    """Response containing a user-safe status message."""
+
+    message: str
+
+
+class ResendVerificationRequest(BaseModel):
+    """Request payload for resending an email verification message."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    email: EmailStr
+
+    @field_validator("email", mode="after")
+    @classmethod
+    def normalize_email(cls, value: EmailStr) -> str:
+        """Normalize email addresses using the registration rules."""
+        return str(value).lower()
+
+
+class ResendVerificationResponse(MessageResponse):
+    """Generic resend response with an optional development token."""
+
+    verification_token: str | None = None
