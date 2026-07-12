@@ -12,7 +12,12 @@ from app.repositories.user_repository import DuplicateUserEmailError, UserReposi
 async def test_user_repository_creates_gets_and_updates_user(db_session: AsyncSession) -> None:
     repository = UserRepository(db_session)
 
-    created = await repository.create_user("user@example.com", "hash-v1")
+    created = await repository.create_user(
+        "user@example.com",
+        "hash-v1",
+        first_name="Source",
+        last_name="Wise",
+    )
     by_email = await repository.get_user_by_email("user@example.com")
     by_id = await repository.get_user_by_id(created.id)
     verified = await repository.mark_email_verified(created.id)
@@ -22,8 +27,8 @@ async def test_user_repository_creates_gets_and_updates_user(db_session: AsyncSe
     assert by_email.id == created.id
     assert by_id is not None
     assert by_id.email == "user@example.com"
-    assert created.first_name == ""
-    assert created.last_name == ""
+    assert created.first_name == "Source"
+    assert created.last_name == "Wise"
     assert verified is not None
     assert verified.is_email_verified is True
     assert updated_password is not None

@@ -36,15 +36,26 @@ class UserRepository:
         stmt = select(User).where(User.email == email)
         return await self._session.scalar(stmt)
 
-    async def create_user(self, email: str, password_hash: str) -> User:
+    async def create_user(
+        self,
+        email: str,
+        password_hash: str,
+        *,
+        first_name: str = "",
+        last_name: str = "",
+        is_email_verified: bool = False,
+        is_active: bool = True,
+    ) -> User:
         """Create a user row, raising a domain error for duplicate email."""
         stmt = (
             insert(User)
             .values(
                 email=email,
                 password_hash=password_hash,
-                first_name="",
-                last_name="",
+                first_name=first_name,
+                last_name=last_name,
+                is_email_verified=is_email_verified,
+                is_active=is_active,
             )
             .on_conflict_do_nothing(index_elements=[User.email])
             .returning(User)
