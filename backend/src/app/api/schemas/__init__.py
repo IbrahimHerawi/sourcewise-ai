@@ -2,6 +2,8 @@
 
 from app.api.schemas.auth import (
     AuthUserResponse,
+    LoginRequest,
+    LoginResponse,
     RegisterRequest,
     RegisterResponse,
     UserResponse,
@@ -29,6 +31,8 @@ __all__ = [
     "DocumentSummaryResponse",
     "DocumentUploadRequest",
     "DocumentUploadResponse",
+    "LoginRequest",
+    "LoginResponse",
     "PaginatedDocumentListResponse",
     "PaginatedQuestionHistoryResponse",
     "QuestionAnswerRequest",

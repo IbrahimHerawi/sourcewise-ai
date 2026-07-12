@@ -18,6 +18,7 @@ from app.core.settings import Settings, get_settings
 
 RESEND_EMAILS_ENDPOINT = "https://api.resend.com/emails"
 REGISTRATION_VERIFICATION_SUBJECT = "Verify your Sourcewise email"
+PASSWORD_RESET_SUBJECT = "Reset your Sourcewise password"
 
 _DISABLED_EMAIL_ENVS = {"test", "testing"}
 _SMTP_EMAIL_ENVS = {"local", "docker"}
@@ -213,6 +214,48 @@ def build_registration_verification_email(
     )
 
 
+def build_password_reset_link(
+    *,
+    raw_token: str,
+    settings: Settings | None = None,
+) -> str:
+    """Build the frontend password-reset URL for a raw one-time token."""
+    resolved_settings = settings or get_settings()
+    base_url = resolved_settings.frontend_base_url.rstrip("/")
+    token = quote(raw_token, safe="")
+    return f"{base_url}/reset-password?token={token}"
+
+
+def build_password_reset_email(
+    *,
+    to_email: str,
+    reset_link: str,
+    settings: Settings | None = None,
+) -> OutboundEmail:
+    """Build the password-reset email message."""
+    resolved_settings = settings or get_settings()
+    escaped_link = escape(reset_link, quote=True)
+    text = (
+        "A password reset was requested for your Sourcewise account.\n\n"
+        "Reset your password by opening this link:\n"
+        f"{reset_link}\n\n"
+        "If you did not request a password reset, you can ignore this email."
+    )
+    html = (
+        "<p>A password reset was requested for your Sourcewise account.</p>"
+        "<p>Reset your password by opening this link:</p>"
+        f'<p><a href="{escaped_link}">{escaped_link}</a></p>'
+        "<p>If you did not request a password reset, you can ignore this email.</p>"
+    )
+    return OutboundEmail(
+        from_email=resolved_settings.email_from,
+        to_email=to_email,
+        subject=PASSWORD_RESET_SUBJECT,
+        text=text,
+        html=html,
+    )
+
+
 async def send_registration_verification_email(
     *,
     to_email: str,
@@ -231,15 +274,37 @@ async def send_registration_verification_email(
     await resolved_client.send(email)
 
 
+async def send_password_reset_email(
+    *,
+    to_email: str,
+    reset_link: str,
+    settings: Settings | None = None,
+    client: EmailClient | None = None,
+) -> None:
+    """Send a password-reset email through the configured provider."""
+    resolved_settings = settings or get_settings()
+    resolved_client = client or get_email_client(resolved_settings)
+    email = build_password_reset_email(
+        to_email=to_email,
+        reset_link=reset_link,
+        settings=resolved_settings,
+    )
+    await resolved_client.send(email)
+
+
 __all__ = [
     "DisabledEmailClient",
     "EmailClient",
     "OutboundEmail",
+    "PASSWORD_RESET_SUBJECT",
     "REGISTRATION_VERIFICATION_SUBJECT",
     "ResendEmailClient",
     "SmtpEmailClient",
     "build_email_verification_link",
+    "build_password_reset_email",
+    "build_password_reset_link",
     "build_registration_verification_email",
     "get_email_client",
     "send_registration_verification_email",
+    "send_password_reset_email",
 ]

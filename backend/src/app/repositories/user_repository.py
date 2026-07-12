@@ -118,6 +118,23 @@ class UserRepository:
         )
         return await self._session.scalar(stmt)
 
+    async def consume_valid_email_verification_token(
+        self,
+        token_hash: str,
+    ) -> EmailVerificationToken | None:
+        """Atomically mark a matching unused, unexpired token as used."""
+        stmt = (
+            update(EmailVerificationToken)
+            .where(
+                EmailVerificationToken.token_hash == token_hash,
+                EmailVerificationToken.used_at.is_(None),
+                EmailVerificationToken.expires_at > func.now(),
+            )
+            .values(used_at=func.now())
+            .returning(EmailVerificationToken)
+        )
+        return await self._session.scalar(stmt)
+
     async def mark_email_verification_token_used(
         self,
         token_id: uuid.UUID,
@@ -133,6 +150,19 @@ class UserRepository:
             .returning(EmailVerificationToken)
         )
         return await self._session.scalar(stmt)
+
+    async def invalidate_unused_email_verification_tokens(self, user_id: uuid.UUID) -> int:
+        """Mark all unused email verification tokens for a user as used."""
+        stmt = (
+            update(EmailVerificationToken)
+            .where(
+                EmailVerificationToken.user_id == user_id,
+                EmailVerificationToken.used_at.is_(None),
+            )
+            .values(used_at=func.now())
+        )
+        result = await self._session.execute(stmt)
+        return result.rowcount
 
     async def create_password_reset_token(
         self,
@@ -164,6 +194,23 @@ class UserRepository:
                 PasswordResetToken.used_at.is_(None),
                 PasswordResetToken.expires_at > func.now(),
             )
+        )
+        return await self._session.scalar(stmt)
+
+    async def consume_valid_password_reset_token(
+        self,
+        token_hash: str,
+    ) -> PasswordResetToken | None:
+        """Atomically mark a matching unused, unexpired reset token as used."""
+        stmt = (
+            update(PasswordResetToken)
+            .where(
+                PasswordResetToken.token_hash == token_hash,
+                PasswordResetToken.used_at.is_(None),
+                PasswordResetToken.expires_at > func.now(),
+            )
+            .values(used_at=func.now())
+            .returning(PasswordResetToken)
         )
         return await self._session.scalar(stmt)
 

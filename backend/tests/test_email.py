@@ -12,14 +12,18 @@ import pytest
 from app.core.errors import ExternalServiceError
 from app.core.settings import Settings
 from app.services.email import (
+    PASSWORD_RESET_SUBJECT,
     REGISTRATION_VERIFICATION_SUBJECT,
     DisabledEmailClient,
     OutboundEmail,
     ResendEmailClient,
     SmtpEmailClient,
     build_email_verification_link,
+    build_password_reset_email,
+    build_password_reset_link,
     build_registration_verification_email,
     get_email_client,
+    send_password_reset_email,
 )
 
 
@@ -210,3 +214,42 @@ def test_build_registration_verification_email_uses_configured_sender_and_fronte
     assert email.subject == REGISTRATION_VERIFICATION_SUBJECT
     assert verification_link in email.text
     assert verification_link in email.html
+
+
+@pytest.mark.asyncio
+async def test_password_reset_email_uses_configured_content_and_existing_client() -> None:
+    sent_emails: list[OutboundEmail] = []
+
+    class RecordingEmailClient:
+        async def send(self, email: OutboundEmail) -> None:
+            sent_emails.append(email)
+
+    settings = Settings(
+        app_env="test",
+        frontend_base_url="https://sourcewise.example.test/",
+        email_from="Sourcewise Security <security@example.test>",
+        _env_file=None,
+    )
+    reset_link = build_password_reset_link(raw_token="raw token/+", settings=settings)
+    built_email = build_password_reset_email(
+        to_email="registered@example.com",
+        reset_link=reset_link,
+        settings=settings,
+    )
+
+    await send_password_reset_email(
+        to_email="registered@example.com",
+        reset_link=reset_link,
+        settings=settings,
+        client=RecordingEmailClient(),
+    )
+
+    assert reset_link == (
+        "https://sourcewise.example.test/reset-password?token=raw%20token%2F%2B"
+    )
+    assert built_email.from_email == "Sourcewise Security <security@example.test>"
+    assert built_email.to_email == "registered@example.com"
+    assert built_email.subject == PASSWORD_RESET_SUBJECT
+    assert reset_link in built_email.text
+    assert reset_link in built_email.html
+    assert sent_emails == [built_email]
