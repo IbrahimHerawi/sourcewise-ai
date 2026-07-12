@@ -177,3 +177,24 @@ async def test_user_repository_password_reset_token_validity_and_invalidation(
     assert valid_after_use is None
     assert invalidated_count == 1
     assert expired_after_invalidation is None
+
+
+@pytest.mark.asyncio
+async def test_user_repository_atomically_consumes_password_reset_token(
+    db_session: AsyncSession,
+) -> None:
+    repository = UserRepository(db_session)
+    user = await repository.create_user("consume-reset@example.com", "hash")
+    token = await repository.create_password_reset_token(
+        user.id,
+        "consume-reset-token-hash",
+        datetime.now(UTC) + timedelta(hours=1),
+    )
+
+    consumed = await repository.consume_valid_password_reset_token(token.token_hash)
+    consumed_again = await repository.consume_valid_password_reset_token(token.token_hash)
+
+    assert consumed is not None
+    assert consumed.id == token.id
+    assert consumed.used_at is not None
+    assert consumed_again is None

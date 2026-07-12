@@ -197,6 +197,23 @@ class UserRepository:
         )
         return await self._session.scalar(stmt)
 
+    async def consume_valid_password_reset_token(
+        self,
+        token_hash: str,
+    ) -> PasswordResetToken | None:
+        """Atomically mark a matching unused, unexpired reset token as used."""
+        stmt = (
+            update(PasswordResetToken)
+            .where(
+                PasswordResetToken.token_hash == token_hash,
+                PasswordResetToken.used_at.is_(None),
+                PasswordResetToken.expires_at > func.now(),
+            )
+            .values(used_at=func.now())
+            .returning(PasswordResetToken)
+        )
+        return await self._session.scalar(stmt)
+
     async def mark_password_reset_token_used(
         self,
         token_id: uuid.UUID,

@@ -11,6 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import get_current_verified_user
 from app.api.schemas.auth import (
+    ForgotPasswordRequest,
+    ForgotPasswordResponse,
     LoginRequest,
     LoginResponse,
     MessageResponse,
@@ -18,6 +20,7 @@ from app.api.schemas.auth import (
     RegisterResponse,
     ResendVerificationRequest,
     ResendVerificationResponse,
+    ResetPasswordRequest,
     UserResponse,
     VerifyEmailRequest,
 )
@@ -34,12 +37,18 @@ from app.core.settings import get_settings
 from app.db.models.auth import User
 from app.db.session import get_db_session
 from app.repositories.user_repository import DuplicateUserEmailError, UserRepository
-from app.services.email import build_email_verification_link, send_registration_verification_email
+from app.services.email import (
+    build_email_verification_link,
+    build_password_reset_link,
+    send_password_reset_email,
+    send_registration_verification_email,
+)
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
 _VERIFICATION_TOKEN_RESPONSE_ENVS = {"local", "test", "testing"}
+_PASSWORD_RESET_TOKEN_RESPONSE_ENVS = {"local", "test", "testing"}
 _MIN_PASSWORD_LENGTH = 12
 _MAX_PASSWORD_BYTES = 72
 _REGISTERED_MESSAGE = "Registration successful. Please verify your email."
@@ -49,6 +58,11 @@ _RESEND_VERIFICATION_MESSAGE = (
     "If the account exists and requires verification, a verification email has been sent."
 )
 _INVALID_CREDENTIALS_MESSAGE = "Invalid email or password."
+_FORGOT_PASSWORD_MESSAGE = (
+    "If an eligible account exists, password reset instructions have been sent."
+)
+_PASSWORD_RESET_MESSAGE = "Password reset successfully."
+_INVALID_PASSWORD_RESET_TOKEN_MESSAGE = "Password reset token is invalid or expired."
 _DUMMY_PASSWORD_HASH = "$2b$12$KIXx4aS2YFwpnH3fM3kKie1WdB0hRyPbUXxKkakHfHfHJnRGQfdjK"
 
 
@@ -76,6 +90,10 @@ def _validate_password_strength(password: str) -> None:
 
 def _should_return_verification_token(app_env: str) -> bool:
     return app_env.strip().lower() in _VERIFICATION_TOKEN_RESPONSE_ENVS
+
+
+def _should_return_password_reset_token(app_env: str) -> bool:
+    return app_env.strip().lower() in _PASSWORD_RESET_TOKEN_RESPONSE_ENVS
 
 
 @router.post("/login", response_model=LoginResponse)
@@ -313,3 +331,113 @@ async def resend_verification(
         message=_RESEND_VERIFICATION_MESSAGE,
         verification_token=verification_token,
     )
+
+
+@router.post(
+    "/forgot-password",
+    response_model=ForgotPasswordResponse,
+    response_model_exclude_none=True,
+)
+async def forgot_password(
+    payload: ForgotPasswordRequest,
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> ForgotPasswordResponse:
+    """Create a reset token for an eligible user and return a generic response."""
+    settings = get_settings()
+    repository = UserRepository(session)
+    raw_reset_token: str | None = None
+    user = None
+
+    async with session.begin():
+        user = await repository.get_user_by_email(payload.email)
+        if user is not None and user.is_active and user.is_email_verified:
+            await repository.invalidate_unused_password_reset_tokens(user.id)
+            try:
+                raw_reset_token = generate_secure_token()
+                reset_token_hash = hash_token(raw_reset_token)
+            except SecurityError as exc:
+                raise AppError(
+                    "Password reset could not be prepared.",
+                    code="internal_server_error",
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                ) from exc
+
+            token_expires_at = datetime.now(UTC) + timedelta(
+                minutes=settings.password_reset_token_expire_minutes
+            )
+            await repository.create_password_reset_token(
+                user.id,
+                reset_token_hash,
+                token_expires_at,
+            )
+
+    if user is None or raw_reset_token is None:
+        return ForgotPasswordResponse(message=_FORGOT_PASSWORD_MESSAGE)
+
+    try:
+        reset_link = build_password_reset_link(
+            raw_token=raw_reset_token,
+            settings=settings,
+        )
+        await send_password_reset_email(
+            to_email=user.email,
+            reset_link=reset_link,
+            settings=settings,
+        )
+    except Exception:
+        logger.warning(
+            "Password reset email delivery failed for user_id=%s.",
+            user.id,
+        )
+
+    reset_token = (
+        raw_reset_token
+        if _should_return_password_reset_token(settings.app_env)
+        else None
+    )
+    return ForgotPasswordResponse(
+        message=_FORGOT_PASSWORD_MESSAGE,
+        reset_token=reset_token,
+    )
+
+
+@router.post("/reset-password", response_model=MessageResponse)
+async def reset_password(
+    payload: ResetPasswordRequest,
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> MessageResponse:
+    """Consume one valid reset token and update its user's password atomically."""
+    if not payload.token.strip():
+        raise AppError(
+            _INVALID_PASSWORD_RESET_TOKEN_MESSAGE,
+            code="invalid_password_reset_token",
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+    _validate_password_strength(payload.new_password)
+
+    try:
+        reset_token_hash = hash_token(payload.token)
+        new_password_hash = hash_password(payload.new_password)
+    except SecurityError as exc:
+        raise AppError(
+            "Password reset could not be completed.",
+            code="internal_server_error",
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        ) from exc
+
+    repository = UserRepository(session)
+    async with session.begin():
+        reset_token = await repository.consume_valid_password_reset_token(reset_token_hash)
+        if reset_token is not None:
+            await repository.update_password(reset_token.user_id, new_password_hash)
+            await repository.invalidate_unused_password_reset_tokens(reset_token.user_id)
+
+    if reset_token is None:
+        raise AppError(
+            _INVALID_PASSWORD_RESET_TOKEN_MESSAGE,
+            code="invalid_password_reset_token",
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+    return MessageResponse(message=_PASSWORD_RESET_MESSAGE)

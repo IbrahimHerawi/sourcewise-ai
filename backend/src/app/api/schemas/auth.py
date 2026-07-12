@@ -111,3 +111,32 @@ class ResendVerificationResponse(MessageResponse):
     """Generic resend response with an optional development token."""
 
     verification_token: str | None = None
+
+
+class ForgotPasswordRequest(BaseModel):
+    """Request payload for starting a password reset."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    email: EmailStr
+
+    @field_validator("email", mode="after")
+    @classmethod
+    def normalize_email(cls, value: EmailStr) -> str:
+        """Normalize email addresses using the registration rules."""
+        return str(value).lower()
+
+
+class ForgotPasswordResponse(MessageResponse):
+    """Generic forgot-password response with an optional development token."""
+
+    reset_token: str | None = None
+
+
+class ResetPasswordRequest(BaseModel):
+    """Request payload for completing a password reset."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    token: str
+    new_password: str
