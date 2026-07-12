@@ -9,7 +9,10 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.dependencies import get_current_verified_user
 from app.api.schemas.auth import (
+    LoginRequest,
+    LoginResponse,
     MessageResponse,
     RegisterRequest,
     RegisterResponse,
@@ -21,11 +24,14 @@ from app.api.schemas.auth import (
 from app.core.errors import AppError, ValidationError
 from app.core.security import (
     SecurityError,
+    create_access_token,
     generate_secure_token,
     hash_password,
     hash_token,
+    verify_password,
 )
 from app.core.settings import get_settings
+from app.db.models.auth import User
 from app.db.session import get_db_session
 from app.repositories.user_repository import DuplicateUserEmailError, UserRepository
 from app.services.email import build_email_verification_link, send_registration_verification_email
@@ -42,6 +48,8 @@ _INVALID_VERIFICATION_TOKEN_MESSAGE = "Verification token is invalid or expired.
 _RESEND_VERIFICATION_MESSAGE = (
     "If the account exists and requires verification, a verification email has been sent."
 )
+_INVALID_CREDENTIALS_MESSAGE = "Invalid email or password."
+_DUMMY_PASSWORD_HASH = "$2b$12$KIXx4aS2YFwpnH3fM3kKie1WdB0hRyPbUXxKkakHfHfHJnRGQfdjK"
 
 
 def _validate_password_strength(password: str) -> None:
@@ -68,6 +76,59 @@ def _validate_password_strength(password: str) -> None:
 
 def _should_return_verification_token(app_env: str) -> bool:
     return app_env.strip().lower() in _VERIFICATION_TOKEN_RESPONSE_ENVS
+
+
+@router.post("/login", response_model=LoginResponse)
+async def login(
+    payload: LoginRequest,
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> LoginResponse:
+    """Authenticate one verified, active user and issue an access token."""
+    user = await UserRepository(session).get_user_by_email(payload.email)
+    password_hash = user.password_hash if user is not None else _DUMMY_PASSWORD_HASH
+
+    if not verify_password(payload.password, password_hash) or user is None:
+        raise AppError(
+            _INVALID_CREDENTIALS_MESSAGE,
+            code="invalid_credentials",
+            status_code=status.HTTP_401_UNAUTHORIZED,
+        )
+
+    if not user.is_active:
+        raise AppError(
+            "User account is inactive.",
+            code="account_inactive",
+            status_code=status.HTTP_403_FORBIDDEN,
+        )
+
+    if not user.is_email_verified:
+        raise AppError(
+            "User email is not verified.",
+            code="email_not_verified",
+            status_code=status.HTTP_403_FORBIDDEN,
+        )
+
+    try:
+        access_token = create_access_token(user.id)
+    except SecurityError as exc:
+        raise AppError(
+            "Login could not be completed.",
+            code="internal_server_error",
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        ) from exc
+
+    return LoginResponse(
+        access_token=access_token,
+        user=UserResponse.model_validate(user),
+    )
+
+
+@router.get("/me", response_model=UserResponse)
+async def get_me(
+    current_user: Annotated[User, Depends(get_current_verified_user)],
+) -> UserResponse:
+    """Return the API-safe user represented by a valid bearer token."""
+    return UserResponse.model_validate(current_user)
 
 
 @router.post(

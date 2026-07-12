@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr, StringConstraints, field_validator
@@ -31,6 +31,21 @@ class RegisterRequest(BaseModel):
         return str(value).lower()
 
 
+class LoginRequest(BaseModel):
+    """Credentials for signing in to an existing account."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    email: EmailStr
+    password: str
+
+    @field_validator("email", mode="after")
+    @classmethod
+    def normalize_email(cls, value: EmailStr) -> str:
+        """Normalize email addresses before account lookup."""
+        return str(value).lower()
+
+
 class UserResponse(BaseModel):
     """API-safe user response payload."""
 
@@ -54,6 +69,14 @@ class RegisterResponse(BaseModel):
     user: UserResponse
     message: str
     verification_token: str | None = None
+
+
+class LoginResponse(BaseModel):
+    """Access token and API-safe authenticated user payload."""
+
+    access_token: str
+    token_type: Literal["bearer"] = "bearer"
+    user: UserResponse
 
 
 class VerifyEmailRequest(BaseModel):
