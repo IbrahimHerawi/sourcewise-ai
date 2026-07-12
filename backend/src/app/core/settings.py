@@ -9,6 +9,8 @@ from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _LOCAL_APP_ENVS = {"local", "test", "testing"}
+_EMAIL_SMTP_APP_ENVS = {"local", "docker"}
+_EMAIL_RESEND_APP_ENVS = {"staging", "production"}
 _LOCAL_SECRET_KEY = "sourcewise-local-test-secret-key-do-not-use-in-production"
 _MIN_SECRET_KEY_LENGTH = 32
 
@@ -48,6 +50,15 @@ class Settings(BaseSettings):
     password_reset_token_expire_minutes: int = Field(default=60, gt=0)
     app_base_url: str = "http://localhost:8000"
     frontend_base_url: str = "http://localhost:3000"
+    email_from: str = "Sourcewise <no-reply@notifications.ibrahimherawi.com>"
+    resend_api_key: SecretStr | None = None
+    resend_api_key_file: str | None = None
+    smtp_host: str = "mailpit"
+    smtp_port: int = Field(default=1025, gt=0, le=65535)
+    smtp_use_tls: bool = False
+    smtp_username: str | None = None
+    smtp_password: SecretStr | None = None
+    smtp_password_file: str | None = None
     postgres_host: str = "localhost"
     postgres_port: int = Field(default=5432, gt=0, le=65535)
     postgres_user: str = "postgres"
@@ -108,6 +119,10 @@ class Settings(BaseSettings):
         self.jwt_algorithm = self.jwt_algorithm.strip()
         self.app_base_url = self.app_base_url.strip()
         self.frontend_base_url = self.frontend_base_url.strip()
+        self.email_from = self.email_from.strip()
+        self.smtp_host = self.smtp_host.strip()
+        smtp_username = self.smtp_username.strip() if self.smtp_username else ""
+        self.smtp_username = smtp_username or None
 
         if not self.app_env:
             raise ValueError("APP_ENV must not be empty.")
@@ -117,8 +132,11 @@ class Settings(BaseSettings):
             raise ValueError("APP_BASE_URL must not be empty.")
         if not self.frontend_base_url:
             raise ValueError("FRONTEND_BASE_URL must not be empty.")
+        if not self.email_from:
+            raise ValueError("EMAIL_FROM must not be empty.")
 
-        is_local_env = self.app_env.lower() in _LOCAL_APP_ENVS
+        normalized_app_env = self.app_env.lower()
+        is_local_env = normalized_app_env in _LOCAL_APP_ENVS
         self.secret_key = self._resolve_secret(
             inline_secret=self.secret_key,
             file_path=self.secret_key_file,
@@ -136,8 +154,7 @@ class Settings(BaseSettings):
             secret_key_value = self.secret_key.get_secret_value()
             if secret_key_value == _LOCAL_SECRET_KEY:
                 raise ValueError(
-                    "SECRET_KEY must not use the local/test default when APP_ENV is not "
-                    "local/test."
+                    "SECRET_KEY must not use the local/test default when APP_ENV is not local/test."
                 )
             if len(secret_key_value) < _MIN_SECRET_KEY_LENGTH:
                 raise ValueError(
@@ -161,6 +178,28 @@ class Settings(BaseSettings):
             normalized = self.openai_api_key.get_secret_value().strip()
             self.openai_api_key = SecretStr(normalized) if normalized else None
 
+        if normalized_app_env in _EMAIL_RESEND_APP_ENVS:
+            self.resend_api_key = self._resolve_secret(
+                inline_secret=self.resend_api_key,
+                file_path=self.resend_api_key_file,
+                inline_env_name="RESEND_API_KEY",
+                file_env_name="RESEND_API_KEY_FILE",
+            )
+        elif self.resend_api_key is not None:
+            normalized = self.resend_api_key.get_secret_value().strip()
+            self.resend_api_key = SecretStr(normalized) if normalized else None
+
+        if normalized_app_env in _EMAIL_SMTP_APP_ENVS:
+            self.smtp_password = self._resolve_secret(
+                inline_secret=self.smtp_password,
+                file_path=self.smtp_password_file,
+                inline_env_name="SMTP_PASSWORD",
+                file_env_name="SMTP_PASSWORD_FILE",
+            )
+        elif self.smtp_password is not None:
+            normalized = self.smtp_password.get_secret_value().strip()
+            self.smtp_password = SecretStr(normalized) if normalized else None
+
         self.postgres_host = self.postgres_host.strip()
         self.postgres_user = self.postgres_user.strip()
         self.postgres_db = self.postgres_db.strip()
@@ -173,6 +212,14 @@ class Settings(BaseSettings):
             raise ValueError("POSTGRES_USER must be set.")
         if not self.postgres_db:
             raise ValueError("POSTGRES_DB must be set.")
+
+        if normalized_app_env in _EMAIL_RESEND_APP_ENVS and self.resend_api_key is None:
+            raise ValueError(
+                "RESEND_API_KEY or RESEND_API_KEY_FILE must be set when APP_ENV is "
+                "staging or production."
+            )
+        if normalized_app_env in _EMAIL_SMTP_APP_ENVS and not self.smtp_host:
+            raise ValueError("SMTP_HOST must be set when APP_ENV is local or docker.")
 
         if self.ai_provider == "openai":
             if not self.openai_api_key:

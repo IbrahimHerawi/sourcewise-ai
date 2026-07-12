@@ -30,12 +30,8 @@ services:
       - path: ./.env
         required: true
     environment:
-      APP_ENV: docker
       POSTGRES_HOST: db
       POSTGRES_PORT: "5432"
-      SECRET_KEY_FILE: /app-secrets/secret_key.txt
-      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
-      OPENAI_API_KEY_FILE: /app-secrets/openai_api_key.txt
     secrets:
       - postgres_password
     volumes:
@@ -54,6 +50,13 @@ services:
       retries: 30
       start_period: 10s
 
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - "8025:8025"
+      - "1025:1025"
+    restart: unless-stopped
+
   api:
     build:
       context: ./backend
@@ -65,17 +68,15 @@ services:
         condition: service_completed_successfully
       ollama:
         condition: service_healthy
+      mailpit:
+        condition: service_started
     env_file:
       - path: ./.env
         required: true
     environment:
-      APP_ENV: docker
       POSTGRES_HOST: db
       POSTGRES_PORT: "5432"
       OLLAMA_OPENAI_BASE_URL: http://ollama:11434/v1
-      SECRET_KEY_FILE: /app-secrets/secret_key.txt
-      OPENAI_API_KEY_FILE: /app-secrets/openai_api_key.txt
-      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
       UPLOAD_ROOT_DIR: /data/uploads
     secrets:
       - postgres_password

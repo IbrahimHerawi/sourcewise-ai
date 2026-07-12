@@ -19,10 +19,11 @@ from app.core.security import (
 from app.core.settings import get_settings
 from app.db.session import get_db_session
 from app.repositories.user_repository import DuplicateUserEmailError, UserRepository
+from app.services.email import build_email_verification_link, send_registration_verification_email
 
 router = APIRouter()
 
-_LOCAL_OR_TEST_ENVS = {"local", "test", "testing", "docker"}
+_VERIFICATION_TOKEN_RESPONSE_ENVS = {"local", "test", "testing"}
 _MIN_PASSWORD_LENGTH = 12
 _MAX_PASSWORD_BYTES = 72
 _REGISTERED_MESSAGE = "Registration successful. Please verify your email."
@@ -51,7 +52,7 @@ def _validate_password_strength(password: str) -> None:
 
 
 def _should_return_verification_token(app_env: str) -> bool:
-    return app_env.strip().lower() in _LOCAL_OR_TEST_ENVS
+    return app_env.strip().lower() in _VERIFICATION_TOKEN_RESPONSE_ENVS
 
 
 @router.post(
@@ -70,8 +71,6 @@ async def register(
 
     try:
         password_hash = hash_password(payload.password)
-        raw_verification_token = generate_secure_token()
-        verification_token_hash = hash_token(raw_verification_token)
     except SecurityError as exc:
         raise AppError(
             "Registration could not be completed.",
@@ -79,9 +78,6 @@ async def register(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         ) from exc
 
-    token_expires_at = datetime.now(UTC) + timedelta(
-        minutes=settings.email_verification_token_expire_minutes
-    )
     repository = UserRepository(session)
 
     try:
@@ -94,6 +90,19 @@ async def register(
                 is_email_verified=False,
                 is_active=True,
             )
+            try:
+                raw_verification_token = generate_secure_token()
+                verification_token_hash = hash_token(raw_verification_token)
+            except SecurityError as exc:
+                raise AppError(
+                    "Registration could not be completed.",
+                    code="internal_server_error",
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                ) from exc
+
+            token_expires_at = datetime.now(UTC) + timedelta(
+                minutes=settings.email_verification_token_expire_minutes
+            )
             await repository.create_email_verification_token(
                 user.id,
                 verification_token_hash,
@@ -105,6 +114,16 @@ async def register(
             code="conflict",
             status_code=status.HTTP_409_CONFLICT,
         ) from exc
+
+    verification_link = build_email_verification_link(
+        raw_token=raw_verification_token,
+        settings=settings,
+    )
+    await send_registration_verification_email(
+        to_email=user.email,
+        verification_link=verification_link,
+        settings=settings,
+    )
 
     verification_token = (
         raw_verification_token if _should_return_verification_token(settings.app_env) else None

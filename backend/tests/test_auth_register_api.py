@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncGenerator, Generator
 from datetime import UTC, datetime
+from urllib.parse import parse_qs, urlparse
 from uuid import UUID
 
 import httpx
@@ -10,6 +11,7 @@ import pytest_asyncio
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.errors import ExternalServiceError
 from app.core.security import hash_token, verify_password
 from app.core.settings import get_settings
 from app.db.models.auth import EmailVerificationToken
@@ -23,6 +25,13 @@ def register_settings(monkeypatch: pytest.MonkeyPatch) -> Generator[None]:
     monkeypatch.setenv("APP_ENV", "test")
     monkeypatch.setenv("SECRET_KEY", "test-secret-key-with-enough-length")
     monkeypatch.setenv("EMAIL_VERIFICATION_TOKEN_EXPIRE_MINUTES", "60")
+    for env_var in [
+        "RESEND_API_KEY",
+        "RESEND_API_KEY_FILE",
+        "SMTP_PASSWORD",
+        "SMTP_PASSWORD_FILE",
+    ]:
+        monkeypatch.delenv(env_var, raising=False)
     get_settings.cache_clear()
 
     yield
@@ -222,7 +231,18 @@ async def test_register_rejects_weak_or_too_short_password(
 @pytest.mark.asyncio
 async def test_register_rejects_duplicate_email(
     auth_client: httpx.AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    sent_emails: list[dict[str, object]] = []
+
+    async def fake_send_registration_verification_email(**kwargs: object) -> None:
+        sent_emails.append(kwargs)
+
+    monkeypatch.setattr(
+        "app.api.v1.endpoints.auth.send_registration_verification_email",
+        fake_send_registration_verification_email,
+    )
+
     first_response = await _register(
         auth_client,
         email="duplicate@example.com",
@@ -240,24 +260,129 @@ async def test_register_rejects_duplicate_email(
             "message": "A user with this email already exists.",
         }
     }
+    assert len(sent_emails) == 1
 
 
 @pytest.mark.asyncio
-async def test_register_omits_verification_token_outside_local_or_test_env(
+async def test_register_sends_email_with_raw_token_only_inside_verification_link(
     auth_client: httpx.AsyncClient,
+    db_session: AsyncSession,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("APP_ENV", "production")
-    monkeypatch.setenv("SECRET_KEY", "production-secret-key-with-enough-length")
+    sent_emails: list[dict[str, object]] = []
+
+    async def fake_send_registration_verification_email(**kwargs: object) -> None:
+        sent_emails.append(kwargs)
+
+    monkeypatch.setenv("APP_ENV", "docker")
+    monkeypatch.setenv("SECRET_KEY", "docker-secret-key-with-enough-length")
+    monkeypatch.setenv("FRONTEND_BASE_URL", "https://frontend.example.test")
+    monkeypatch.setattr(
+        "app.api.v1.endpoints.auth.send_registration_verification_email",
+        fake_send_registration_verification_email,
+    )
     get_settings.cache_clear()
 
     response = await _register(
         auth_client,
-        email="production-token@example.com",
+        email="email-send@example.com",
     )
 
     assert response.status_code == 200
     assert "verification_token" not in response.json()
+    assert len(sent_emails) == 1
+    sent_email = sent_emails[0]
+    assert sent_email["to_email"] == "email-send@example.com"
+
+    verification_link = str(sent_email["verification_link"])
+    parsed_link = urlparse(verification_link)
+    raw_token = parse_qs(parsed_link.query)["token"][0]
+    assert verification_link.startswith("https://frontend.example.test/verify-email?token=")
+    assert raw_token
+    assert raw_token not in response.text
+
+    user = await _get_user(db_session, "email-send@example.com")
+    assert user is not None
+    token_row = await db_session.scalar(
+        select(EmailVerificationToken).where(EmailVerificationToken.user_id == user.id)
+    )
+    assert token_row is not None
+    assert token_row.token_hash == hash_token(raw_token)
+    assert token_row.token_hash != raw_token
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("app_env", ["docker", "staging", "production"])
+async def test_register_omits_verification_token_in_deployed_envs(
+    auth_client: httpx.AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+    app_env: str,
+) -> None:
+    async def fake_send_registration_verification_email(**_: object) -> None:
+        return None
+
+    monkeypatch.setenv("APP_ENV", app_env)
+    monkeypatch.setenv("SECRET_KEY", f"{app_env}-secret-key-with-enough-length")
+    if app_env in {"staging", "production"}:
+        monkeypatch.setenv("RESEND_API_KEY", f"re-{app_env}-key")
+    monkeypatch.setattr(
+        "app.api.v1.endpoints.auth.send_registration_verification_email",
+        fake_send_registration_verification_email,
+    )
+    get_settings.cache_clear()
+
+    response = await _register(
+        auth_client,
+        email=f"{app_env}-token@example.com",
+    )
+
+    assert response.status_code == 200
+    assert "verification_token" not in response.json()
+
+
+@pytest.mark.asyncio
+async def test_register_email_failure_returns_clean_error_without_leaking_secrets(
+    auth_client: httpx.AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    async def fail_send_registration_verification_email(**_: object) -> None:
+        raise ExternalServiceError("Email delivery failed.")
+
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("SECRET_KEY", "production-secret-key-with-enough-length")
+    monkeypatch.setenv("RESEND_API_KEY", "re-api-key-secret")
+    monkeypatch.setattr(
+        "app.api.v1.endpoints.auth.generate_secure_token", lambda: "raw-token-secret"
+    )
+    monkeypatch.setattr(
+        "app.api.v1.endpoints.auth.send_registration_verification_email",
+        fail_send_registration_verification_email,
+    )
+    caplog.set_level("INFO")
+    get_settings.cache_clear()
+
+    response = await _register(
+        auth_client,
+        email="email-failure@example.com",
+        password="StrongPassword123!",
+    )
+
+    assert response.status_code == 502
+    assert response.json() == {
+        "error": {
+            "code": "external_service_error",
+            "message": "Email delivery failed.",
+        }
+    }
+    for sensitive_value in [
+        "raw-token-secret",
+        "StrongPassword123!",
+        "token_hash",
+        "re-api-key-secret",
+    ]:
+        assert sensitive_value not in response.text
+        assert sensitive_value not in caplog.text
 
 
 def test_auth_register_route_exists_only_under_api_v1_auth() -> None:
