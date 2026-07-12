@@ -1,5 +1,11 @@
 """API request and response schemas."""
 
+from app.api.schemas.auth import (
+    AuthUserResponse,
+    RegisterRequest,
+    RegisterResponse,
+    UserResponse,
+)
 from app.api.schemas.documents import (
     DocumentDetailsResponse,
     DocumentSummaryResponse,
@@ -18,6 +24,7 @@ from app.api.schemas.questions import (
 )
 
 __all__ = [
+    "AuthUserResponse",
     "DocumentDetailsResponse",
     "DocumentSummaryResponse",
     "DocumentUploadRequest",
@@ -30,4 +37,7 @@ __all__ = [
     "QuestionAskResponse",
     "QuestionHistoryItemResponse",
     "QuestionSourceResponse",
+    "RegisterRequest",
+    "RegisterResponse",
+    "UserResponse",
 ]
