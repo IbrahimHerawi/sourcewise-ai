@@ -25,7 +25,13 @@ htmlcov/
 node_modules/
 .next/
 out/
-npm-debug.log*
+.pnpm-store/
+.eslintcache
+*.tsbuildinfo
+
+# Logs
+*.log
+*.log.*
 
 # Environment files
 .env
