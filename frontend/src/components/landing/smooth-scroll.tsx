@@ -59,8 +59,6 @@ export function SmoothScroll({ children }: { children: React.ReactNode }) {
       // decelerates naturally toward the target — never stops abruptly.
       lerp: 0.18,
       smoothWheel: true,
-      // Slightly tamer touch scrolling for mobile.
-      smoothTouch: false,
       // A touch more distance per wheel notch so less physical scrolling is
       // needed to move the content.
       wheelMultiplier: 1.1,
@@ -84,4 +82,3 @@ export function SmoothScroll({ children }: { children: React.ReactNode }) {
 
   return <>{children}</>;
 }
-
