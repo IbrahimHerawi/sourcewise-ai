@@ -14,6 +14,8 @@ from app.db.base import Base
 
 if TYPE_CHECKING:
     from app.db.models.auth import User
+    from app.db.models.documents import Document
+    from app.db.models.questions import Question
 
 
 class Collection(Base):
@@ -42,3 +44,11 @@ class Collection(Base):
     )
 
     user: Mapped[User] = relationship(back_populates="collections")
+    documents: Mapped[list[Document]] = relationship(
+        back_populates="collection",
+        passive_deletes=True,
+    )
+    questions: Mapped[list[Question]] = relationship(
+        back_populates="collection",
+        passive_deletes=True,
+    )

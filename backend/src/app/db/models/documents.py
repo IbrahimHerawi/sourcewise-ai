@@ -7,13 +7,15 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, Enum, Integer, String, Text, func
+from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
 
 if TYPE_CHECKING:
+    from app.db.models.auth import User
+    from app.db.models.collections import Collection
     from app.db.models.document_chunks import DocumentChunk
     from app.db.models.ingestion_jobs import IngestionJob
 
@@ -33,6 +35,18 @@ class Document(Base):
     __tablename__ = "documents"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    collection_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("collections.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     filename: Mapped[str] = mapped_column(String(length=512), nullable=False)
     original_extension: Mapped[str] = mapped_column(String(length=16), nullable=False)
     content_type: Mapped[str] = mapped_column(String(length=255), nullable=False)
@@ -56,6 +70,8 @@ class Document(Base):
         onupdate=func.now(),
     )
 
+    user: Mapped[User] = relationship(back_populates="documents")
+    collection: Mapped[Collection | None] = relationship(back_populates="documents")
     chunks: Mapped[list[DocumentChunk]] = relationship(
         back_populates="document",
         cascade="all, delete-orphan",
