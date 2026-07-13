@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncGenerator, Sequence
 from dataclasses import dataclass
+from io import BytesIO
 from pathlib import Path
 from unittest.mock import AsyncMock
 from uuid import UUID, uuid4
@@ -9,10 +10,13 @@ from uuid import UUID, uuid4
 import httpx
 import pytest
 import pytest_asyncio
+from fastapi import UploadFile
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import DeclarativeBase
 
+from app.api.schemas.documents import DocumentUploadRequest
+from app.api.v1.endpoints import documents as documents_endpoint
 from app.core.security import create_access_token
 from app.core.settings import get_settings
 from app.db.models.auth import User
@@ -22,6 +26,7 @@ from app.db.session import get_db_session
 from app.main import app
 from app.repositories.document_repository import DocumentRepository
 from app.repositories.user_repository import UserRepository
+from app.utils.files import UploadValidationError
 from app.workers.ingestion import IngestionManager
 
 SAFE_DOCUMENT_FIELDS = {
@@ -118,7 +123,7 @@ async def _upload_text_file(
     return await client.post(
         "/api/v1/documents/upload",
         headers=headers,
-        files={"file": (filename, content.encode("utf-8"), "text/plain")},
+        files={"file": (filename, content.encode("utf-8"), "application/pdf")},
     )
 
 
@@ -159,7 +164,9 @@ async def test_upload_document_persists_document_and_pending_job(
     assert document.user_id == api_context.current_user.id
     assert document.filename == "notes.txt"
     assert document.original_extension == ".txt"
+    assert document.content_type == "text/plain"
     assert document.size_bytes == len(b"hello from the upload api test")
+    assert document.extracted_text is None
     assert document.status == DocumentStatus.PENDING
     assert len(jobs) == 1
     assert jobs[0].status == IngestionJobStatus.PENDING
@@ -256,6 +263,38 @@ async def test_upload_document_rejects_file_over_max_upload_size(
     assert await _count_rows(db_session, Document) == 0
     assert await _count_rows(db_session, IngestionJob) == 0
     api_context.enqueue_mock.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_upload_document_always_closes_upload_file_after_validation_failure(
+    api_context: ApiTestContext,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    upload = UploadFile(file=BytesIO(b"content"), filename="invalid.exe")
+    upload.close = AsyncMock(wraps=upload.close)
+
+    async def _override_upload_request() -> DocumentUploadRequest:
+        return DocumentUploadRequest(file=upload)
+
+    save_mock = AsyncMock(
+        side_effect=UploadValidationError("Unsupported file extension."),
+    )
+    monkeypatch.setattr(documents_endpoint, "save_validated_upload", save_mock)
+    app.dependency_overrides[documents_endpoint._build_upload_request] = (
+        _override_upload_request
+    )
+
+    try:
+        response = await api_context.client.post(
+            "/api/v1/documents/upload",
+            headers=api_context.auth_headers,
+        )
+    finally:
+        app.dependency_overrides.pop(documents_endpoint._build_upload_request, None)
+
+    assert response.status_code == 400
+    save_mock.assert_awaited_once()
+    upload.close.assert_awaited_once_with()
 
 
 @pytest.mark.asyncio

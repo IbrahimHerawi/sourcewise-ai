@@ -32,13 +32,7 @@ from app.db.session import get_db_session
 from app.repositories.collection_repository import CollectionRepository
 from app.repositories.document_repository import DocumentRepository
 from app.repositories.ingestion_job_repository import IngestionJobRepository
-from app.utils.files import (
-    TextExtractionError,
-    UploadValidationError,
-    extract_text,
-    save_upload_to_disk,
-    validate_upload,
-)
+from app.utils.files import UploadValidationError, save_validated_upload
 from app.workers.ingestion import IngestionManager
 
 logger = logging.getLogger(__name__)
@@ -68,7 +62,7 @@ def _get_ingestion_manager(request: Request) -> IngestionManager:
     return ingestion_manager
 
 
-def _upload_exception(error: UploadValidationError | TextExtractionError) -> ValidationError:
+def _upload_exception(error: UploadValidationError) -> ValidationError:
     message = str(error)
     if "MAX_UPLOAD_MB" in message:
         return ValidationError(message, status_code=status.HTTP_413_CONTENT_TOO_LARGE)
@@ -132,39 +126,19 @@ async def upload_document(
 ) -> DocumentUploadResponse:
     """Upload one document, persist metadata, create a pending job, and enqueue ingestion."""
     upload_file = payload.file
-    filename = Path(upload_file.filename or "").name.strip()
-    if not filename:
-        raise ValidationError(
-            "Filename is required.",
-            status_code=status.HTTP_400_BAD_REQUEST,
-        )
-
-    file_bytes = await upload_file.read()
-    try:
-        extension = validate_upload(
-            filename=filename,
-            content_type=upload_file.content_type,
-            size_bytes=len(file_bytes),
-        )
-        extracted_text = extract_text(extension, file_bytes)
-    except (UploadValidationError, TextExtractionError) as exc:
-        raise _upload_exception(exc) from exc
-
     document_id = uuid.uuid4()
     try:
-        storage_path = save_upload_to_disk(document_id, filename, file_bytes)
-    except UploadValidationError as exc:
-        raise ValidationError(
-            str(exc),
-            status_code=status.HTTP_400_BAD_REQUEST,
-        ) from exc
-    except OSError as exc:
-        logger.exception("Failed to persist uploaded file for document %s.", document_id)
-        raise ExternalServiceError(
-            "Failed to persist uploaded file.",
-            code="file_persistence_error",
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        ) from exc
+        try:
+            stored_upload = await save_validated_upload(upload_file, document_id)
+        except UploadValidationError as exc:
+            raise _upload_exception(exc) from exc
+        except OSError as exc:
+            logger.exception("Failed to persist uploaded file for document %s.", document_id)
+            raise ExternalServiceError(
+                "Failed to persist uploaded file.",
+                code="file_persistence_error",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            ) from exc
     finally:
         await upload_file.close()
 
@@ -175,12 +149,12 @@ async def upload_document(
         document = await document_repo.create_document(
             current_user.id,
             id=document_id,
-            filename=filename,
-            original_extension=extension,
-            content_type=upload_file.content_type or "application/octet-stream",
-            size_bytes=len(file_bytes),
-            storage_path=storage_path,
-            extracted_text=extracted_text,
+            filename=stored_upload.filename,
+            original_extension=stored_upload.original_extension,
+            content_type=stored_upload.content_type,
+            size_bytes=stored_upload.size_bytes,
+            storage_path=stored_upload.storage_path,
+            extracted_text=None,
             status=DocumentStatus.PENDING,
         )
         job = await job_repo.create_job(
@@ -190,7 +164,7 @@ async def upload_document(
         await session.commit()
     except Exception as exc:
         await session.rollback()
-        _cleanup_saved_file(storage_path)
+        _cleanup_saved_file(stored_upload.storage_path)
         logger.exception("Failed to persist document and ingestion job for %s.", document_id)
         raise AppError(
             "Failed to persist document metadata.",
