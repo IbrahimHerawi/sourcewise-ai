@@ -28,16 +28,20 @@ class DocumentUploadResponse(BaseModel):
 
 
 class DocumentSummaryResponse(BaseModel):
-    """Compact document metadata for list responses."""
+    """Safe document metadata for list responses."""
 
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
+    collection_id: UUID | None
     filename: str
     original_extension: str
+    content_type: str
     size_bytes: int
     status: DocumentStatus
+    error_message: str | None
     created_at: datetime
+    updated_at: datetime
 
 
 class PaginatedDocumentListResponse(BaseModel):
@@ -49,13 +53,5 @@ class PaginatedDocumentListResponse(BaseModel):
     total: int
 
 
-class DocumentDetailsResponse(BaseModel):
-    """Document metadata response without full extracted text payload."""
-
-    id: UUID
-    filename: str
-    status: DocumentStatus
-    created_at: datetime
-    updated_at: datetime
-    error_message: str | None
-    text_length: int
+class DocumentDetailsResponse(DocumentSummaryResponse):
+    """Safe metadata for one document without stored content or internals."""

@@ -10,6 +10,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, File, Query, Request, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.dependencies import get_current_verified_user
 from app.api.schemas.documents import (
     DocumentDetailsResponse,
     DocumentSummaryResponse,
@@ -24,9 +25,11 @@ from app.core.errors import (
     NotFoundError,
     ValidationError,
 )
+from app.db.models.auth import User
 from app.db.models.documents import DocumentStatus
 from app.db.models.ingestion_jobs import IngestionJobStatus
 from app.db.session import get_db_session
+from app.repositories.collection_repository import CollectionRepository
 from app.repositories.document_repository import DocumentRepository
 from app.repositories.ingestion_job_repository import IngestionJobRepository
 from app.utils.files import (
@@ -86,13 +89,31 @@ def _cleanup_saved_file(storage_path: str) -> None:
 @router.get("", response_model=PaginatedDocumentListResponse)
 async def list_documents(
     session: Annotated[AsyncSession, Depends(get_db_session)],
+    current_user: Annotated[User, Depends(get_current_verified_user)],
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
     offset: Annotated[int, Query(ge=0)] = 0,
+    collection_id: Annotated[uuid.UUID | None, Query()] = None,
 ) -> PaginatedDocumentListResponse:
     """Return paginated document summaries ordered from newest to oldest."""
+    if collection_id is not None:
+        collection = await CollectionRepository(session).get_collection(
+            current_user.id,
+            collection_id,
+        )
+        if collection is None:
+            raise NotFoundError("Collection not found.")
+
     document_repo = DocumentRepository(session)
-    items = await document_repo.list_documents(limit=limit, offset=offset)
-    total = await document_repo.count_documents()
+    items = await document_repo.list_documents(
+        current_user.id,
+        limit=limit,
+        offset=offset,
+        collection_id=collection_id,
+    )
+    total = await document_repo.count_documents(
+        current_user.id,
+        collection_id=collection_id,
+    )
 
     return PaginatedDocumentListResponse(
         items=[DocumentSummaryResponse.model_validate(document) for document in items],
@@ -104,6 +125,7 @@ async def list_documents(
 
 @router.post("/upload", response_model=DocumentUploadResponse)
 async def upload_document(
+    current_user: Annotated[User, Depends(get_current_verified_user)],
     payload: Annotated[DocumentUploadRequest, Depends(_build_upload_request)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
     ingestion_manager: Annotated[IngestionManager, Depends(_get_ingestion_manager)],
@@ -150,22 +172,24 @@ async def upload_document(
     job_repo = IngestionJobRepository(session)
 
     try:
-        async with session.begin():
-            document = await document_repo.create_document(
-                id=document_id,
-                filename=filename,
-                original_extension=extension,
-                content_type=upload_file.content_type or "application/octet-stream",
-                size_bytes=len(file_bytes),
-                storage_path=storage_path,
-                extracted_text=extracted_text,
-                status=DocumentStatus.PENDING,
-            )
-            job = await job_repo.create_job(
-                document_id=document.id,
-                status=IngestionJobStatus.PENDING,
-            )
+        document = await document_repo.create_document(
+            current_user.id,
+            id=document_id,
+            filename=filename,
+            original_extension=extension,
+            content_type=upload_file.content_type or "application/octet-stream",
+            size_bytes=len(file_bytes),
+            storage_path=storage_path,
+            extracted_text=extracted_text,
+            status=DocumentStatus.PENDING,
+        )
+        job = await job_repo.create_job(
+            document_id=document.id,
+            status=IngestionJobStatus.PENDING,
+        )
+        await session.commit()
     except Exception as exc:
+        await session.rollback()
         _cleanup_saved_file(storage_path)
         logger.exception("Failed to persist document and ingestion job for %s.", document_id)
         raise AppError(
@@ -190,23 +214,17 @@ async def upload_document(
         status=document.status,
     )
 
+
 @router.get("/{document_id:uuid}", response_model=DocumentDetailsResponse)
 async def get_document(
     document_id: uuid.UUID,
     session: Annotated[AsyncSession, Depends(get_db_session)],
+    current_user: Annotated[User, Depends(get_current_verified_user)],
 ) -> DocumentDetailsResponse:
     """Return one document metadata row."""
     document_repo = DocumentRepository(session)
-    document = await document_repo.get_document(document_id)
+    document = await document_repo.get_document(current_user.id, document_id)
     if document is None:
         raise NotFoundError("Document not found.")
 
-    return DocumentDetailsResponse(
-        id=document.id,
-        filename=document.filename,
-        status=document.status,
-        created_at=document.created_at,
-        updated_at=document.updated_at,
-        error_message=document.error_message,
-        text_length=len(document.extracted_text),
-    )
+    return DocumentDetailsResponse.model_validate(document)
