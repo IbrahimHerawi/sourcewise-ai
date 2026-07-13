@@ -156,6 +156,26 @@ async def test_document_repository_crud_create_get_update_status(db_session: Asy
 
 
 @pytest.mark.asyncio
+async def test_document_repository_creates_pending_document_without_extracted_text(
+    db_session: AsyncSession,
+) -> None:
+    repository = DocumentRepository(db_session)
+    owner = await _create_user(db_session, "pending-document-owner")
+
+    created = await repository.create_document(
+        owner.id,
+        filename="pending.txt",
+        original_extension=".txt",
+        content_type="text/plain",
+        size_bytes=42,
+        storage_path="/tmp/pending.txt",
+    )
+
+    assert created.status == DocumentStatus.PENDING
+    assert created.extracted_text is None
+
+
+@pytest.mark.asyncio
 async def test_document_repository_list_documents_orders_newest_first_and_counts_total(
     db_session: AsyncSession,
 ) -> None:

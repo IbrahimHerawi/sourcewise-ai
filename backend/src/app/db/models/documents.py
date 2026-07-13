@@ -52,7 +52,7 @@ class Document(Base):
     content_type: Mapped[str] = mapped_column(String(length=255), nullable=False)
     size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
     storage_path: Mapped[str] = mapped_column(String(length=1024), nullable=False)
-    extracted_text: Mapped[str] = mapped_column(Text, nullable=False)
+    extracted_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[DocumentStatus] = mapped_column(
         Enum(DocumentStatus, name="document_status", native_enum=True),
         nullable=False,

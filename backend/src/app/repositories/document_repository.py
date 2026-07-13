@@ -29,7 +29,7 @@ class DocumentRepository:
         content_type: str,
         size_bytes: int,
         storage_path: str,
-        extracted_text: str,
+        extracted_text: str | None = None,
         status: DocumentStatus = DocumentStatus.PENDING,
         error_message: str | None = None,
     ) -> Document:
