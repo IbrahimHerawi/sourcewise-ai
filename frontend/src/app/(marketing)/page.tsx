@@ -1,13 +1,13 @@
 "use client";
 
 import * as React from "react";
-import { Navbar } from "@/components/landing/navbar";
-import { Hero } from "@/components/landing/hero";
-import { HowItWorks } from "@/components/landing/how-it-works";
-import { Features } from "@/components/landing/features";
-import { Footer } from "@/components/landing/footer";
-import { AuthDialog } from "@/components/landing/auth-dialog";
-import { SmoothScroll } from "@/components/landing/smooth-scroll";
+import { Navbar } from "@/features/landing/components/navbar";
+import { Hero } from "@/features/landing/components/hero";
+import { HowItWorks } from "@/features/landing/components/how-it-works";
+import { Features } from "@/features/landing/components/features";
+import { Footer } from "@/features/landing/components/footer";
+import { AuthDialog } from "@/features/landing/components/auth-dialog";
+import { SmoothScroll } from "@/features/landing/components/smooth-scroll";
 
 export default function Home() {
   const [authOpen, setAuthOpen] = React.useState(false);
