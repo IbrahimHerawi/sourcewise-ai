@@ -8,6 +8,12 @@ from app.api.schemas.auth import (
     RegisterResponse,
     UserResponse,
 )
+from app.api.schemas.collections import (
+    CollectionCreateRequest,
+    CollectionResponse,
+    CollectionUpdateRequest,
+    PaginatedCollectionListResponse,
+)
 from app.api.schemas.documents import (
     DocumentDetailsResponse,
     DocumentSummaryResponse,
@@ -27,12 +33,16 @@ from app.api.schemas.questions import (
 
 __all__ = [
     "AuthUserResponse",
+    "CollectionCreateRequest",
+    "CollectionResponse",
+    "CollectionUpdateRequest",
     "DocumentDetailsResponse",
     "DocumentSummaryResponse",
     "DocumentUploadRequest",
     "DocumentUploadResponse",
     "LoginRequest",
     "LoginResponse",
+    "PaginatedCollectionListResponse",
     "PaginatedDocumentListResponse",
     "PaginatedQuestionHistoryResponse",
     "QuestionAnswerRequest",
