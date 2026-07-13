@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, ForeignKey, String, Text, UniqueConstraint, func
+from sqlalchemy import DateTime, ForeignKey, Index, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -22,7 +22,6 @@ class Collection(Base):
     """A user-owned collection of source material."""
 
     __tablename__ = "collections"
-    __table_args__ = (UniqueConstraint("user_id", "name"),)
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(
@@ -32,6 +31,15 @@ class Collection(Base):
         index=True,
     )
     name: Mapped[str] = mapped_column(String(length=255), nullable=False)
+    __table_args__ = (
+        Index(
+            "uq_collections_user_lower_name",
+            "user_id",
+            func.lower(name),
+            unique=True,
+        ),
+    )
+
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
