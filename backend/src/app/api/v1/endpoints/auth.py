@@ -209,15 +209,21 @@ async def register(
             status_code=status.HTTP_409_CONFLICT,
         ) from exc
 
-    verification_link = build_email_verification_link(
-        raw_token=raw_verification_token,
-        settings=settings,
-    )
-    await send_registration_verification_email(
-        to_email=user.email,
-        verification_link=verification_link,
-        settings=settings,
-    )
+    try:
+        verification_link = build_email_verification_link(
+            raw_token=raw_verification_token,
+            settings=settings,
+        )
+        await send_registration_verification_email(
+            to_email=user.email,
+            verification_link=verification_link,
+            settings=settings,
+        )
+    except Exception:
+        logger.warning(
+            "Registration verification email delivery failed for user_id=%s.",
+            user.id,
+        )
 
     verification_token = (
         raw_verification_token if _should_return_verification_token(settings.app_env) else None
