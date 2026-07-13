@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from collections.abc import AsyncGenerator, Sequence
+from collections.abc import AsyncGenerator
 from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock, call
 from uuid import UUID, uuid4
 
 import httpx
@@ -24,7 +24,9 @@ from app.db.models.documents import Document, DocumentStatus
 from app.db.models.ingestion_jobs import IngestionJob, IngestionJobStatus
 from app.db.session import get_db_session
 from app.main import app
+from app.repositories.collection_repository import CollectionRepository
 from app.repositories.document_repository import DocumentRepository
+from app.repositories.ingestion_job_repository import IngestionJobRepository
 from app.repositories.user_repository import UserRepository
 from app.utils.files import UploadValidationError
 from app.workers.ingestion import IngestionManager
@@ -113,17 +115,40 @@ async def api_context(
     app.dependency_overrides.update(original_overrides)
 
 
+async def _upload_text_files(
+    client: httpx.AsyncClient,
+    *,
+    headers: dict[str, str],
+    uploads: list[tuple[str, bytes]],
+    collection_id: UUID | None = None,
+) -> httpx.Response:
+    data = {}
+    if collection_id is not None:
+        data["collection_id"] = str(collection_id)
+    return await client.post(
+        "/api/v1/documents/upload",
+        headers=headers,
+        data=data,
+        files=[
+            ("files", (filename, content, "application/octet-stream"))
+            for filename, content in uploads
+        ],
+    )
+
+
 async def _upload_text_file(
     client: httpx.AsyncClient,
     *,
     headers: dict[str, str],
     filename: str,
     content: str,
+    collection_id: UUID | None = None,
 ) -> httpx.Response:
-    return await client.post(
-        "/api/v1/documents/upload",
+    return await _upload_text_files(
+        client,
         headers=headers,
-        files={"file": (filename, content.encode("utf-8"), "application/pdf")},
+        uploads=[(filename, content.encode("utf-8"))],
+        collection_id=collection_id,
     )
 
 
@@ -132,50 +157,77 @@ async def _count_rows(session: AsyncSession, model: type[DeclarativeBase]) -> in
 
 
 @pytest.mark.asyncio
-async def test_upload_document_persists_document_and_pending_job(
+async def test_upload_batch_persists_all_documents_and_pending_jobs(
     api_context: ApiTestContext,
     db_session: AsyncSession,
 ) -> None:
-    response = await _upload_text_file(
+    collection = await CollectionRepository(db_session).create_collection(
+        api_context.current_user.id,
+        "Batch collection",
+    )
+    await db_session.commit()
+    enqueue_transaction_states: list[bool] = []
+
+    async def _record_enqueue(*, job_id: UUID) -> int:
+        del job_id
+        enqueue_transaction_states.append(db_session.in_transaction())
+        return 1
+
+    api_context.enqueue_mock.side_effect = _record_enqueue
+    uploaded_files = [
+        ("duplicate.txt", b"first duplicate"),
+        ("duplicate.txt", b"second duplicate"),
+        ("notes.md", b"batch notes"),
+    ]
+    response = await _upload_text_files(
         api_context.client,
         headers=api_context.auth_headers,
-        filename="notes.txt",
-        content="hello from the upload api test",
+        uploads=uploaded_files,
+        collection_id=collection.id,
     )
 
-    assert response.status_code == 200
+    assert response.status_code == 202
     assert response.headers.get("X-Request-ID")
 
-    payload = response.json()
-    document_id = UUID(payload["document_id"])
-    assert payload["filename"] == "notes.txt"
-    assert payload["status"] == DocumentStatus.PENDING.value
-
-    document = await db_session.get(Document, document_id)
-    jobs: Sequence[IngestionJob] = list(
-        (
-            await db_session.scalars(
-                select(IngestionJob).where(IngestionJob.document_id == document_id)
-            )
-        ).all()
+    items = response.json()["items"]
+    assert all(
+        set(item) == {"document_id", "filename", "collection_id", "status"}
+        for item in items
     )
+    assert [item["filename"] for item in items] == [name for name, _ in uploaded_files]
+    assert all(item["collection_id"] == str(collection.id) for item in items)
+    assert all(item["status"] == DocumentStatus.PENDING.value for item in items)
 
-    assert document is not None
-    assert document.user_id == api_context.current_user.id
-    assert document.filename == "notes.txt"
-    assert document.original_extension == ".txt"
-    assert document.content_type == "text/plain"
-    assert document.size_bytes == len(b"hello from the upload api test")
-    assert document.extracted_text is None
-    assert document.status == DocumentStatus.PENDING
-    assert len(jobs) == 1
-    assert jobs[0].status == IngestionJobStatus.PENDING
+    jobs = []
+    for item, (filename, content) in zip(items, uploaded_files, strict=True):
+        document_id = UUID(item["document_id"])
+        document = await db_session.get(Document, document_id)
+        job = await db_session.scalar(
+            select(IngestionJob).where(IngestionJob.document_id == document_id)
+        )
 
-    saved_path = api_context.upload_root_dir / str(document_id) / "notes.txt"
-    assert saved_path.exists()
-    assert saved_path.read_text(encoding="utf-8") == "hello from the upload api test"
+        assert document is not None
+        assert document.user_id == api_context.current_user.id
+        assert document.collection_id == collection.id
+        assert document.filename == filename
+        assert document.original_extension == Path(filename).suffix
+        assert document.content_type in {"text/plain", "text/markdown"}
+        assert document.size_bytes == len(content)
+        assert document.extracted_text is None
+        assert document.error_message is None
+        assert document.status == DocumentStatus.PENDING
+        assert job is not None
+        assert job.status == IngestionJobStatus.PENDING
+        assert job.error_message is None
+        jobs.append(job)
 
-    api_context.enqueue_mock.assert_awaited_once_with(job_id=jobs[0].id)
+        saved_path = api_context.upload_root_dir / str(document_id) / filename
+        assert saved_path.read_bytes() == content
+
+    assert enqueue_transaction_states == [False, False, False]
+    assert api_context.enqueue_mock.await_args_list == [
+        call(job_id=job.id) for job in jobs
+    ]
 
 
 @pytest.mark.asyncio
@@ -200,7 +252,8 @@ async def test_get_document_returns_uploaded_document_metadata(
         filename="details.txt",
         content="document details text",
     )
-    document_id = UUID(upload_response.json()["document_id"])
+    assert upload_response.status_code == 202
+    document_id = UUID(upload_response.json()["items"][0]["document_id"])
 
     response = await api_context.client.get(
         f"/api/v1/documents/{document_id}",
@@ -224,14 +277,95 @@ async def test_get_document_returns_uploaded_document_metadata(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("file_count", [0, 4])
+async def test_upload_batch_rejects_file_count_outside_one_to_three(
+    api_context: ApiTestContext,
+    db_session: AsyncSession,
+    file_count: int,
+) -> None:
+    request_kwargs = {}
+    if file_count:
+        request_kwargs["files"] = [
+            ("files", (f"file-{index}.txt", b"content", "text/plain"))
+            for index in range(file_count)
+        ]
+
+    response = await api_context.client.post(
+        "/api/v1/documents/upload",
+        headers=api_context.auth_headers,
+        **request_kwargs,
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "error": {
+            "code": "validation_error",
+            "message": "Multipart field 'files' must contain between 1 and 3 files.",
+        }
+    }
+    assert await _count_rows(db_session, Document) == 0
+    assert await _count_rows(db_session, IngestionJob) == 0
+    assert not list(api_context.upload_root_dir.rglob("*"))
+    api_context.enqueue_mock.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_upload_batch_returns_same_404_for_missing_and_foreign_collection_before_staging(
+    api_context: ApiTestContext,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    other_user = await UserRepository(db_session).create_user(
+        email=f"foreign-collection-upload-{uuid4()}@example.com",
+        password_hash="test-password-hash",
+        first_name="Foreign",
+        last_name="Owner",
+        is_active=True,
+        is_email_verified=True,
+    )
+    foreign_collection = await CollectionRepository(db_session).create_collection(
+        other_user.id,
+        "Foreign upload collection",
+    )
+    await db_session.commit()
+    save_mock = AsyncMock()
+    monkeypatch.setattr(documents_endpoint, "save_validated_upload", save_mock)
+
+    responses = [
+        await _upload_text_file(
+            api_context.client,
+            headers=api_context.auth_headers,
+            filename="private.txt",
+            content="private",
+            collection_id=collection_id,
+        )
+        for collection_id in (foreign_collection.id, uuid4())
+    ]
+
+    for response in responses:
+        assert response.status_code == 404
+        assert response.json() == {
+            "error": {
+                "code": "not_found",
+                "message": "Collection not found.",
+            }
+        }
+    save_mock.assert_not_awaited()
+    assert await _count_rows(db_session, Document) == 0
+    assert await _count_rows(db_session, IngestionJob) == 0
+    assert not list(api_context.upload_root_dir.rglob("*"))
+    api_context.enqueue_mock.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_upload_document_rejects_unsupported_extension(
     api_context: ApiTestContext,
     db_session: AsyncSession,
 ) -> None:
-    response = await api_context.client.post(
-        "/api/v1/documents/upload",
+    response = await _upload_text_files(
+        api_context.client,
         headers=api_context.auth_headers,
-        files={"file": ("malware.exe", b"MZ", "application/octet-stream")},
+        uploads=[("valid.txt", b"staged first"), ("malware.exe", b"MZ")],
     )
 
     assert response.status_code == 400
@@ -240,6 +374,7 @@ async def test_upload_document_rejects_unsupported_extension(
     assert "Unsupported file extension" in payload["error"]["message"]
     assert await _count_rows(db_session, Document) == 0
     assert await _count_rows(db_session, IngestionJob) == 0
+    assert not list(api_context.upload_root_dir.rglob("*"))
     api_context.enqueue_mock.assert_not_awaited()
 
 
@@ -250,10 +385,10 @@ async def test_upload_document_rejects_file_over_max_upload_size(
 ) -> None:
     oversized_file = b"a" * ((1024 * 1024) + 1)
 
-    response = await api_context.client.post(
-        "/api/v1/documents/upload",
+    response = await _upload_text_files(
+        api_context.client,
         headers=api_context.auth_headers,
-        files={"file": ("too-large.txt", oversized_file, "text/plain")},
+        uploads=[("valid.txt", b"staged first"), ("too-large.txt", oversized_file)],
     )
 
     assert response.status_code == 413
@@ -262,7 +397,145 @@ async def test_upload_document_rejects_file_over_max_upload_size(
     assert "MAX_UPLOAD_MB" in payload["error"]["message"]
     assert await _count_rows(db_session, Document) == 0
     assert await _count_rows(db_session, IngestionJob) == 0
+    assert not list(api_context.upload_root_dir.rglob("*"))
     api_context.enqueue_mock.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_upload_batch_cleans_staged_files_when_later_storage_write_fails(
+    api_context: ApiTestContext,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original_save = documents_endpoint.save_validated_upload
+    save_count = 0
+
+    async def _fail_second_save(upload: UploadFile, document_id: UUID):
+        nonlocal save_count
+        save_count += 1
+        if save_count == 2:
+            raise OSError("forced storage failure")
+        return await original_save(upload, document_id)
+
+    monkeypatch.setattr(
+        documents_endpoint,
+        "save_validated_upload",
+        _fail_second_save,
+    )
+
+    response = await _upload_text_files(
+        api_context.client,
+        headers=api_context.auth_headers,
+        uploads=[("first.txt", b"staged first"), ("second.txt", b"fails")],
+    )
+
+    assert response.status_code == 500
+    assert response.json() == {
+        "error": {
+            "code": "file_persistence_error",
+            "message": "Failed to persist uploaded file.",
+        }
+    }
+    assert await _count_rows(db_session, Document) == 0
+    assert await _count_rows(db_session, IngestionJob) == 0
+    assert not list(api_context.upload_root_dir.rglob("*"))
+    api_context.enqueue_mock.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_upload_batch_rolls_back_all_rows_and_cleans_files_on_db_failure(
+    api_context: ApiTestContext,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original_create_job = IngestionJobRepository.create_job
+    call_count = 0
+
+    async def _fail_second_job(
+        repository: IngestionJobRepository,
+        *,
+        document_id: UUID,
+        status: IngestionJobStatus = IngestionJobStatus.PENDING,
+        error_message: str | None = None,
+    ) -> IngestionJob:
+        nonlocal call_count
+        call_count += 1
+        if call_count == 2:
+            raise RuntimeError("forced database failure")
+        return await original_create_job(
+            repository,
+            document_id=document_id,
+            status=status,
+            error_message=error_message,
+        )
+
+    monkeypatch.setattr(IngestionJobRepository, "create_job", _fail_second_job)
+
+    response = await _upload_text_files(
+        api_context.client,
+        headers=api_context.auth_headers,
+        uploads=[("first.txt", b"first"), ("second.txt", b"second")],
+    )
+
+    assert response.status_code == 500
+    assert response.json() == {
+        "error": {
+            "code": "internal_server_error",
+            "message": "Failed to persist document metadata.",
+        }
+    }
+    assert await _count_rows(db_session, Document) == 0
+    assert await _count_rows(db_session, IngestionJob) == 0
+    assert not list(api_context.upload_root_dir.rglob("*"))
+    api_context.enqueue_mock.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_upload_batch_returns_202_and_logs_redacted_warning_when_enqueue_fails(
+    api_context: ApiTestContext,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    api_context.enqueue_mock.side_effect = RuntimeError(
+        "secret failure mentioning redacted-name.txt"
+    )
+    warning_mock = MagicMock()
+    monkeypatch.setattr(documents_endpoint.logger, "warning", warning_mock)
+
+    response = await _upload_text_files(
+        api_context.client,
+        headers=api_context.auth_headers,
+        uploads=[
+            ("redacted-name.txt", b"first pending document"),
+            ("also-redacted.md", b"second pending document"),
+        ],
+    )
+
+    assert response.status_code == 202
+    items = response.json()["items"]
+    assert len(items) == 2
+    assert api_context.enqueue_mock.await_count == 2
+
+    for item in items:
+        document_id = UUID(item["document_id"])
+        document = await db_session.get(Document, document_id)
+        job = await db_session.scalar(
+            select(IngestionJob).where(IngestionJob.document_id == document_id)
+        )
+        assert document is not None
+        assert document.status == DocumentStatus.PENDING
+        assert job is not None
+        assert job.status == IngestionJobStatus.PENDING
+
+    warning_mock.assert_called_once_with(
+        "One or more committed ingestion jobs could not be enqueued; "
+        "startup recovery will retry them."
+    )
+    warning = warning_mock.call_args.args[0]
+    assert "redacted-name.txt" not in warning
+    assert "also-redacted.md" not in warning
+    assert "secret failure" not in warning
+    assert all(item["document_id"] not in warning for item in items)
 
 
 @pytest.mark.asyncio
@@ -270,11 +543,15 @@ async def test_upload_document_always_closes_upload_file_after_validation_failur
     api_context: ApiTestContext,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    upload = UploadFile(file=BytesIO(b"content"), filename="invalid.exe")
-    upload.close = AsyncMock(wraps=upload.close)
+    uploads = [
+        UploadFile(file=BytesIO(b"content"), filename="invalid.exe"),
+        UploadFile(file=BytesIO(b"unread"), filename="unread.txt"),
+    ]
+    for upload in uploads:
+        upload.close = AsyncMock(wraps=upload.close)
 
     async def _override_upload_request() -> DocumentUploadRequest:
-        return DocumentUploadRequest(file=upload)
+        return DocumentUploadRequest(files=uploads)
 
     save_mock = AsyncMock(
         side_effect=UploadValidationError("Unsupported file extension."),
@@ -294,7 +571,8 @@ async def test_upload_document_always_closes_upload_file_after_validation_failur
 
     assert response.status_code == 400
     save_mock.assert_awaited_once()
-    upload.close.assert_awaited_once_with()
+    for upload in uploads:
+        upload.close.assert_awaited_once_with()
 
 
 @pytest.mark.asyncio
@@ -306,7 +584,7 @@ async def test_document_endpoints_require_authentication(
         await api_context.client.get(f"/api/v1/documents/{uuid4()}"),
         await api_context.client.post(
             "/api/v1/documents/upload",
-            files={"file": ("unauthenticated.txt", b"private", "text/plain")},
+            files={"files": ("unauthenticated.txt", b"private", "text/plain")},
         ),
     )
 
@@ -348,7 +626,7 @@ async def test_document_endpoints_require_verified_user(
         await api_context.client.post(
             "/api/v1/documents/upload",
             headers=headers,
-            files={"file": ("unverified.txt", b"private", "text/plain")},
+            files={"files": ("unverified.txt", b"private", "text/plain")},
         ),
     )
 

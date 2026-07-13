@@ -17,6 +17,7 @@ from app.api.schemas.collections import (
 from app.api.schemas.documents import (
     DocumentDetailsResponse,
     DocumentSummaryResponse,
+    DocumentUploadItemResponse,
     DocumentUploadRequest,
     DocumentUploadResponse,
     PaginatedDocumentListResponse,
@@ -38,6 +39,7 @@ __all__ = [
     "CollectionUpdateRequest",
     "DocumentDetailsResponse",
     "DocumentSummaryResponse",
+    "DocumentUploadItemResponse",
     "DocumentUploadRequest",
     "DocumentUploadResponse",
     "LoginRequest",

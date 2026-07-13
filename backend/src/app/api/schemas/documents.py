@@ -16,15 +16,23 @@ class DocumentUploadRequest(BaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    file: UploadFile
+    files: list[UploadFile]
+    collection_id: UUID | None = None
 
 
-class DocumentUploadResponse(BaseModel):
-    """Response payload for successful document upload."""
+class DocumentUploadItemResponse(BaseModel):
+    """One accepted document in a batch upload response."""
 
     document_id: UUID
     filename: str
+    collection_id: UUID | None
     status: DocumentStatus
+
+
+class DocumentUploadResponse(BaseModel):
+    """Response payload for a successful document upload batch."""
+
+    items: list[DocumentUploadItemResponse]
 
 
 class DocumentSummaryResponse(BaseModel):

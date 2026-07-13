@@ -140,13 +140,18 @@ Set base URL:
 
 ```bash
 API_BASE=http://localhost:8000/api/v1
+ACCESS_TOKEN=<VERIFIED_USER_ACCESS_TOKEN>
+COLLECTION_ID=<COLLECTION_UUID_OPTIONAL>
 ```
 
 Upload document:
 
 ```bash
 curl -X POST "$API_BASE/documents/upload" \
-  -F "file=@./backend/tests/assets/sample.pdf"
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -F "files=@./backend/tests/assets/sample.pdf" \
+  -F "files=@./demo/sample.txt" \
+  -F "collection_id=$COLLECTION_ID"
 ```
 
 List documents:

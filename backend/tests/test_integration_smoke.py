@@ -213,12 +213,12 @@ async def test_upload_ingest_ask_and_history_smoke(
 
     upload_response = await smoke_context.client.post(
         "/api/v1/documents/upload",
-        files={"file": ("smoke.txt", upload_text.encode("utf-8"), "text/plain")},
+        files={"files": ("smoke.txt", upload_text.encode("utf-8"), "text/plain")},
     )
 
-    assert upload_response.status_code == 200
+    assert upload_response.status_code == 202
     upload_payload = upload_response.json()
-    document_id = UUID(upload_payload["document_id"])
+    document_id = UUID(upload_payload["items"][0]["document_id"])
 
     document_payload = await _wait_until_ready(smoke_context.client, document_id=document_id)
     assert document_payload["status"] == "READY"
