@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import uuid
 from datetime import UTC, datetime
 
 import pytest
@@ -8,6 +9,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.settings import get_settings
+from app.db.models.auth import User
+from app.db.models.collections import Collection
 from app.db.models.documents import Document, DocumentStatus
 from app.db.models.questions import Question
 from app.repositories.chunk_repository import ChunkRepository
@@ -26,11 +29,15 @@ def _embedding(first_dim: float, second_dim: float, dim: int) -> list[float]:
 async def _create_document(
     session: AsyncSession,
     *,
+    user_id: uuid.UUID,
     filename: str,
+    collection_id: uuid.UUID | None = None,
     extracted_text: str = "sample extracted text",
 ) -> Document:
     repository = DocumentRepository(session)
     return await repository.create_document(
+        user_id,
+        collection_id=collection_id,
         filename=filename,
         original_extension=".txt",
         content_type="text/plain",
@@ -38,6 +45,30 @@ async def _create_document(
         storage_path=f"/tmp/{filename}",
         extracted_text=extracted_text,
     )
+
+
+async def _create_user(session: AsyncSession, label: str) -> User:
+    user = User(
+        email=f"{label}-{uuid.uuid4()}@example.com",
+        password_hash="test-password-hash",
+        first_name="Document",
+        last_name="Tester",
+    )
+    session.add(user)
+    await session.flush()
+    return user
+
+
+async def _create_collection(
+    session: AsyncSession,
+    *,
+    user_id: uuid.UUID,
+    name: str,
+) -> Collection:
+    collection = Collection(user_id=user_id, name=name)
+    session.add(collection)
+    await session.flush()
+    return collection
 
 
 async def _set_created_at(
@@ -67,8 +98,17 @@ async def _set_question_created_at(
 @pytest.mark.asyncio
 async def test_document_repository_crud_create_get_update_status(db_session: AsyncSession) -> None:
     repository = DocumentRepository(db_session)
+    owner = await _create_user(db_session, "document-owner")
+    other_user = await _create_user(db_session, "document-other")
+    collection = await _create_collection(
+        db_session,
+        user_id=owner.id,
+        name="Owner collection",
+    )
 
     created = await repository.create_document(
+        owner.id,
+        collection_id=collection.id,
         filename="doc-a.txt",
         original_extension=".txt",
         content_type="text/plain",
@@ -76,18 +116,43 @@ async def test_document_repository_crud_create_get_update_status(db_session: Asy
         storage_path="/tmp/doc-a.txt",
         extracted_text="hello world",
     )
-    fetched = await repository.get_document(created.id)
+    other_document = await _create_document(
+        db_session,
+        user_id=other_user.id,
+        filename="other.txt",
+    )
+    fetched = await repository.get_document(owner.id, created.id)
     assert fetched is not None
     assert fetched.id == created.id
+    assert fetched.user_id == owner.id
+    assert fetched.collection_id == collection.id
     assert fetched.status == DocumentStatus.PENDING
+    assert await repository.get_document(other_user.id, created.id) is None
+    assert await repository.get_document(owner.id, other_document.id) is None
+    assert (
+        await repository.update_status(
+            other_user.id,
+            created.id,
+            DocumentStatus.FAILED,
+            "must remain hidden",
+        )
+        is None
+    )
+    assert await repository.delete_document(other_user.id, created.id) is None
 
-    updated = await repository.update_status(created.id, DocumentStatus.READY)
-    fetched_after_update = await repository.get_document(created.id)
+    updated = await repository.update_status(owner.id, created.id, DocumentStatus.READY)
+    fetched_after_update = await repository.get_document(owner.id, created.id)
 
     assert updated is not None
     assert updated.status == DocumentStatus.READY
     assert fetched_after_update is not None
     assert fetched_after_update.status == DocumentStatus.READY
+
+    deleted = await repository.delete_document(owner.id, created.id)
+    assert deleted is not None
+    assert deleted.id == created.id
+    assert await repository.get_document(owner.id, created.id) is None
+    assert await repository.get_document(other_user.id, other_document.id) is not None
 
 
 @pytest.mark.asyncio
@@ -95,20 +160,78 @@ async def test_document_repository_list_documents_orders_newest_first_and_counts
     db_session: AsyncSession,
 ) -> None:
     repository = DocumentRepository(db_session)
+    owner = await _create_user(db_session, "document-list-owner")
+    other_user = await _create_user(db_session, "document-list-other")
+    first_collection = await _create_collection(
+        db_session,
+        user_id=owner.id,
+        name="First collection",
+    )
+    second_collection = await _create_collection(
+        db_session,
+        user_id=owner.id,
+        name="Second collection",
+    )
 
-    oldest = await _create_document(db_session, filename="oldest.txt")
-    middle = await _create_document(db_session, filename="middle.txt")
-    newest = await _create_document(db_session, filename="newest.txt")
+    oldest = await _create_document(
+        db_session,
+        user_id=owner.id,
+        collection_id=first_collection.id,
+        filename="oldest.txt",
+    )
+    middle = await _create_document(
+        db_session,
+        user_id=owner.id,
+        collection_id=first_collection.id,
+        filename="middle.txt",
+    )
+    newest = await _create_document(
+        db_session,
+        user_id=owner.id,
+        collection_id=second_collection.id,
+        filename="newest.txt",
+    )
+    other_document = await _create_document(
+        db_session,
+        user_id=other_user.id,
+        collection_id=first_collection.id,
+        filename="foreign-owned.txt",
+    )
 
     await _set_created_at(db_session, oldest, datetime(2026, 1, 1, 12, 0, tzinfo=UTC))
     await _set_created_at(db_session, middle, datetime(2026, 1, 2, 12, 0, tzinfo=UTC))
-    await _set_created_at(db_session, newest, datetime(2026, 1, 3, 12, 0, tzinfo=UTC))
+    await _set_created_at(db_session, newest, datetime(2026, 1, 2, 12, 0, tzinfo=UTC))
+    await _set_created_at(
+        db_session,
+        other_document,
+        datetime(2026, 1, 3, 12, 0, tzinfo=UTC),
+    )
 
-    listed = await repository.list_documents(limit=2, offset=1)
-    total = await repository.count_documents()
+    listed = await repository.list_documents(owner.id, limit=2, offset=0)
+    expected_tied_ids = sorted((middle.id, newest.id), reverse=True)
+    filtered = await repository.list_documents(
+        owner.id,
+        limit=20,
+        offset=0,
+        collection_id=first_collection.id,
+    )
 
-    assert [document.id for document in listed] == [middle.id, oldest.id]
-    assert total == 3
+    assert [document.id for document in listed] == expected_tied_ids
+    assert [document.id for document in filtered] == [middle.id, oldest.id]
+    assert other_document.id not in {document.id for document in filtered}
+    assert await repository.count_documents(owner.id) == 3
+    assert await repository.count_documents(other_user.id) == 1
+    assert await repository.count_documents(owner.id, first_collection.id) == 2
+    assert (
+        await repository.list_documents(
+            other_user.id,
+            limit=20,
+            offset=0,
+            collection_id=first_collection.id,
+        )
+        == []
+    )
+    assert await repository.count_documents(other_user.id, first_collection.id) == 0
 
 
 @pytest.mark.asyncio
@@ -117,9 +240,18 @@ async def test_chunk_repository_bulk_insert_chunks_enforces_document_chunk_index
 ) -> None:
     settings = get_settings()
     repository = ChunkRepository(db_session)
+    user = await _create_user(db_session, "chunk-unique-owner")
 
-    first_document = await _create_document(db_session, filename="first.txt")
-    second_document = await _create_document(db_session, filename="second.txt")
+    first_document = await _create_document(
+        db_session,
+        user_id=user.id,
+        filename="first.txt",
+    )
+    second_document = await _create_document(
+        db_session,
+        user_id=user.id,
+        filename="second.txt",
+    )
 
     inserted_rows = await repository.bulk_insert_chunks(
         first_document.id,
@@ -174,7 +306,12 @@ async def test_chunk_repository_similarity_search_orders_by_cosine_distance(
 ) -> None:
     settings = get_settings()
     repository = ChunkRepository(db_session)
-    document = await _create_document(db_session, filename="similarity.txt")
+    user = await _create_user(db_session, "chunk-similarity-owner")
+    document = await _create_document(
+        db_session,
+        user_id=user.id,
+        filename="similarity.txt",
+    )
 
     await repository.bulk_insert_chunks(
         document.id,
@@ -215,9 +352,18 @@ async def test_question_repository_lists_and_counts_history_with_optional_docume
     settings = get_settings()
     question_repo = QuestionRepository(db_session)
     context_repo = QuestionContextRepository(db_session)
+    user = await _create_user(db_session, "question-history-owner")
 
-    first_document = await _create_document(db_session, filename="first-history.txt")
-    second_document = await _create_document(db_session, filename="second-history.txt")
+    first_document = await _create_document(
+        db_session,
+        user_id=user.id,
+        filename="first-history.txt",
+    )
+    second_document = await _create_document(
+        db_session,
+        user_id=user.id,
+        filename="second-history.txt",
+    )
     first_document.status = DocumentStatus.READY
     second_document.status = DocumentStatus.READY
     await db_session.flush()
