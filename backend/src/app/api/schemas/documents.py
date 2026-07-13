@@ -16,28 +16,40 @@ class DocumentUploadRequest(BaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    file: UploadFile
+    files: list[UploadFile]
+    collection_id: UUID | None = None
 
 
-class DocumentUploadResponse(BaseModel):
-    """Response payload for successful document upload."""
+class DocumentUploadItemResponse(BaseModel):
+    """One accepted document in a batch upload response."""
 
     document_id: UUID
     filename: str
+    collection_id: UUID | None
     status: DocumentStatus
 
 
+class DocumentUploadResponse(BaseModel):
+    """Response payload for a successful document upload batch."""
+
+    items: list[DocumentUploadItemResponse]
+
+
 class DocumentSummaryResponse(BaseModel):
-    """Compact document metadata for list responses."""
+    """Safe document metadata for list responses."""
 
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
+    collection_id: UUID | None
     filename: str
     original_extension: str
+    content_type: str
     size_bytes: int
     status: DocumentStatus
+    error_message: str | None
     created_at: datetime
+    updated_at: datetime
 
 
 class PaginatedDocumentListResponse(BaseModel):
@@ -49,13 +61,5 @@ class PaginatedDocumentListResponse(BaseModel):
     total: int
 
 
-class DocumentDetailsResponse(BaseModel):
-    """Document metadata response without full extracted text payload."""
-
-    id: UUID
-    filename: str
-    status: DocumentStatus
-    created_at: datetime
-    updated_at: datetime
-    error_message: str | None
-    text_length: int
+class DocumentDetailsResponse(DocumentSummaryResponse):
+    """Safe metadata for one document without stored content or internals."""

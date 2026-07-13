@@ -3,6 +3,7 @@ set -euo pipefail
 
 API_URL="${API_URL:-http://localhost:8000}"
 API_URL="${API_URL%/}"
+ACCESS_TOKEN="${ACCESS_TOKEN:-}"
 TOP_K="${TOP_K:-5}"
 POLL_INTERVAL_SECONDS="${POLL_INTERVAL_SECONDS:-1}"
 POLL_TIMEOUT_SECONDS="${POLL_TIMEOUT_SECONDS:-60}"
@@ -58,12 +59,17 @@ upload_file() {
 
   echo "Uploading $path" >&2
   local response
-  response="$(curl -sSf -X POST -F "file=@${path}" "${API_URL}/api/v1/documents/upload")"
+  response="$(
+    curl -sSf -X POST \
+      -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+      -F "files=@${path}" \
+      "${API_URL}/api/v1/documents/upload"
+  )"
 
   local document_id
-  document_id="$(printf '%s' "$response" | json_get "document_id")"
+  document_id="$(printf '%s' "$response" | json_get "items.0.document_id")"
   local initial_status
-  initial_status="$(printf '%s' "$response" | json_get "status")"
+  initial_status="$(printf '%s' "$response" | json_get "items.0.status")"
   echo "  document_id=${document_id} initial_status=${initial_status}" >&2
 
   printf '%s\n' "$document_id"
@@ -77,7 +83,11 @@ wait_ready() {
 
   while true; do
     local response
-    response="$(curl -sSf "${API_URL}/api/v1/documents/${document_id}")"
+    response="$(
+      curl -sSf \
+        -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+        "${API_URL}/api/v1/documents/${document_id}"
+    )"
     local status
     status="$(printf '%s' "$response" | json_get "status")"
     if [[ "$status" != "$last_status" ]]; then
@@ -133,6 +143,7 @@ PY
   )"
 
   curl -sSf -X POST "${API_URL}/api/v1/questions/ask" \
+    -H "Authorization: Bearer ${ACCESS_TOKEN}" \
     -H "Content-Type: application/json" \
     -d "$payload"
 }
@@ -214,6 +225,11 @@ PY
 require_command curl
 require_command python
 
+if [[ -z "$ACCESS_TOKEN" ]]; then
+  echo "Set ACCESS_TOKEN to a verified user's bearer token before running the demo." >&2
+  exit 1
+fi
+
 if ! [[ "$TOP_K" =~ ^[0-9]+$ ]] || (( TOP_K < 1 )); then
   echo "TOP_K must be an integer >= 1. Received: $TOP_K" >&2
   exit 1
@@ -268,7 +284,11 @@ echo "question: $question_two"
 print_answer "$answer_two"
 
 print_section "6) Fetch question history snippet"
-history_response="$(curl -sSf "${API_URL}/api/v1/questions/history?limit=5&offset=0")"
+history_response="$(
+  curl -sSf \
+    -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+    "${API_URL}/api/v1/questions/history?limit=5&offset=0"
+)"
 print_history_snippet "$history_response"
 
 echo

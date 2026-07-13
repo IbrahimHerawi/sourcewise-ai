@@ -140,13 +140,18 @@ Set base URL:
 
 ```bash
 API_BASE=http://localhost:8000/api/v1
+ACCESS_TOKEN=<VERIFIED_USER_ACCESS_TOKEN>
+COLLECTION_ID=<COLLECTION_UUID_OPTIONAL>
 ```
 
 Upload document:
 
 ```bash
 curl -X POST "$API_BASE/documents/upload" \
-  -F "file=@./backend/tests/assets/sample.pdf"
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -F "files=@./backend/tests/assets/sample.pdf" \
+  -F "files=@./demo/sample.txt" \
+  -F "collection_id=$COLLECTION_ID"
 ```
 
 List documents:
@@ -198,6 +203,7 @@ The evaluation brief requires embeddings/vector-search based retrieval and a REA
 - Similarity metric is cosine distance (chosen instead of L2) and enforced in pgvector query/index configuration
 - The assistant is explicitly instructed to return an unknown-answer fallback when context is insufficient, to reduce hallucinations
 - Ingestion is handled by an in-process async worker pool with persisted `ingestion_jobs` status for crash recovery and observability
+- Worker shutdown drains for up to `INGEST_SHUTDOWN_TIMEOUT_S` (default `30`) before cancelling workers; interrupted `PROCESSING` jobs are recovered on the next startup
 - Vector index strategy prefers HNSW when pgvector version supports it, with IVFFlat fallback (`lists=100`) for compatibility
 - Embedding dimension is configurable (`EMBEDDING_DIM`, default `768`) and validated against model output
 - Retrieved context is capped before chat generation (`DEFAULT_MAX_CONTEXT_CHARS = 12000`) to keep prompts bounded and predictable

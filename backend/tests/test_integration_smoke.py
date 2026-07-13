@@ -19,13 +19,15 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 import app.db.session as db_session_module
 import app.services.question_answering as question_answering_service
 import app.workers.ingestion as ingestion_worker
+from app.core.security import create_access_token
 from app.core.settings import get_settings
 from app.db.models.document_chunks import DocumentChunk
 from app.main import app
+from app.repositories.user_repository import UserRepository
 
 _TRUNCATE_TABLES_SQL = text(
-    "TRUNCATE TABLE question_context_chunks, questions, document_chunks, ingestion_jobs, documents "
-    "RESTART IDENTITY CASCADE"
+    "TRUNCATE TABLE question_context_chunks, questions, document_chunks, ingestion_jobs, "
+    "documents, collections, users RESTART IDENTITY CASCADE"
 )
 _TOKEN_PATTERN = re.compile(r"[A-Za-z0-9_-]+")
 
@@ -79,6 +81,25 @@ async def _count_document_chunks(database_url: str, *, document_id: UUID) -> int
         await engine.dispose()
 
 
+async def _create_verified_user(database_url: str) -> UUID:
+    engine = create_async_engine(database_url, pool_pre_ping=True)
+    session_maker = async_sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False)
+    try:
+        async with session_maker() as session:
+            user = await UserRepository(session).create_user(
+                email="integration-smoke@example.com",
+                password_hash="test-password-hash",
+                first_name="Integration",
+                last_name="Smoke",
+                is_active=True,
+                is_email_verified=True,
+            )
+            await session.commit()
+            return user.id
+    finally:
+        await engine.dispose()
+
+
 async def _wait_until_ready(
     client: httpx.AsyncClient,
     *,
@@ -118,12 +139,17 @@ async def smoke_context(
     monkeypatch.setenv("CHUNK_SIZE_CHARS", "80")
     monkeypatch.setenv("CHUNK_OVERLAP_CHARS", "0")
     monkeypatch.setenv("RETRIEVAL_MAX_COSINE_DISTANCE", "2.0")
+    monkeypatch.setenv("APP_ENV", "test")
+    monkeypatch.setenv("SECRET_KEY", "test-secret-key-with-enough-length")
+    monkeypatch.setenv("JWT_ALGORITHM", "HS256")
+    monkeypatch.setenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30")
     get_settings.cache_clear()
 
     db_session_module._engine = None
     db_session_module._session_maker = None
 
     await _truncate_all_tables(postgres_database_url)
+    user_id = await _create_verified_user(postgres_database_url)
 
     llm_capture: dict[str, str] = {}
 
@@ -162,6 +188,7 @@ async def smoke_context(
             async with httpx.AsyncClient(
                 transport=transport,
                 base_url="http://testserver",
+                headers={"Authorization": f"Bearer {create_access_token(user_id)}"},
             ) as client:
                 yield SmokeContext(client=client, llm_context_capture=llm_capture)
     finally:
@@ -186,12 +213,12 @@ async def test_upload_ingest_ask_and_history_smoke(
 
     upload_response = await smoke_context.client.post(
         "/api/v1/documents/upload",
-        files={"file": ("smoke.txt", upload_text.encode("utf-8"), "text/plain")},
+        files={"files": ("smoke.txt", upload_text.encode("utf-8"), "text/plain")},
     )
 
-    assert upload_response.status_code == 200
+    assert upload_response.status_code == 202
     upload_payload = upload_response.json()
-    document_id = UUID(upload_payload["document_id"])
+    document_id = UUID(upload_payload["items"][0]["document_id"])
 
     document_payload = await _wait_until_ready(smoke_context.client, document_id=document_id)
     assert document_payload["status"] == "READY"

@@ -220,3 +220,14 @@ def test_ollama_provider_does_not_read_openai_key_file(
     )
 
     assert settings.openai_api_key is None
+
+
+def test_ingest_shutdown_timeout_defaults_to_thirty_seconds() -> None:
+    settings = Settings(_env_file=None)
+
+    assert settings.ingest_shutdown_timeout_s == 30.0
+
+
+def test_ingest_shutdown_timeout_must_be_positive() -> None:
+    with pytest.raises(ValueError, match="ingest_shutdown_timeout_s"):
+        Settings(ingest_shutdown_timeout_s=0, _env_file=None)
