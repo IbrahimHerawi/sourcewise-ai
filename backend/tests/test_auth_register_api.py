@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.errors import ExternalServiceError
 from app.core.security import hash_token, verify_password
 from app.core.settings import get_settings
-from app.db.models.auth import EmailVerificationToken
+from app.db.models.auth import EmailVerificationToken, User
 from app.db.session import get_db_session
 from app.main import app
 from app.repositories.user_repository import UserRepository
@@ -341,48 +341,132 @@ async def test_register_omits_verification_token_in_deployed_envs(
 
 
 @pytest.mark.asyncio
-async def test_register_email_failure_returns_clean_error_without_leaking_secrets(
+async def test_register_email_failure_persists_user_and_resend_replaces_token(
     auth_client: httpx.AsyncClient,
+    db_session: AsyncSession,
     monkeypatch: pytest.MonkeyPatch,
-    caplog: pytest.LogCaptureFixture,
 ) -> None:
-    async def fail_send_registration_verification_email(**_: object) -> None:
-        raise ExternalServiceError("Email delivery failed.")
+    initial_token = "initial-raw-token-secret"
+    replacement_token = "replacement-raw-token-secret"
+    api_key = "re-api-key-secret"
+    generated_tokens = iter([initial_token, replacement_token])
+    send_attempts: list[dict[str, object]] = []
+    delivery_transaction_states: list[bool] = []
+    logged_calls: list[tuple[object, ...]] = []
+
+    async def flaky_send_registration_verification_email(**kwargs: object) -> None:
+        send_attempts.append(kwargs)
+        delivery_transaction_states.append(db_session.in_transaction())
+        if len(send_attempts) == 1:
+            raise ExternalServiceError("Email delivery failed.")
+
+    def record_warning(*args: object, **_: object) -> None:
+        logged_calls.append(args)
 
     monkeypatch.setenv("APP_ENV", "production")
     monkeypatch.setenv("SECRET_KEY", "production-secret-key-with-enough-length")
-    monkeypatch.setenv("RESEND_API_KEY", "re-api-key-secret")
+    monkeypatch.setenv("RESEND_API_KEY", api_key)
+    monkeypatch.setenv("FRONTEND_BASE_URL", "https://frontend.example.test")
     monkeypatch.setattr(
-        "app.api.v1.endpoints.auth.generate_secure_token", lambda: "raw-token-secret"
+        "app.api.v1.endpoints.auth.generate_secure_token",
+        lambda: next(generated_tokens),
     )
     monkeypatch.setattr(
         "app.api.v1.endpoints.auth.send_registration_verification_email",
-        fail_send_registration_verification_email,
+        flaky_send_registration_verification_email,
     )
-    caplog.set_level("INFO")
+    monkeypatch.setattr("app.api.v1.endpoints.auth.logger.warning", record_warning)
     get_settings.cache_clear()
 
-    response = await _register(
+    registration_response = await _register(
         auth_client,
         email="email-failure@example.com",
         password="StrongPassword123!",
     )
+    user_id = UUID(registration_response.json()["user"]["id"])
 
-    assert response.status_code == 502
-    assert response.json() == {
-        "error": {
-            "code": "external_service_error",
-            "message": "Email delivery failed.",
-        }
+    assert registration_response.status_code == 200
+    assert registration_response.json()["message"] == (
+        "Registration successful. Please verify your email."
+    )
+    assert "verification_token" not in registration_response.json()
+    assert delivery_transaction_states == [False]
+    assert logged_calls == [
+        (
+            "Registration verification email delivery failed for user_id=%s.",
+            user_id,
+        )
+    ]
+
+    resend_response = await auth_client.post(
+        "/api/v1/auth/resend-verification",
+        json={"email": "EMAIL-FAILURE@example.com"},
+    )
+
+    assert resend_response.status_code == 200
+    assert resend_response.json() == {
+        "message": (
+            "If the account exists and requires verification, a verification email has been sent."
+        )
     }
+    assert len(send_attempts) == 2
+    assert delivery_transaction_states == [False, False]
+    replacement_link = str(send_attempts[1]["verification_link"])
+    delivered_token = parse_qs(urlparse(replacement_link).query)["token"][0]
+    assert delivered_token == replacement_token
+
+    verification_response = await auth_client.post(
+        "/api/v1/auth/verify-email",
+        json={"token": replacement_token},
+    )
+
+    assert verification_response.status_code == 200
+    assert verification_response.json() == {"message": "Email verified successfully."}
+    users = list(
+        (
+            await db_session.scalars(select(User).where(User.email == "email-failure@example.com"))
+        ).all()
+    )
+    assert len(users) == 1
+    user = users[0]
+    assert user.id == user_id
+    assert user.is_email_verified is True
+
+    token_rows = list(
+        (
+            await db_session.scalars(
+                select(EmailVerificationToken).where(EmailVerificationToken.user_id == user.id)
+            )
+        ).all()
+    )
+    initial_row = next(row for row in token_rows if row.token_hash == hash_token(initial_token))
+    replacement_row = next(
+        row for row in token_rows if row.token_hash == hash_token(replacement_token)
+    )
+    assert len(token_rows) == 2
+    assert initial_row.used_at is not None
+    assert replacement_row.used_at is not None
+
+    await db_session.commit()
+    duplicate_response = await _register(
+        auth_client,
+        email="EMAIL-FAILURE@example.com",
+    )
+    assert duplicate_response.status_code == 409
+    assert len(send_attempts) == 2
+
+    logged_text = repr(logged_calls)
     for sensitive_value in [
-        "raw-token-secret",
+        initial_token,
+        replacement_token,
+        hash_token(initial_token),
+        hash_token(replacement_token),
         "StrongPassword123!",
-        "token_hash",
-        "re-api-key-secret",
+        api_key,
     ]:
-        assert sensitive_value not in response.text
-        assert sensitive_value not in caplog.text
+        assert sensitive_value not in registration_response.text
+        assert sensitive_value not in resend_response.text
+        assert sensitive_value not in logged_text
 
 
 def test_auth_register_route_exists_only_under_api_v1_auth() -> None:
