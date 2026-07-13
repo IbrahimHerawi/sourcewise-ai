@@ -88,6 +88,12 @@ class SensitiveDataFilter(logging.Filter):
         if isinstance(record.msg, str):
             record.msg = _sanitize_string(record.msg)
 
+        if record.exc_info:
+            # Format the traceback before the handler does so exception messages pass
+            # through the same redaction used for ordinary log messages and arguments.
+            traceback_text = logging.Formatter().formatException(record.exc_info)
+            record.exc_text = _sanitize_string(traceback_text)
+
         args = record.args
         if not args:
             return True
@@ -117,9 +123,7 @@ def setup_logging(log_level: str = "INFO") -> None:
     handler = logging.StreamHandler()
     handler.setLevel(level)
     handler.setFormatter(
-        logging.Formatter(
-            "%(asctime)s %(levelname)s [%(request_id)s] %(name)s: %(message)s"
-        )
+        logging.Formatter("%(asctime)s %(levelname)s [%(request_id)s] %(name)s: %(message)s")
     )
     handler.addFilter(RequestIdFilter())
     handler.addFilter(SensitiveDataFilter())

@@ -293,3 +293,34 @@ def test_resolve_under_root_rejects_escape(tmp_path: Path) -> None:
 
     with pytest.raises(files.UploadValidationError, match="UPLOAD_ROOT_DIR"):
         files._resolve_under_root(root, root.parent / "escape.txt")
+
+
+@pytest.mark.parametrize("extension", [".txt", ".md", ".TXT"])
+def test_extract_text_decodes_utf8_and_normalizes_line_endings(extension: str) -> None:
+    extracted = files.extract_text(extension, b"first\r\nsecond\rthird")
+
+    assert extracted == "first\nsecond\nthird"
+
+
+def test_extract_text_reads_pdf_text_layer() -> None:
+    fixture_path = Path(__file__).parent / "assets" / "sample.pdf"
+
+    extracted = files.extract_text(".pdf", fixture_path.read_bytes())
+
+    assert "Sample PDF fixture text." in extracted
+
+
+@pytest.mark.parametrize(
+    ("extension", "content"),
+    [
+        (".csv", b"unsupported"),
+        (".txt", b"invalid utf-8: \xff"),
+        (".pdf", b"%PDF-not-valid"),
+    ],
+)
+def test_extract_text_wraps_unsupported_or_malformed_content(
+    extension: str,
+    content: bytes,
+) -> None:
+    with pytest.raises(files.TextExtractionError):
+        files.extract_text(extension, content)

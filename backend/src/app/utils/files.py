@@ -3,19 +3,26 @@
 from __future__ import annotations
 
 import codecs
+import re
 from dataclasses import dataclass
 from enum import StrEnum
+from io import BytesIO
 from pathlib import Path
 from typing import Final
 from uuid import UUID
 
 from fastapi import UploadFile
+from pypdf import PdfReader
 
 from app.core.settings import get_settings
 
 
 class UploadValidationError(ValueError):
     """Raised when an upload fails filename, size, or content validation."""
+
+
+class TextExtractionError(ValueError):
+    """Raised when stored document content cannot be extracted."""
 
 
 class SupportedUploadExtension(StrEnum):
@@ -50,6 +57,7 @@ _BYTES_PER_MB: Final[int] = 1024 * 1024
 _CHUNK_SIZE: Final[int] = 64 * 1024
 _PDF_HEADER_WINDOW: Final[int] = 1024
 _PDF_SIGNATURE: Final[bytes] = b"%PDF-"
+_NULL_CHARS_PATTERN: Final[re.Pattern[str]] = re.compile(r"\x00+")
 
 
 async def save_validated_upload(upload: UploadFile, document_id: UUID) -> StoredUpload:
@@ -106,6 +114,40 @@ async def save_validated_upload(upload: UploadFile, document_id: UUID) -> Stored
     )
 
 
+def extract_text(original_extension: str, content: bytes) -> str:
+    """Extract and lightly normalize text from supported stored content."""
+
+    normalized_extension = original_extension.lower()
+    if normalized_extension not in ALLOWED_UPLOAD_EXTENSIONS:
+        raise TextExtractionError("Stored document extension is unsupported.")
+
+    try:
+        if normalized_extension in {
+            SupportedUploadExtension.TXT.value,
+            SupportedUploadExtension.MD.value,
+        }:
+            extracted_text = content.decode("utf-8", errors="strict")
+        else:
+            extracted_text = _extract_pdf_text(content)
+    except TextExtractionError:
+        raise
+    except Exception as exc:
+        raise TextExtractionError("Stored document text could not be extracted.") from exc
+
+    normalized_text = extracted_text.replace("\r\n", "\n").replace("\r", "\n")
+    return _NULL_CHARS_PATTERN.sub("", normalized_text)
+
+
+def _extract_pdf_text(content: bytes) -> str:
+    """Extract a PDF text layer without applying OCR."""
+
+    try:
+        reader = PdfReader(BytesIO(content))
+        return "\n".join(page.extract_text() or "" for page in reader.pages)
+    except Exception as exc:
+        raise TextExtractionError("Stored PDF text could not be extracted.") from exc
+
+
 async def _stream_to_part_file(
     upload: UploadFile,
     *,
@@ -127,9 +169,7 @@ async def _stream_to_part_file(
         while chunk := await upload.read(_CHUNK_SIZE):
             size_bytes += len(chunk)
             if size_bytes > max_size_bytes:
-                raise UploadValidationError(
-                    f"Upload exceeds MAX_UPLOAD_MB ({max_upload_mb} MB)."
-                )
+                raise UploadValidationError(f"Upload exceeds MAX_UPLOAD_MB ({max_upload_mb} MB).")
 
             if utf8_decoder is not None:
                 _validate_text_chunk(chunk, utf8_decoder)

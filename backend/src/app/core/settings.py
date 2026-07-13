@@ -67,6 +67,7 @@ class Settings(BaseSettings):
     postgres_password_file: str | None = None
     embedding_dim: int = 768
     ingest_workers: int = Field(default=2, gt=0)
+    ingest_shutdown_timeout_s: float = Field(default=30.0, gt=0)
     chunk_size_chars: int = Field(default=1200, gt=0)
     chunk_overlap_chars: int = Field(default=200, ge=0)
     retrieval_max_cosine_distance: float = Field(default=0.75, ge=0.0, le=2.0)
