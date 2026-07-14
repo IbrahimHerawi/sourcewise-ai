@@ -60,5 +60,6 @@ class Question(Base):
     context_chunks: Mapped[list[QuestionContextChunk]] = relationship(
         back_populates="question",
         cascade="all, delete-orphan",
+        order_by="QuestionContextChunk.rank",
         passive_deletes=True,
     )
