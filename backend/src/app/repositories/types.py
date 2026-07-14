@@ -17,11 +17,15 @@ class ChunkWithEmbedding:
 
 @dataclass(slots=True, frozen=True)
 class QuestionContextRow:
-    """A single question-to-context chunk link row."""
+    """A complete citation snapshot captured for a question."""
 
-    chunk_id: uuid.UUID
-    similarity_score: float
     rank: int
+    document_id: uuid.UUID
+    document_filename: str
+    chunk_id: uuid.UUID
+    chunk_index: int
+    chunk_content: str
+    similarity_score: float
 
 
 __all__ = ["ChunkWithEmbedding", "QuestionContextRow"]

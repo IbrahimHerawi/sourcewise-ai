@@ -105,9 +105,9 @@ async def list_question_history(
                 created_at=question.created_at,
                 sources=[
                     QuestionSourceResponse(
-                        document_id=context_chunk.chunk.document_id,
+                        document_id=context_chunk.document_id,
                         chunk_id=context_chunk.chunk_id,
-                        chunk_index=context_chunk.chunk.chunk_index,
+                        chunk_index=context_chunk.chunk_index,
                         distance=context_chunk.similarity_score,
                     )
                     for context_chunk in sorted(
