@@ -49,8 +49,8 @@ class Question(Base):
     question_text: Mapped[str] = mapped_column(Text, nullable=False)
     question_embedding: Mapped[list[float]] = mapped_column(Vector(EMBEDDING_DIM), nullable=False)
     answer_text: Mapped[str] = mapped_column(Text, nullable=False)
-    ai_provider: Mapped[str] = mapped_column(String(length=32), nullable=False)
-    model_used: Mapped[str] = mapped_column(String(length=255), nullable=False)
+    ai_provider: Mapped[str | None] = mapped_column(String(length=32), nullable=True)
+    model_used: Mapped[str | None] = mapped_column(String(length=255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now(), index=True
     )
