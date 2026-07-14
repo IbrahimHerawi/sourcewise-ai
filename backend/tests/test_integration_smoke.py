@@ -153,7 +153,12 @@ async def smoke_context(
 
     llm_capture: dict[str, str] = {}
 
-    async def fake_embed_documents(texts: list[str]) -> list[list[float]]:
+    async def fake_embed_documents(
+        texts: list[str],
+        *,
+        job_id: UUID | None = None,
+        document_id: UUID | None = None,
+    ) -> list[list[float]]:
         dim = get_settings().embedding_dim
         return [_deterministic_embedding(chunk_text, dim=dim) for chunk_text in texts]
 

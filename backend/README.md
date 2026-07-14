@@ -38,8 +38,8 @@ This structure is intentional for maintainability and separation of concerns.
   - retrieval ordering by ascending cosine distance
 - Chunking strategy: deterministic character-based chunking with overlap
 - Chunking parameters are configurable:
-  - `CHUNK_SIZE_CHARS`
-  - `CHUNK_OVERLAP_CHARS`
+  - `CHUNK_SIZE_CHARS` (default: `2000`)
+  - `CHUNK_OVERLAP_CHARS` (default: `100`)
 
 ## 6. Answering Behavior
 The chat model is instructed to answer using only retrieved context.  
@@ -55,7 +55,7 @@ If retrieved content is insufficient or irrelevant, the response is a strict unk
   - Uses your local Ollama model set in `OLLAMA_CHAT_MODEL` (default `llama3.2:1b`)
   - Requires a running local Ollama service (`OLLAMA_OPENAI_BASE_URL`)
 
-Embeddings are served by Ollama (`OLLAMA_EMBED_MODEL`, default `nomic-embed-text`) for both provider modes.
+Embeddings are served by Ollama (`OLLAMA_EMBED_MODEL`, default `nomic-embed-text`) for both provider modes. Document chunks use ordered, sequential requests to Ollama's native `/api/embed` endpoint, with up to `OLLAMA_EMBED_BATCH_SIZE` inputs per request (default: `32`). `EMBED_CONCURRENCY` limits concurrent embedding HTTP requests process-wide across ingestion workers and queries, and `OLLAMA_EMBED_READ_TIMEOUT_S` defaults to `120` seconds. Ollama receives `truncate=false`, so oversized inputs fail instead of being silently truncated.
 
 ## 8. Email Verification Delivery
 Registration and verification-email resends store only hashed verification tokens and send verification emails. Clients consume the raw one-time token through `POST /api/v1/auth/verify-email` and can request a replacement through `POST /api/v1/auth/resend-verification`.

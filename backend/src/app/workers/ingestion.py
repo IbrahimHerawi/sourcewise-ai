@@ -7,6 +7,7 @@ import logging
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
+from time import perf_counter
 from typing import Final
 
 from sqlalchemy import delete, select, update
@@ -223,8 +224,9 @@ class IngestionManager:
 
                 await self._process_job(item, worker_idx=worker_idx)
             except Exception:
-                logger.exception(
-                    "Ingestion worker %s crashed while processing queue item.", worker_idx
+                logger.error(
+                    "Ingestion worker status=failure worker=%s.",
+                    worker_idx,
                 )
             finally:
                 if isinstance(item, uuid.UUID):
@@ -259,7 +261,11 @@ class IngestionManager:
                 raise _IngestionStageError(NO_EXTRACTABLE_TEXT_ERROR)
 
             try:
-                embeddings = await embed_documents(chunks)
+                embeddings = await embed_documents(
+                    chunks,
+                    job_id=claimed.job_id,
+                    document_id=claimed.document_id,
+                )
             except Exception as exc:
                 raise _IngestionStageError(EMBEDDING_GENERATION_ERROR) from exc
 
@@ -275,12 +281,26 @@ class IngestionManager:
                 for index, (chunk, embedding) in enumerate(zip(chunks, embeddings, strict=True))
             ]
 
-            await self._persist_success(
-                job_id=claimed.job_id,
-                document_id=claimed.document_id,
-                extracted_text=extracted_text,
-                chunks=chunk_rows,
-            )
+            persistence_started_at = perf_counter()
+            persistence_status = "failure"
+            try:
+                await self._persist_success(
+                    job_id=claimed.job_id,
+                    document_id=claimed.document_id,
+                    extracted_text=extracted_text,
+                    chunks=chunk_rows,
+                )
+                persistence_status = "success"
+            finally:
+                logger.info(
+                    "Ingestion persistence summary job_id=%s document_id=%s chunk_count=%s "
+                    "duration_s=%.6f status=%s",
+                    claimed.job_id,
+                    claimed.document_id,
+                    len(chunk_rows),
+                    perf_counter() - persistence_started_at,
+                    persistence_status,
+                )
             logger.info(
                 "Worker %s completed ingestion job %s (%s chunks).",
                 worker_idx,
@@ -288,8 +308,8 @@ class IngestionManager:
                 len(chunk_rows),
             )
         except Exception as exc:
-            logger.exception(
-                "Worker %s failed ingestion job %s for document %s.",
+            logger.error(
+                "Ingestion job status=failure worker=%s job_id=%s document_id=%s.",
                 worker_idx,
                 claimed.job_id,
                 claimed.document_id,

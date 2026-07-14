@@ -68,8 +68,8 @@ class Settings(BaseSettings):
     embedding_dim: int = 768
     ingest_workers: int = Field(default=2, gt=0)
     ingest_shutdown_timeout_s: float = Field(default=30.0, gt=0)
-    chunk_size_chars: int = Field(default=1200, gt=0)
-    chunk_overlap_chars: int = Field(default=200, ge=0)
+    chunk_size_chars: int = Field(default=2000, gt=0)
+    chunk_overlap_chars: int = Field(default=100, ge=0)
     retrieval_max_cosine_distance: float = Field(default=0.75, ge=0.0, le=2.0)
     top_k: int = Field(default=5, gt=0)
 
@@ -84,8 +84,9 @@ class Settings(BaseSettings):
     ollama_chat_model: str = "llama3.2:1b"
     ollama_embed_model: str = "nomic-embed-text"
     embed_concurrency: int = Field(default=4, gt=0)
+    ollama_embed_batch_size: int = Field(default=32, ge=1, le=128)
     ollama_embed_connect_timeout_s: float = Field(default=5.0, gt=0)
-    ollama_embed_read_timeout_s: float = Field(default=30.0, gt=0)
+    ollama_embed_read_timeout_s: float = Field(default=120.0, gt=0)
     ollama_embed_max_connections: int = Field(default=20, gt=0)
     ollama_embed_max_keepalive_connections: int = Field(default=10, ge=0)
     ollama_embed_retry_attempts: int = Field(default=3, ge=1)

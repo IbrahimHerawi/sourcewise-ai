@@ -1,7 +1,12 @@
 """Service layer package."""
 
 from app.services.embeddings import (
+    EmbeddingCardinalityMismatchError,
+    EmbeddingDimensionMismatchError,
     OllamaEmbeddingClient,
+    OllamaEmbeddingError,
+    OllamaMalformedResponseError,
+    OllamaTransientEmbeddingError,
     close_embeddings_client,
     embed_documents,
     embed_query,
@@ -14,7 +19,12 @@ from app.services.question_answering import (
 )
 
 __all__ = [
+    "EmbeddingCardinalityMismatchError",
+    "EmbeddingDimensionMismatchError",
     "OllamaEmbeddingClient",
+    "OllamaEmbeddingError",
+    "OllamaMalformedResponseError",
+    "OllamaTransientEmbeddingError",
     "build_openai_client",
     "close_embeddings_client",
     "embed_documents",

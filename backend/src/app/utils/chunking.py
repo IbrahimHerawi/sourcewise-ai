@@ -6,8 +6,8 @@ from typing import Final
 
 from app.core.settings import get_settings
 
-CHUNK_SIZE_CHARS: Final[int] = 1200
-CHUNK_OVERLAP_CHARS: Final[int] = 200
+CHUNK_SIZE_CHARS: Final[int] = 2000
+CHUNK_OVERLAP_CHARS: Final[int] = 100
 
 _DOC_EMBEDDING_PREFIX: Final[str] = "search_document: "
 _QUERY_EMBEDDING_PREFIX: Final[str] = "search_query: "

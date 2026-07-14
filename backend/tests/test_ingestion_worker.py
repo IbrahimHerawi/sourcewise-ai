@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 from uuid import UUID, uuid4
 
 import pytest
@@ -174,6 +174,8 @@ async def test_worker_extracts_chunks_embeds_once_per_chunk_and_finalizes_atomic
         ]
     )
     monkeypatch.setattr(ingestion_worker, "embed_documents", embed_mock)
+    info_mock = Mock()
+    monkeypatch.setattr(ingestion_worker.logger, "info", info_mock)
 
     await manager._process_job(job_id, worker_idx=1)
 
@@ -189,7 +191,25 @@ async def test_worker_extracts_chunks_embeds_once_per_chunk_and_finalizes_atomic
     assert job.error_message is None
     assert [chunk.content for chunk in chunks] == ["alpha source text", "beta source text"]
     assert [chunk.chunk_index for chunk in chunks] == [0, 1]
-    embed_mock.assert_awaited_once_with(["alpha source text", "beta source text"])
+    embed_mock.assert_awaited_once_with(
+        ["alpha source text", "beta source text"],
+        job_id=job_id,
+        document_id=document_id,
+    )
+    rendered_logs = [
+        call.args[0] % call.args[1:]
+        for call in info_mock.call_args_list
+        if call.args
+    ]
+    persistence_logs = [
+        message for message in rendered_logs if "Ingestion persistence summary" in message
+    ]
+    assert len(persistence_logs) == 1
+    assert str(job_id) in persistence_logs[0]
+    assert str(document_id) in persistence_logs[0]
+    assert "chunk_count=2" in persistence_logs[0]
+    assert "status=success" in persistence_logs[0]
+    assert all(extracted_text not in message for message in rendered_logs)
 
 
 @pytest.mark.asyncio
@@ -233,7 +253,12 @@ async def test_worker_failure_paths_store_only_approved_messages(
         session_maker=worker_database.session_maker,
     )
 
-    async def _successful_embeddings(chunks: list[str]) -> list[list[float]]:
+    async def _successful_embeddings(
+        chunks: list[str],
+        *,
+        job_id: UUID | None = None,
+        document_id: UUID | None = None,
+    ) -> list[list[float]]:
         return [[0.1] * _EMBEDDING_DIM for _ in chunks]
 
     monkeypatch.setattr(ingestion_worker, "embed_documents", _successful_embeddings)
