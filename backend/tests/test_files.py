@@ -295,6 +295,80 @@ def test_resolve_under_root_rejects_escape(tmp_path: Path) -> None:
         files._resolve_under_root(root, root.parent / "escape.txt")
 
 
+def test_delete_stored_upload_removes_only_file_and_empty_uuid_directory(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _patch_settings(monkeypatch, tmp_path)
+    document_id = uuid4()
+    document_dir = tmp_path / str(document_id)
+    document_dir.mkdir()
+    document_path = document_dir / "source.txt"
+    document_path.write_text("source", encoding="utf-8")
+
+    files.delete_stored_upload(document_id, str(document_path))
+
+    assert not document_path.exists()
+    assert not document_dir.exists()
+
+
+def test_delete_stored_upload_preserves_nonempty_uuid_directory(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _patch_settings(monkeypatch, tmp_path)
+    document_id = uuid4()
+    document_dir = tmp_path / str(document_id)
+    document_dir.mkdir()
+    document_path = document_dir / "source.txt"
+    sibling_path = document_dir / "keep.txt"
+    document_path.write_text("source", encoding="utf-8")
+    sibling_path.write_text("keep", encoding="utf-8")
+
+    files.delete_stored_upload(document_id, str(document_path))
+
+    assert not document_path.exists()
+    assert sibling_path.read_text(encoding="utf-8") == "keep"
+
+
+def test_delete_stored_upload_treats_missing_file_and_directory_as_success(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _patch_settings(monkeypatch, tmp_path)
+    document_id = uuid4()
+
+    files.delete_stored_upload(
+        document_id,
+        str(tmp_path / str(document_id) / "missing.txt"),
+    )
+
+
+@pytest.mark.parametrize("unsafe_location", ["outside_root", "wrong_uuid_directory"])
+def test_delete_stored_upload_refuses_unverified_paths(
+    unsafe_location: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    upload_root = tmp_path / "uploads"
+    upload_root.mkdir()
+    _patch_settings(monkeypatch, upload_root)
+    document_id = uuid4()
+    unsafe_dir = (
+        tmp_path / "outside"
+        if unsafe_location == "outside_root"
+        else upload_root / str(uuid4())
+    )
+    unsafe_dir.mkdir()
+    unsafe_path = unsafe_dir / "source.txt"
+    unsafe_path.write_text("must remain", encoding="utf-8")
+
+    with pytest.raises(files.UploadValidationError):
+        files.delete_stored_upload(document_id, str(unsafe_path))
+
+    assert unsafe_path.read_text(encoding="utf-8") == "must remain"
+
+
 @pytest.mark.parametrize("extension", [".txt", ".md", ".TXT"])
 def test_extract_text_decodes_utf8_and_normalizes_line_endings(extension: str) -> None:
     extracted = files.extract_text(extension, b"first\r\nsecond\rthird")

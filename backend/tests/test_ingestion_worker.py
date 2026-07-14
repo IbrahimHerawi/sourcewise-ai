@@ -21,6 +21,7 @@ from app.db.models.document_chunks import DocumentChunk
 from app.db.models.documents import Document, DocumentStatus
 from app.db.models.ingestion_jobs import IngestionJob, IngestionJobStatus
 from app.repositories.chunk_repository import ChunkRepository
+from app.repositories.document_repository import DocumentRepository
 from app.workers.ingestion import (
     EMBEDDING_GENERATION_ERROR,
     INGESTION_ERROR,
@@ -138,6 +139,30 @@ async def _load_result(
     assert document is not None
     assert job is not None
     return document, job, chunks
+
+
+async def _delete_document(database: WorkerDatabase, document_id: UUID) -> None:
+    async with database.session_maker() as session, session.begin():
+        deleted = await DocumentRepository(session).delete_document(
+            database.user_id,
+            document_id,
+        )
+        assert deleted is not None
+
+
+async def _assert_document_rows_absent(
+    database: WorkerDatabase,
+    *,
+    document_id: UUID,
+    job_id: UUID,
+) -> None:
+    async with database.session_maker() as session:
+        assert await session.get(Document, document_id) is None
+        assert await session.get(IngestionJob, job_id) is None
+        chunks = await session.scalars(
+            select(DocumentChunk).where(DocumentChunk.document_id == document_id)
+        )
+        assert list(chunks.all()) == []
 
 
 def _blank_pdf_bytes() -> bytes:
@@ -494,3 +519,163 @@ async def test_failure_persistence_rejects_unapproved_message(
             document_id=uuid4(),
             error_message="RuntimeError: raw internal detail",
         )
+
+
+@pytest.mark.asyncio
+async def test_deletion_during_extraction_discards_results_and_worker_processes_next_job(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    worker_database: WorkerDatabase,
+) -> None:
+    manager = IngestionManager(
+        settings=_settings(),
+        session_maker=worker_database.session_maker,
+    )
+    await manager.start()
+    deleted_path = tmp_path / "deleted-during-extraction.txt"
+    next_path = tmp_path / "processed-after-deletion.txt"
+    deleted_path.write_text("deleted content", encoding="utf-8")
+    next_path.write_text("next content", encoding="utf-8")
+    deleted_document_id, deleted_job_id = await _create_job(
+        worker_database,
+        deleted_path,
+    )
+    next_document_id, next_job_id = await _create_job(worker_database, next_path)
+    extraction_started = asyncio.Event()
+    resume_extraction = asyncio.Event()
+    original_read_and_extract = manager._read_and_extract
+
+    async def _controlled_extraction(claimed: ingestion_worker.ClaimedJob) -> str:
+        if claimed.document_id == deleted_document_id:
+            extraction_started.set()
+            await resume_extraction.wait()
+            return "deleted content"
+        return await original_read_and_extract(claimed)
+
+    async def _successful_embeddings(
+        chunks: list[str],
+        **_: object,
+    ) -> list[list[float]]:
+        return [[0.1] * _EMBEDDING_DIM for _ in chunks]
+
+    monkeypatch.setattr(manager, "_read_and_extract", _controlled_extraction)
+    monkeypatch.setattr(ingestion_worker, "embed_documents", _successful_embeddings)
+
+    try:
+        await manager.enqueue(job_id=deleted_job_id)
+        await asyncio.wait_for(extraction_started.wait(), timeout=1.0)
+        await manager.enqueue(job_id=next_job_id)
+        await _delete_document(worker_database, deleted_document_id)
+        resume_extraction.set()
+        await asyncio.wait_for(manager._queue.join(), timeout=2.0)
+    finally:
+        resume_extraction.set()
+        await manager.stop()
+
+    await _assert_document_rows_absent(
+        worker_database,
+        document_id=deleted_document_id,
+        job_id=deleted_job_id,
+    )
+    next_document, next_job, next_chunks = await _load_result(
+        worker_database,
+        document_id=next_document_id,
+        job_id=next_job_id,
+    )
+    assert next_document.status == DocumentStatus.READY
+    assert next_document.extracted_text == "next content"
+    assert next_job.status == IngestionJobStatus.DONE
+    assert [chunk.content for chunk in next_chunks] == ["next content"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("later_batch_fails", [False, True])
+async def test_deletion_during_later_embedding_batch_keeps_all_results_memory_only(
+    later_batch_fails: bool,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    worker_database: WorkerDatabase,
+) -> None:
+    storage_path = tmp_path / "embedding-race.txt"
+    storage_path.write_text("three chunks", encoding="utf-8")
+    document_id, job_id = await _create_job(worker_database, storage_path)
+    manager = IngestionManager(
+        settings=_settings(),
+        session_maker=worker_database.session_maker,
+    )
+    later_batch_started = asyncio.Event()
+    resume_later_batch = asyncio.Event()
+    completed_earlier_batches: list[list[float]] = []
+    monkeypatch.setattr(ingestion_worker, "chunk_text", lambda _: ["one", "two", "three"])
+
+    async def _controlled_batches(
+        chunks: list[str],
+        **_: object,
+    ) -> list[list[float]]:
+        completed_earlier_batches.append([0.1] * _EMBEDDING_DIM)
+        later_batch_started.set()
+        await resume_later_batch.wait()
+        if later_batch_fails:
+            raise RuntimeError("api_key=raw-embedding-race-secret")
+        return completed_earlier_batches + [
+            [0.2] * _EMBEDDING_DIM for _ in chunks[1:]
+        ]
+
+    monkeypatch.setattr(ingestion_worker, "embed_documents", _controlled_batches)
+    processing = asyncio.create_task(manager._process_job(job_id, worker_idx=1))
+
+    await asyncio.wait_for(later_batch_started.wait(), timeout=1.0)
+    await _delete_document(worker_database, document_id)
+    resume_later_batch.set()
+    await asyncio.wait_for(processing, timeout=2.0)
+
+    assert len(completed_earlier_batches) == 1
+    await _assert_document_rows_absent(
+        worker_database,
+        document_id=document_id,
+        job_id=job_id,
+    )
+
+
+@pytest.mark.asyncio
+async def test_deletion_immediately_before_finalization_does_not_recreate_rows(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    worker_database: WorkerDatabase,
+) -> None:
+    storage_path = tmp_path / "finalization-race.txt"
+    storage_path.write_text("ready to finalize", encoding="utf-8")
+    document_id, job_id = await _create_job(worker_database, storage_path)
+    manager = IngestionManager(
+        settings=_settings(),
+        session_maker=worker_database.session_maker,
+    )
+    finalization_started = asyncio.Event()
+    resume_finalization = asyncio.Event()
+    original_persist_success = manager._persist_success
+
+    async def _successful_embeddings(
+        chunks: list[str],
+        **_: object,
+    ) -> list[list[float]]:
+        return [[0.1] * _EMBEDDING_DIM for _ in chunks]
+
+    async def _controlled_finalization(**kwargs: object) -> bool:
+        finalization_started.set()
+        await resume_finalization.wait()
+        return await original_persist_success(**kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(ingestion_worker, "embed_documents", _successful_embeddings)
+    monkeypatch.setattr(manager, "_persist_success", _controlled_finalization)
+    processing = asyncio.create_task(manager._process_job(job_id, worker_idx=1))
+
+    await asyncio.wait_for(finalization_started.wait(), timeout=1.0)
+    await _delete_document(worker_database, document_id)
+    resume_finalization.set()
+    await asyncio.wait_for(processing, timeout=2.0)
+
+    await _assert_document_rows_absent(
+        worker_database,
+        document_id=document_id,
+        job_id=job_id,
+    )

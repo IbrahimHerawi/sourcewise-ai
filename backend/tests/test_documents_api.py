@@ -20,8 +20,11 @@ from app.api.v1.endpoints import documents as documents_endpoint
 from app.core.security import create_access_token
 from app.core.settings import get_settings
 from app.db.models.auth import User
+from app.db.models.document_chunks import DocumentChunk
 from app.db.models.documents import Document, DocumentStatus
 from app.db.models.ingestion_jobs import IngestionJob, IngestionJobStatus
+from app.db.models.question_context_chunks import QuestionContextChunk
+from app.db.models.questions import Question
 from app.db.session import get_db_session
 from app.main import app
 from app.repositories.collection_repository import CollectionRepository
@@ -623,6 +626,10 @@ async def test_document_endpoints_require_verified_user(
             f"/api/v1/documents/{uuid4()}",
             headers=headers,
         ),
+        await api_context.client.delete(
+            f"/api/v1/documents/{uuid4()}",
+            headers=headers,
+        ),
         await api_context.client.post(
             "/api/v1/documents/upload",
             headers=headers,
@@ -679,3 +686,280 @@ async def test_get_document_returns_same_404_for_foreign_and_missing_ids(
             "message": "Document not found.",
         }
     }
+
+
+@pytest.mark.asyncio
+async def test_delete_document_cascades_live_rows_and_preserves_citation_history(
+    api_context: ApiTestContext,
+    db_session: AsyncSession,
+) -> None:
+    upload_response = await _upload_text_file(
+        api_context.client,
+        headers=api_context.auth_headers,
+        filename="cited.txt",
+        content="durable cited content",
+    )
+    document_id = UUID(upload_response.json()["items"][0]["document_id"])
+    document_path = api_context.upload_root_dir / str(document_id) / "cited.txt"
+    job_id = await db_session.scalar(
+        select(IngestionJob.id).where(IngestionJob.document_id == document_id)
+    )
+    assert job_id is not None
+
+    embedding = [0.0] * get_settings().embedding_dim
+    chunk = DocumentChunk(
+        document_id=document_id,
+        chunk_index=0,
+        content="durable cited content",
+        embedding=embedding,
+    )
+    question = Question(
+        user_id=api_context.current_user.id,
+        collection_id=None,
+        question_text="What is cited?",
+        question_embedding=embedding,
+        answer_text="The durable content.",
+        ai_provider="ollama",
+        model_used="test-model",
+    )
+    db_session.add_all([chunk, question])
+    await db_session.flush()
+    snapshot = QuestionContextChunk(
+        question_id=question.id,
+        rank=1,
+        document_id=document_id,
+        document_filename="cited.txt",
+        chunk_id=chunk.id,
+        chunk_index=0,
+        chunk_content=chunk.content,
+        similarity_score=0.99,
+    )
+    db_session.add(snapshot)
+    await db_session.commit()
+
+    response = await api_context.client.delete(
+        f"/api/v1/documents/{document_id}",
+        headers=api_context.auth_headers,
+    )
+
+    assert response.status_code == 204
+    assert response.content == b""
+    assert await db_session.scalar(
+        select(Document.id).where(Document.id == document_id)
+    ) is None
+    assert await db_session.scalar(
+        select(IngestionJob.id).where(IngestionJob.id == job_id)
+    ) is None
+    assert await db_session.scalar(
+        select(DocumentChunk.id).where(DocumentChunk.id == chunk.id)
+    ) is None
+    assert await db_session.scalar(
+        select(Question.id).where(Question.id == question.id)
+    ) == question.id
+    preserved_snapshot = await db_session.scalar(
+        select(QuestionContextChunk).where(
+            QuestionContextChunk.question_id == question.id,
+            QuestionContextChunk.rank == 1,
+        )
+    )
+    assert preserved_snapshot is not None
+    assert preserved_snapshot.document_id == document_id
+    assert preserved_snapshot.chunk_content == "durable cited content"
+    assert not document_path.exists()
+    assert not document_path.parent.exists()
+
+
+@pytest.mark.asyncio
+async def test_delete_document_returns_same_404_for_foreign_and_missing_ids(
+    api_context: ApiTestContext,
+    db_session: AsyncSession,
+) -> None:
+    other_user = await UserRepository(db_session).create_user(
+        email=f"foreign-delete-{uuid4()}@example.com",
+        password_hash="test-password-hash",
+        first_name="Foreign",
+        last_name="Owner",
+        is_active=True,
+        is_email_verified=True,
+    )
+    foreign_id = uuid4()
+    foreign_dir = api_context.upload_root_dir / str(foreign_id)
+    foreign_dir.mkdir()
+    foreign_path = foreign_dir / "foreign.txt"
+    foreign_path.write_text("private", encoding="utf-8")
+    foreign_document = await DocumentRepository(db_session).create_document(
+        other_user.id,
+        id=foreign_id,
+        filename=foreign_path.name,
+        original_extension=".txt",
+        content_type="text/plain",
+        size_bytes=7,
+        storage_path=str(foreign_path),
+        extracted_text="private",
+    )
+    await db_session.commit()
+
+    foreign_response = await api_context.client.delete(
+        f"/api/v1/documents/{foreign_document.id}",
+        headers=api_context.auth_headers,
+    )
+    missing_response = await api_context.client.delete(
+        f"/api/v1/documents/{uuid4()}",
+        headers=api_context.auth_headers,
+    )
+
+    assert foreign_response.status_code == 404
+    assert foreign_response.json() == missing_response.json() == {
+        "error": {
+            "code": "not_found",
+            "message": "Document not found.",
+        }
+    }
+    assert await db_session.get(Document, foreign_document.id) is not None
+    assert foreign_path.read_text(encoding="utf-8") == "private"
+
+
+@pytest.mark.asyncio
+async def test_delete_document_succeeds_when_stored_file_is_missing(
+    api_context: ApiTestContext,
+    db_session: AsyncSession,
+) -> None:
+    document_id = uuid4()
+    await DocumentRepository(db_session).create_document(
+        api_context.current_user.id,
+        id=document_id,
+        filename="missing.txt",
+        original_extension=".txt",
+        content_type="text/plain",
+        size_bytes=1,
+        storage_path=str(
+            api_context.upload_root_dir / str(document_id) / "missing.txt"
+        ),
+        extracted_text=None,
+    )
+    await db_session.commit()
+
+    response = await api_context.client.delete(
+        f"/api/v1/documents/{document_id}",
+        headers=api_context.auth_headers,
+    )
+
+    assert response.status_code == 204
+    assert await db_session.get(Document, document_id) is None
+
+
+@pytest.mark.asyncio
+async def test_delete_document_refuses_unsafe_path_after_database_commit(
+    api_context: ApiTestContext,
+    db_session: AsyncSession,
+    caplog: pytest.LogCaptureFixture,
+    tmp_path: Path,
+) -> None:
+    document_id = uuid4()
+    unsafe_path = tmp_path / "outside.txt"
+    unsafe_path.write_text("must remain", encoding="utf-8")
+    await DocumentRepository(db_session).create_document(
+        api_context.current_user.id,
+        id=document_id,
+        filename=unsafe_path.name,
+        original_extension=".txt",
+        content_type="text/plain",
+        size_bytes=11,
+        storage_path=str(unsafe_path),
+        extracted_text="must remain",
+    )
+    await db_session.commit()
+
+    with caplog.at_level("WARNING", logger=documents_endpoint.__name__):
+        response = await api_context.client.delete(
+            f"/api/v1/documents/{document_id}",
+            headers=api_context.auth_headers,
+        )
+
+    assert response.status_code == 204
+    assert await db_session.get(Document, document_id) is None
+    assert unsafe_path.read_text(encoding="utf-8") == "must remain"
+    assert str(unsafe_path) not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_delete_document_database_rollback_leaves_stored_file(
+    api_context: ApiTestContext,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    upload_response = await _upload_text_file(
+        api_context.client,
+        headers=api_context.auth_headers,
+        filename="rollback.txt",
+        content="must remain after rollback",
+    )
+    document_id = UUID(upload_response.json()["items"][0]["document_id"])
+    document_path = api_context.upload_root_dir / str(document_id) / "rollback.txt"
+    original_delete_document = DocumentRepository.delete_document
+
+    async def _fail_delete_in_savepoint(
+        repository: DocumentRepository,
+        user_id: UUID,
+        requested_document_id: UUID,
+    ) -> None:
+        async with db_session.begin_nested():
+            deleted = await original_delete_document(
+                repository,
+                user_id,
+                requested_document_id,
+            )
+            assert deleted is not None
+            raise RuntimeError("forced database failure")
+
+    monkeypatch.setattr(
+        DocumentRepository,
+        "delete_document",
+        _fail_delete_in_savepoint,
+    )
+
+    with pytest.raises(RuntimeError, match="forced database failure"):
+        await api_context.client.delete(
+            f"/api/v1/documents/{document_id}",
+            headers=api_context.auth_headers,
+        )
+
+    assert await db_session.scalar(
+        select(Document.id).where(Document.id == document_id)
+    ) == document_id
+    assert document_path.read_text(encoding="utf-8") == "must remain after rollback"
+
+
+@pytest.mark.asyncio
+async def test_delete_document_cleanup_failure_is_redacted_and_returns_204(
+    api_context: ApiTestContext,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    upload_response = await _upload_text_file(
+        api_context.client,
+        headers=api_context.auth_headers,
+        filename="cleanup.txt",
+        content="committed first",
+    )
+    document_id = UUID(upload_response.json()["items"][0]["document_id"])
+    document_path = api_context.upload_root_dir / str(document_id) / "cleanup.txt"
+    monkeypatch.setattr(
+        documents_endpoint,
+        "delete_stored_upload",
+        MagicMock(side_effect=OSError(f"failed to remove {document_path}")),
+    )
+
+    with caplog.at_level("WARNING", logger=documents_endpoint.__name__):
+        response = await api_context.client.delete(
+            f"/api/v1/documents/{document_id}",
+            headers=api_context.auth_headers,
+        )
+
+    assert response.status_code == 204
+    assert await db_session.scalar(
+        select(Document.id).where(Document.id == document_id)
+    ) is None
+    assert document_path.exists()
+    assert str(document_path) not in caplog.text
