@@ -1,3 +1,5 @@
+import { redirect } from "next/navigation";
+
 export default function DashboardPage() {
-  return <main>Dashboard</main>;
+  redirect("/dashboard/history");
 }

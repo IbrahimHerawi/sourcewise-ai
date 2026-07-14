@@ -1,6 +1,7 @@
 import { Geist_Mono, Manrope } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "@/components/ui/toaster";
+import { AuthProvider } from "@/contexts/auth-context";
 
 // Google Sans Flex is a proprietary Google brand font and is NOT distributed
 // via the public Google Fonts API, so next/font/google cannot load it. We load
@@ -32,8 +33,10 @@ export default function RootLayout({
       className={`${manrope.variable} ${geistMono.variable}`}
     >
       <body className="font-sans antialiased bg-background text-foreground">
-        {children}
-        <Toaster />
+        <AuthProvider>
+          {children}
+          <Toaster />
+        </AuthProvider>
       </body>
     </html>
   );

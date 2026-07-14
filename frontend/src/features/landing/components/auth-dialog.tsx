@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { BrainCircuit, Loader2 } from "lucide-react";
+import { useRouter } from "next/navigation";
 
 import {
   Dialog,
@@ -15,6 +16,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
+import { ApiError, getApiErrorMessage } from "@/lib/api";
 import { stopScroll, startScroll } from "./smooth-scroll";
 
 type AuthDialogProps = {
@@ -23,37 +26,76 @@ type AuthDialogProps = {
   defaultTab?: "signin" | "signup";
 };
 
+function validatePassword(password: string): string | null {
+  const hasLower = /[a-z]/.test(password);
+  const hasUpper = /[A-Z]/.test(password);
+  const hasDigit = /[0-9]/.test(password);
+  const hasSymbol = /[^a-zA-Z0-9]/.test(password);
+  const passwordBytes = new TextEncoder().encode(password);
+
+  if (password.length < 12) {
+    return "Password must be at least 12 characters.";
+  }
+  if (passwordBytes.length > 72) {
+    return "Password must be at most 72 bytes.";
+  }
+  if (!hasLower || !hasUpper || !hasDigit || !hasSymbol) {
+    return "Password must include uppercase, lowercase, number, and symbol characters.";
+  }
+  return null;
+}
+
 export function AuthDialog({ open, onOpenChange, defaultTab = "signin" }: AuthDialogProps) {
   const { toast } = useToast();
+  const { login, resendVerification, signup } = useAuth();
+  const router = useRouter();
+
   const [tab, setTab] = React.useState<"signin" | "signup">(defaultTab);
   const [loading, setLoading] = React.useState(false);
+  const [firstName, setFirstName] = React.useState("");
+  const [lastName, setLastName] = React.useState("");
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [confirmPassword, setConfirmPassword] = React.useState("");
   const [confirmError, setConfirmError] = React.useState("");
+  const [passwordError, setPasswordError] = React.useState("");
+  const [apiError, setApiError] = React.useState("");
+  const [successMessage, setSuccessMessage] = React.useState("");
+  const [verificationLink, setVerificationLink] = React.useState("");
+  const [canResendVerification, setCanResendVerification] = React.useState(false);
 
   React.useEffect(() => {
     if (open) {
       setTab(defaultTab);
+      setFirstName("");
+      setLastName("");
       setEmail("");
       setPassword("");
       setConfirmPassword("");
       setConfirmError("");
+      setPasswordError("");
+      setApiError("");
+      setSuccessMessage("");
+      setVerificationLink("");
+      setCanResendVerification(false);
     }
   }, [open, defaultTab]);
 
-  // Reset all fields when switching between Sign In and Sign Up tabs so each
-  // form always opens with empty inputs.
   const handleTabChange = (v: string) => {
     setTab(v as "signin" | "signup");
+    setFirstName("");
+    setLastName("");
     setEmail("");
     setPassword("");
     setConfirmPassword("");
     setConfirmError("");
+    setPasswordError("");
+    setApiError("");
+    setSuccessMessage("");
+    setVerificationLink("");
+    setCanResendVerification(false);
   };
 
-  // Lock body scroll (and stop Lenis smooth-scroll) while the dialog is open
-  // so the page behind the modal doesn't scroll.
   React.useEffect(() => {
     if (!open) return;
     const prevOverflow = document.body.style.overflow;
@@ -65,7 +107,6 @@ export function AuthDialog({ open, onOpenChange, defaultTab = "signin" }: AuthDi
     };
   }, [open]);
 
-  // Validate confirm password on change.
   const handleConfirmChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
     setConfirmPassword(val);
@@ -76,42 +117,125 @@ export function AuthDialog({ open, onOpenChange, defaultTab = "signin" }: AuthDi
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setApiError("");
+    setSuccessMessage("");
+    setVerificationLink("");
+    setPasswordError("");
+    setConfirmError("");
+    setCanResendVerification(false);
 
-    // Sign Up: validate that passwords match before submitting.
-    if (tab === "signup" && password !== confirmPassword) {
-      setConfirmError("Passwords do not match");
+    if (tab === "signup") {
+      const trimmedFirst = firstName.trim();
+      const trimmedLast = lastName.trim();
+
+      if (!trimmedFirst || !trimmedLast) {
+        setApiError("First name and last name are required.");
+        return;
+      }
+
+      if (trimmedFirst.length > 100 || trimmedLast.length > 100) {
+        setApiError("First name and last name must be 100 characters or fewer.");
+        return;
+      }
+
+      if (password !== confirmPassword) {
+        setConfirmError("Passwords do not match");
+        return;
+      }
+
+      const pwErr = validatePassword(password);
+      if (pwErr) {
+        setPasswordError(pwErr);
+        return;
+      }
+
+      setLoading(true);
+      try {
+        const response = await signup(email.trim(), password, trimmedFirst, trimmedLast);
+        const message = response.verification_token
+          ? "Account created. Verify your email before signing in."
+          : "Registration successful. Check your email to verify your account.";
+
+        toast({
+          title: "Account created",
+          description: message,
+        });
+
+        setSuccessMessage(message);
+        setVerificationLink(
+          response.verification_token
+            ? `/verify-email?token=${encodeURIComponent(response.verification_token)}`
+            : "",
+        );
+        setTab("signin");
+        setPassword("");
+        setConfirmPassword("");
+        setPasswordError("");
+      } catch (error: unknown) {
+        console.error("Registration error:", error);
+        setApiError(
+          error instanceof ApiError && error.code === "conflict"
+            ? "An account with this email already exists. Try signing in instead."
+            : getApiErrorMessage(error, "Registration failed."),
+        );
+      } finally {
+        setLoading(false);
+      }
+    } else {
+      setLoading(true);
+      try {
+        await login(email.trim(), password);
+        toast({
+          title: "Welcome back",
+          description: "Launching your SourceWise workspace…",
+        });
+        onOpenChange(false);
+        router.replace("/dashboard/documents");
+      } catch (error: unknown) {
+        console.error("Login error:", error);
+        setCanResendVerification(
+          error instanceof ApiError && error.code === "email_not_verified",
+        );
+        setApiError(getApiErrorMessage(error, "Invalid email or password."));
+      } finally {
+        setLoading(false);
+      }
+    }
+  };
+
+  const handleResendVerification = async () => {
+    if (!email.trim()) {
+      setApiError("Enter your email address before requesting another verification email.");
       return;
     }
 
     setLoading(true);
-    setTimeout(() => {
+    setApiError("");
+    try {
+      const response = await resendVerification(email.trim());
+      setSuccessMessage(response.message);
+      setVerificationLink(
+        response.verification_token
+          ? `/verify-email?token=${encodeURIComponent(response.verification_token)}`
+          : "",
+      );
+    } catch (error: unknown) {
+      setApiError(getApiErrorMessage(error, "Unable to resend the verification email."));
+    } finally {
       setLoading(false);
-      onOpenChange(false);
-      setEmail("");
-      setPassword("");
-      setConfirmPassword("");
-      setConfirmError("");
-      toast({
-        title: tab === "signup" ? "Account created" : "Welcome back",
-        description:
-          tab === "signup"
-            ? "Your SourceWise workspace is ready. Launching the app…"
-            : "Launching your SourceWise workspace…",
-      });
-    }, 1100);
+    }
   };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="border-border bg-white p-0 sm:max-w-md">
+      <DialogContent className="border-border bg-card p-0 sm:max-w-md">
         <div className="relative overflow-hidden rounded-lg">
-
           <div className="relative p-6 sm:p-8">
             <DialogHeader className="items-center text-center">
               <div className="mb-3 flex size-11 items-center justify-center rounded-xl bg-brand-gradient">
-                <BrainCircuit className="size-6 text-white" />
+                <BrainCircuit className="size-6 text-primary-foreground" />
               </div>
               <DialogTitle className="text-xl tracking-tight" style={{ fontWeight: 450 }}>
                 {tab === "signup" ? "Create your account" : "Welcome back"}
@@ -130,10 +254,42 @@ export function AuthDialog({ open, onOpenChange, defaultTab = "signin" }: AuthDi
               </TabsList>
 
               <form onSubmit={handleSubmit} className="mt-5 space-y-4">
+                {tab === "signup" && (
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="firstName">First Name</Label>
+                      <Input
+                        id="firstName"
+                        maxLength={100}
+                        type="text"
+                        placeholder="John"
+                        required
+                        value={firstName}
+                        onChange={(e) => setFirstName(e.target.value)}
+                        className="auth-input bg-muted border-border"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="lastName">Last Name</Label>
+                      <Input
+                        id="lastName"
+                        maxLength={100}
+                        type="text"
+                        placeholder="Doe"
+                        required
+                        value={lastName}
+                        onChange={(e) => setLastName(e.target.value)}
+                        className="auth-input bg-muted border-border"
+                      />
+                    </div>
+                  </div>
+                )}
+
                 <div className="space-y-2">
                   <Label htmlFor="email">Email</Label>
                   <Input
                     id="email"
+                    maxLength={320}
                     type="email"
                     placeholder="you@company.com"
                     required
@@ -146,14 +302,6 @@ export function AuthDialog({ open, onOpenChange, defaultTab = "signin" }: AuthDi
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <Label htmlFor="password">Password</Label>
-                    {tab === "signin" && (
-                      <button
-                        type="button"
-                        className="text-xs text-brand-light hover:text-brand transition-colors"
-                      >
-                        Forgot?
-                      </button>
-                    )}
                   </div>
                   <Input
                     id="password"
@@ -163,23 +311,26 @@ export function AuthDialog({ open, onOpenChange, defaultTab = "signin" }: AuthDi
                     value={password}
                     onChange={(e) => {
                       setPassword(e.target.value);
-                      // Re-validate confirm field if it has a value.
                       if (confirmPassword && e.target.value !== confirmPassword) {
                         setConfirmError("Passwords do not match");
                       } else if (confirmError) {
                         setConfirmError("");
                       }
+                      if (passwordError) {
+                        setPasswordError("");
+                      }
                     }}
-                    className="auth-input bg-muted border-border"
+                    className={
+                      passwordError
+                        ? "auth-input bg-muted border-destructive"
+                        : "auth-input bg-muted border-border"
+                    }
                   />
+                  {passwordError && (
+                    <p className="text-xs text-destructive">{passwordError}</p>
+                  )}
                 </div>
 
-                {/* Confirm Password — only on Sign Up. Uses a CSS grid
-                    0fr→1fr height transition for the modal expansion, plus
-                    a fade + slide-up on the inner content for a polished
-                    entrance. overflow-hidden only during collapse (signin);
-                    visible when expanded (signup) so the input's focus
-                    ring/border renders fully — no clipping. */}
                 <div
                   className="grid transition-[grid-template-rows] duration-300 ease-out"
                   style={{
@@ -216,9 +367,43 @@ export function AuthDialog({ open, onOpenChange, defaultTab = "signin" }: AuthDi
                   </div>
                 </div>
 
+                {apiError && (
+                  <p
+                    aria-live="assertive"
+                    className="rounded bg-destructive/10 p-2 text-center text-xs font-medium text-destructive"
+                  >
+                    {apiError}
+                  </p>
+                )}
+
+                {successMessage && (
+                  <div
+                    aria-live="polite"
+                    className="space-y-2 rounded bg-primary/10 p-2 text-center text-xs font-medium text-primary"
+                  >
+                    <p>{successMessage}</p>
+                    {verificationLink && (
+                      <a className="underline underline-offset-2" href={verificationLink}>
+                        Verify email now
+                      </a>
+                    )}
+                  </div>
+                )}
+
+                {canResendVerification && (
+                  <button
+                    className="w-full text-xs text-brand underline underline-offset-2 disabled:opacity-50"
+                    disabled={loading}
+                    onClick={handleResendVerification}
+                    type="button"
+                  >
+                    Resend verification email
+                  </button>
+                )}
+
                 <Button
                   type="submit"
-                  disabled={loading || (tab === "signup" && !!confirmError)}
+                  disabled={loading || (tab === "signup" && (!!confirmError || !!passwordError))}
                   className="w-full bg-brand-gradient h-11 text-sm font-medium hover:opacity-95"
                 >
                   {loading && <Loader2 className="size-4 animate-spin" />}
