@@ -355,16 +355,21 @@ async def test_chunk_repository_similarity_search_orders_by_cosine_distance(
             ),
         ],
     )
+    await DocumentRepository(db_session).update_status(
+        user.id,
+        document.id,
+        DocumentStatus.READY,
+    )
 
     query_embedding = _embedding(0.9, 0.1, settings.embedding_dim)
     results = await repository.similarity_search(
+        user_id=user.id,
         query_embedding=query_embedding,
         top_k=3,
-        document_ids=[document.id],
     )
 
-    assert [chunk.chunk_index for chunk, _ in results] == [0, 2, 1]
-    assert results[0][1] < results[1][1] < results[2][1]
+    assert [result.chunk_index for result in results] == [0, 2, 1]
+    assert results[0].distance < results[1].distance < results[2].distance
 
 
 @pytest.mark.asyncio

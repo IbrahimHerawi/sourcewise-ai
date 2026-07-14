@@ -16,6 +16,18 @@ class ChunkWithEmbedding:
 
 
 @dataclass(slots=True, frozen=True)
+class SimilaritySearchResult:
+    """An immutable chunk and document snapshot returned by retrieval."""
+
+    chunk_id: uuid.UUID
+    document_id: uuid.UUID
+    document_filename: str
+    chunk_index: int
+    content: str
+    distance: float
+
+
+@dataclass(slots=True, frozen=True)
 class QuestionContextRow:
     """A complete citation snapshot captured for a question."""
 
@@ -28,4 +40,4 @@ class QuestionContextRow:
     similarity_score: float
 
 
-__all__ = ["ChunkWithEmbedding", "QuestionContextRow"]
+__all__ = ["ChunkWithEmbedding", "QuestionContextRow", "SimilaritySearchResult"]

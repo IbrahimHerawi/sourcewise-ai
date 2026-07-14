@@ -9,7 +9,11 @@ from app.repositories.document_repository import DocumentRepository
 from app.repositories.ingestion_job_repository import IngestionJobRepository
 from app.repositories.question_context_repository import QuestionContextRepository
 from app.repositories.question_repository import QuestionRepository
-from app.repositories.types import ChunkWithEmbedding, QuestionContextRow
+from app.repositories.types import (
+    ChunkWithEmbedding,
+    QuestionContextRow,
+    SimilaritySearchResult,
+)
 from app.repositories.user_repository import DuplicateUserEmailError, UserRepository
 
 __all__ = [
@@ -23,5 +27,6 @@ __all__ = [
     "QuestionContextRepository",
     "QuestionContextRow",
     "QuestionRepository",
+    "SimilaritySearchResult",
     "UserRepository",
 ]
