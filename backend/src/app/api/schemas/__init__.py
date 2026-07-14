@@ -23,6 +23,7 @@ from app.api.schemas.documents import (
     PaginatedDocumentListResponse,
 )
 from app.api.schemas.questions import (
+    CitationResponse,
     PaginatedQuestionHistoryResponse,
     QuestionAnswerRequest,
     QuestionAnswerResponse,
@@ -34,6 +35,7 @@ from app.api.schemas.questions import (
 
 __all__ = [
     "AuthUserResponse",
+    "CitationResponse",
     "CollectionCreateRequest",
     "CollectionResponse",
     "CollectionUpdateRequest",
