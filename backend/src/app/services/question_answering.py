@@ -18,7 +18,7 @@ from app.repositories.chunk_repository import ChunkRepository
 from app.repositories.question_context_repository import QuestionContextRepository
 from app.repositories.question_repository import QuestionRepository
 from app.repositories.types import QuestionContextRow
-from app.services.embeddings import OllamaEmbeddingClient, embed_query
+from app.services.embeddings import embed_query
 from app.services.llm import generate_answer
 
 DEFAULT_TOP_K: Final[int] = 5
@@ -55,14 +55,7 @@ async def _embed_question(
     *,
     settings: Settings | None,
 ) -> list[float]:
-    if settings is None:
-        return await embed_query(question_text)
-
-    client = OllamaEmbeddingClient(settings=settings)
-    try:
-        return await client.embed_query(question_text)
-    finally:
-        await client.aclose()
+    return await embed_query(question_text)
 
 
 async def _load_document_statuses(

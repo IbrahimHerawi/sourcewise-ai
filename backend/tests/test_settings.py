@@ -231,3 +231,21 @@ def test_ingest_shutdown_timeout_defaults_to_thirty_seconds() -> None:
 def test_ingest_shutdown_timeout_must_be_positive() -> None:
     with pytest.raises(ValueError, match="ingest_shutdown_timeout_s"):
         Settings(ingest_shutdown_timeout_s=0, _env_file=None)
+
+
+def test_embedding_batch_and_read_timeout_defaults() -> None:
+    settings = Settings(_env_file=None)
+
+    assert settings.ollama_embed_batch_size == 32
+    assert settings.ollama_embed_read_timeout_s == 120.0
+
+
+@pytest.mark.parametrize("batch_size", [0, 129])
+def test_embedding_batch_size_must_be_between_one_and_128(batch_size: int) -> None:
+    with pytest.raises(ValueError, match="ollama_embed_batch_size"):
+        Settings(ollama_embed_batch_size=batch_size, _env_file=None)
+
+
+def test_embedding_read_timeout_must_be_positive() -> None:
+    with pytest.raises(ValueError, match="ollama_embed_read_timeout_s"):
+        Settings(ollama_embed_read_timeout_s=0, _env_file=None)
