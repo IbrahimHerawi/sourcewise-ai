@@ -85,6 +85,34 @@
   --sidebar-accent-foreground: #121317;
   --sidebar-border: #e7ebf3;
   --sidebar-ring: #497bf9;
+
+  /* Dashboard shell tokens — isolated from the marketing theme. */
+  --font-dashboard: var(--font-inter), Inter, ui-sans-serif, system-ui, sans-serif;
+  --color-dashboard-background: #f8f8f8;
+  --color-dashboard-sidebar-background: #ffffff;
+  --color-dashboard-logo: #4679f9;
+  --color-dashboard-nav-active: #e8eefe;
+  --color-dashboard-nav-active-foreground: #4e7ef9;
+  --color-dashboard-nav-inactive-foreground: #4d4d4d;
+  --size-dashboard-sidebar-width: 17.5rem;
+  --size-dashboard-nav-item-height: 3rem;
+  --size-dashboard-nav-icon: 1.25rem;
+  --radius-dashboard-nav-item: 0.5rem;
+  --font-size-dashboard-nav: 1rem;
+  --font-size-dashboard-logo: 1.875rem;
+  --font-weight-dashboard-nav-active: 600;
+  --font-weight-dashboard-nav-inactive: 500;
+  --font-weight-dashboard-logo: 700;
+  --line-height-dashboard-nav: 1.25rem;
+  --line-height-dashboard-logo: 2.25rem;
+  --spacing-dashboard-sidebar-content-inline: 1rem;
+  --spacing-dashboard-sidebar-logo-block-start: 1.5625rem;
+  --spacing-dashboard-nav-block-start: 2.3125rem;
+  --spacing-dashboard-nav-item-inline: 1rem;
+  --spacing-dashboard-nav-item-gap: 0.75rem;
+  --spacing-dashboard-nav-items: 0.25rem;
+  --shadow-dashboard-sidebar: 0 0.25rem 1.25rem rgb(0 0 0 / 3%);
+  --shadow-dashboard-nav-active: 0 0.0625rem 0.125rem rgb(0 0 0 / 5%);
 }
 
 /* Keep the page bright even if a .dark class is ever applied */

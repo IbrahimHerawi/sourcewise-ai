@@ -1,0 +1,22 @@
+.shell {
+  display: flex;
+  min-height: 100svh;
+  background: var(--color-dashboard-background);
+}
+
+.content {
+  min-width: 0;
+  min-height: 100svh;
+  flex: 1;
+  background: var(--color-dashboard-background);
+}
+
+@media (max-width: 48rem) {
+  .shell {
+    flex-direction: column;
+  }
+
+  .content {
+    min-height: auto;
+  }
+}
