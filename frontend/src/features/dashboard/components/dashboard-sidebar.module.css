@@ -4,6 +4,8 @@
   background: var(--color-dashboard-sidebar-background);
   box-shadow: var(--shadow-dashboard-sidebar);
   font-family: var(--font-dashboard);
+  display: flex;
+  flex-direction: column;
 }
 
 .logo {
@@ -23,6 +25,7 @@
   gap: var(--spacing-dashboard-nav-items);
   margin-top: var(--spacing-dashboard-nav-block-start);
   padding-inline: var(--spacing-dashboard-sidebar-content-inline);
+  flex: 1;
 }
 
 .item {
@@ -58,6 +61,60 @@
   flex: none;
 }
 
+.footer {
+  padding: var(--spacing-dashboard-sidebar-content-inline);
+  border-top: 1px solid var(--border);
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-dashboard-sidebar-footer-gap);
+}
+
+.userInfo {
+  display: flex;
+  flex-direction: column;
+  padding-inline: var(--spacing-dashboard-sidebar-user-inline);
+}
+
+.userName {
+  font-size: var(--font-size-dashboard-user-name);
+  font-weight: 600;
+  color: var(--foreground);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.userEmail {
+  font-size: var(--font-size-dashboard-user-email);
+  color: var(--color-muted-foreground);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.logoutBtn {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-dashboard-nav-item-gap);
+  height: var(--size-dashboard-logout-height);
+  padding-inline: var(--spacing-dashboard-sidebar-user-inline);
+  border-radius: var(--radius-dashboard-nav-item);
+  color: var(--destructive);
+  font-size: var(--font-size-dashboard-logout);
+  font-weight: 500;
+  cursor: pointer;
+  background: transparent;
+  border: none;
+  width: 100%;
+  text-align: left;
+  transition: background 0.2s;
+}
+
+.logoutBtn:hover {
+  background: color-mix(in srgb, var(--destructive) 8%, transparent);
+}
+
 @media (max-width: 48rem) {
   .sidebar {
     min-height: auto;
@@ -75,9 +132,28 @@
     margin-top: 0;
     overflow-x: auto;
     padding-block-end: var(--spacing-dashboard-sidebar-content-inline);
+    flex: none;
   }
 
   .item {
     flex: 0 0 auto;
+  }
+
+  .footer {
+    border-top: 1px solid var(--border);
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--spacing-dashboard-sidebar-content-inline);
+    margin-top: 0;
+  }
+
+  .userInfo {
+    padding-inline: 0;
+  }
+
+  .logoutBtn {
+    width: auto;
+    padding-inline: 0.75rem;
   }
 }

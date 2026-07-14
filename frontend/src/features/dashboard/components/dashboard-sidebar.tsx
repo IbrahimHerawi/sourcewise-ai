@@ -2,7 +2,9 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { LogOut } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/hooks/use-auth";
 import {
   dashboardNavigationItems,
   isDashboardNavigationItemActive,
@@ -45,6 +47,7 @@ function NavigationIcon({ icon }: Pick<DashboardNavigationItem, "icon">) {
 
 export function DashboardSidebar() {
   const pathname = usePathname();
+  const { user, logout } = useAuth();
 
   return (
     <aside aria-label="Dashboard sidebar" className={styles.sidebar}>
@@ -66,6 +69,25 @@ export function DashboardSidebar() {
           );
         })}
       </nav>
+      {user && (
+        <div className={styles.footer}>
+          <div className={styles.userInfo}>
+            <span className={styles.userName}>
+              {user.first_name} {user.last_name}
+            </span>
+            <span className={styles.userEmail}>{user.email}</span>
+          </div>
+          <button
+            aria-label="Log out of SourceWise"
+            className={styles.logoutBtn}
+            onClick={logout}
+            type="button"
+          >
+            <LogOut className="size-4 shrink-0" />
+            <span>Log Out</span>
+          </button>
+        </div>
+      )}
     </aside>
   );
 }

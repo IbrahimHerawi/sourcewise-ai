@@ -111,6 +111,12 @@
   --spacing-dashboard-nav-item-inline: 1rem;
   --spacing-dashboard-nav-item-gap: 0.75rem;
   --spacing-dashboard-nav-items: 0.25rem;
+  --spacing-dashboard-sidebar-footer-gap: 0.5rem;
+  --spacing-dashboard-sidebar-user-inline: 0.5rem;
+  --size-dashboard-logout-height: 2.25rem;
+  --font-size-dashboard-user-name: 0.875rem;
+  --font-size-dashboard-user-email: 0.75rem;
+  --font-size-dashboard-logout: 0.875rem;
   --shadow-dashboard-sidebar: 0 0.25rem 1.25rem rgb(0 0 0 / 3%);
   --shadow-dashboard-nav-active: 0 0.0625rem 0.125rem rgb(0 0 0 / 5%);
 }
