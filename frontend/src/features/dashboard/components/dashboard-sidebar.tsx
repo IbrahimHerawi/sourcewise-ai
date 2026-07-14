@@ -5,11 +5,23 @@ import { usePathname } from "next/navigation";
 import { LogOut } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   dashboardNavigationItems,
   isDashboardNavigationItemActive,
   type DashboardNavigationItem,
 } from "@/features/dashboard/navigation";
+import {
+  formatDashboardUserName,
+  getDashboardUserInitials,
+} from "@/features/dashboard/utils/user-profile";
 import styles from "./dashboard-sidebar.module.css";
 
 function NavigationIcon({ icon }: Pick<DashboardNavigationItem, "icon">) {
@@ -48,6 +60,8 @@ function NavigationIcon({ icon }: Pick<DashboardNavigationItem, "icon">) {
 export function DashboardSidebar() {
   const pathname = usePathname();
   const { user, logout } = useAuth();
+  const displayName = user ? formatDashboardUserName(user) : "";
+  const initials = user ? getDashboardUserInitials(user) : "";
 
   return (
     <aside aria-label="Dashboard sidebar" className={styles.sidebar}>
@@ -71,21 +85,40 @@ export function DashboardSidebar() {
       </nav>
       {user && (
         <div className={styles.footer}>
-          <div className={styles.userInfo}>
-            <span className={styles.userName}>
-              {user.first_name} {user.last_name}
-            </span>
-            <span className={styles.userEmail}>{user.email}</span>
-          </div>
-          <button
-            aria-label="Log out of SourceWise"
-            className={styles.logoutBtn}
-            onClick={logout}
-            type="button"
-          >
-            <LogOut className="size-4 shrink-0" />
-            <span>Log Out</span>
-          </button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button className={styles.profileTrigger} type="button">
+                <Avatar className={styles.profileAvatar}>
+                  <AvatarFallback className={styles.profileAvatarFallback}>
+                    {initials}
+                  </AvatarFallback>
+                </Avatar>
+                <span className={styles.profileName}>{displayName}</span>
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              align="start"
+              className={styles.profileMenu}
+              side="top"
+            >
+              <div className={styles.profileMenuIdentity}>
+                <Avatar className={styles.profileAvatar}>
+                  <AvatarFallback className={styles.profileAvatarFallback}>
+                    {initials}
+                  </AvatarFallback>
+                </Avatar>
+                <span className={styles.profileMenuName}>{displayName}</span>
+              </div>
+              <DropdownMenuSeparator className={styles.profileMenuSeparator} />
+              <DropdownMenuItem
+                className={styles.profileMenuLogout}
+                onSelect={() => logout()}
+              >
+                <LogOut aria-hidden="true" className={styles.profileMenuLogoutIcon} />
+                <span>Log out</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       )}
     </aside>
