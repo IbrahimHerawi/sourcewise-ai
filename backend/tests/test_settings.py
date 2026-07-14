@@ -249,3 +249,40 @@ def test_embedding_batch_size_must_be_between_one_and_128(batch_size: int) -> No
 def test_embedding_read_timeout_must_be_positive() -> None:
     with pytest.raises(ValueError, match="ollama_embed_read_timeout_s"):
         Settings(ollama_embed_read_timeout_s=0, _env_file=None)
+
+
+def test_llm_timeout_and_retry_defaults() -> None:
+    settings = Settings(_env_file=None)
+
+    assert settings.llm_connect_timeout_s == 5.0
+    assert settings.llm_read_timeout_s == 60.0
+    assert settings.llm_retry_attempts == 3
+    assert settings.llm_retry_min_wait_s == 0.5
+    assert settings.llm_retry_max_wait_s == 4.0
+
+
+@pytest.mark.parametrize(
+    ("setting_name", "invalid_value"),
+    [
+        ("llm_connect_timeout_s", 0),
+        ("llm_read_timeout_s", 0),
+        ("llm_retry_attempts", 0),
+        ("llm_retry_min_wait_s", 0),
+        ("llm_retry_max_wait_s", 0),
+    ],
+)
+def test_llm_timeout_and_retry_values_have_positive_lower_bounds(
+    setting_name: str,
+    invalid_value: int,
+) -> None:
+    with pytest.raises(ValueError, match=setting_name):
+        Settings(**{setting_name: invalid_value}, _env_file=None)
+
+
+def test_llm_retry_max_wait_must_not_be_less_than_minimum() -> None:
+    with pytest.raises(ValueError, match="LLM_RETRY_MAX_WAIT_S"):
+        Settings(
+            llm_retry_min_wait_s=0.5,
+            llm_retry_max_wait_s=0.4,
+            _env_file=None,
+        )

@@ -12,7 +12,13 @@ from app.services.embeddings import (
     embed_query,
     get_embeddings_client,
 )
-from app.services.llm import build_openai_client, generate_answer
+from app.services.llm import (
+    LLMInvalidResponseError,
+    LLMRejectedError,
+    LLMTransientError,
+    build_openai_client,
+    generate_answer,
+)
 from app.services.question_answering import (
     QuestionAnsweringError,
     answer_question,
@@ -21,6 +27,9 @@ from app.services.question_answering import (
 __all__ = [
     "EmbeddingCardinalityMismatchError",
     "EmbeddingDimensionMismatchError",
+    "LLMInvalidResponseError",
+    "LLMRejectedError",
+    "LLMTransientError",
     "OllamaEmbeddingClient",
     "OllamaEmbeddingError",
     "OllamaMalformedResponseError",
