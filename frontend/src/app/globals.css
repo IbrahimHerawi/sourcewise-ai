@@ -86,6 +86,31 @@
   --sidebar-border: #e7ebf3;
   --sidebar-ring: #497bf9;
 
+  /* Toast notifications — derived from the Toast Notifications reference. */
+  --color-toast-background: #ffffff;
+  --color-toast-foreground: #0b1c30;
+  --color-toast-border: rgb(195 198 215 / 30%);
+  --color-toast-success: #16a34a;
+  --color-toast-error: var(--destructive);
+  --color-toast-warning: #f59e0b;
+  --color-toast-info: var(--brand-light);
+  --radius-toast: 0.75rem;
+  --size-toast-width: 22.8125rem;
+  --size-toast-icon: 1.25rem;
+  --font-size-toast: 1rem;
+  --font-weight-toast: 400;
+  --line-height-toast: 1.25rem;
+  --spacing-toast-viewport: 1.5rem;
+  --spacing-toast-viewport-mobile: 1rem;
+  --spacing-toast-inline: 1.5rem;
+  --spacing-toast-block: 0.875rem;
+  --spacing-toast-icon-gap: 0.75rem;
+  --spacing-toast-stack: 0.75rem;
+  --duration-toast: 260ms;
+  --distance-toast: 1.5rem;
+  --easing-toast: cubic-bezier(0.22, 1, 0.36, 1);
+  --shadow-toast: 0 0.5rem 1rem rgb(11 28 48 / 8%);
+
   /* Dashboard shell tokens — isolated from the marketing theme. */
   --font-dashboard: var(--font-inter), Inter, ui-sans-serif, system-ui, sans-serif;
   --color-dashboard-background: #f8f8f8;
@@ -97,7 +122,7 @@
   --color-dashboard-nav-hover: var(--accent);
   --color-dashboard-nav-active-hover: color-mix(in srgb, var(--color-dashboard-nav-active-foreground) 8%, var(--color-dashboard-nav-active));
   --color-dashboard-profile-logout-hover: color-mix(in srgb, var(--destructive) 8%, transparent);
-  --size-dashboard-sidebar-width: 17.5rem;
+  --size-dashboard-sidebar-width: 15.75rem;
   --size-dashboard-nav-item-height: 2.375rem;
   --size-dashboard-nav-icon: 1.25rem;
   --radius-dashboard-nav-item: 0.5rem;
@@ -174,6 +199,119 @@
   }
 }
 
+@layer components {
+  .toast-notification-viewport {
+    position: fixed;
+    z-index: 100;
+    top: var(--spacing-toast-viewport);
+    right: var(--spacing-toast-viewport);
+    display: flex;
+    width: var(--size-toast-width);
+    max-height: calc(100svh - var(--spacing-toast-viewport) * 2);
+    max-width: calc(100vw - var(--spacing-toast-viewport) * 2);
+    flex-direction: column;
+    gap: var(--spacing-toast-stack);
+    pointer-events: none;
+  }
+
+  .toast-notification {
+    position: relative;
+    display: flex;
+    width: 100%;
+    min-height: 3.125rem;
+    align-items: center;
+    gap: var(--spacing-toast-icon-gap);
+    overflow: hidden;
+    border: 1px solid var(--color-toast-border);
+    border-radius: var(--radius-toast);
+    background: var(--color-toast-background);
+    padding: var(--spacing-toast-block) var(--spacing-toast-inline);
+    color: var(--color-toast-foreground);
+    box-shadow: var(--shadow-toast);
+    pointer-events: auto;
+  }
+
+  .toast-notification[data-state="open"] {
+    animation: toast-enter var(--duration-toast) var(--easing-toast) both;
+  }
+
+  .toast-notification[data-state="closed"] {
+    animation: toast-exit var(--duration-toast) var(--easing-toast) both;
+  }
+
+  .toast-notification[data-swipe="move"] {
+    transform: translateX(var(--radix-toast-swipe-move-x));
+    transition: none;
+  }
+
+  .toast-notification[data-swipe="cancel"] {
+    transform: translateX(0);
+    transition: transform var(--duration-toast) var(--easing-toast);
+  }
+
+  .toast-notification[data-swipe="end"] {
+    animation: toast-exit var(--duration-toast) var(--easing-toast) both;
+  }
+
+  .toast-notification__icon {
+    width: var(--size-toast-icon);
+    height: var(--size-toast-icon);
+    flex: none;
+  }
+
+  .toast-notification__icon--success {
+    color: var(--color-toast-success);
+  }
+
+  .toast-notification__icon--error {
+    color: var(--color-toast-error);
+  }
+
+  .toast-notification__icon--warning {
+    color: var(--color-toast-warning);
+  }
+
+  .toast-notification__icon--info,
+  .toast-notification__icon--loading {
+    color: var(--color-toast-info);
+  }
+
+  .toast-notification__content {
+    min-width: 0;
+    flex: 1;
+  }
+
+  .toast-notification__title,
+  .toast-notification__description {
+    color: var(--color-toast-foreground);
+    font-size: var(--font-size-toast);
+    font-weight: var(--font-weight-toast);
+    line-height: var(--line-height-toast);
+  }
+
+  .toast-notification__action {
+    height: auto;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    padding: 0;
+    color: inherit;
+    font-size: var(--font-size-toast);
+    font-weight: var(--font-weight-toast);
+  }
+
+  @media (max-width: 40rem) {
+    .toast-notification-viewport {
+      top: var(--spacing-toast-viewport-mobile);
+      right: var(--spacing-toast-viewport-mobile);
+      left: var(--spacing-toast-viewport-mobile);
+      width: auto;
+      max-height: calc(100svh - var(--spacing-toast-viewport-mobile) * 2);
+      max-width: none;
+    }
+  }
+}
+
 /* ---------- Custom utilities ---------- */
 @layer utilities {
   /* Gradient text: starts at the heading color (#121317) and fades into brand blue */
@@ -234,6 +372,28 @@
 }
 
 /* ---------- Keyframe animations ---------- */
+@keyframes toast-enter {
+  from {
+    opacity: 0;
+    transform: translateX(var(--distance-toast));
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes toast-exit {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(var(--distance-toast));
+  }
+}
+
 @keyframes tw-caret {
   0%, 49% { opacity: 1; }
   50%, 100% { opacity: 0; }
