@@ -8,7 +8,6 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.db.models.document_chunks import DocumentChunk
 from app.db.models.question_context_chunks import QuestionContextChunk
 from app.db.models.questions import Question
 
@@ -51,7 +50,7 @@ class QuestionRepository:
 
         stmt = (
             select(Question)
-            .options(selectinload(Question.context_chunks).selectinload(QuestionContextChunk.chunk))
+            .options(selectinload(Question.context_chunks))
             .order_by(Question.created_at.desc(), Question.id.desc())
             .limit(limit)
             .offset(offset)
@@ -59,8 +58,7 @@ class QuestionRepository:
         if document_id is not None:
             stmt = (
                 stmt.join(QuestionContextChunk, QuestionContextChunk.question_id == Question.id)
-                .join(DocumentChunk, DocumentChunk.id == QuestionContextChunk.chunk_id)
-                .where(DocumentChunk.document_id == document_id)
+                .where(QuestionContextChunk.document_id == document_id)
                 .distinct()
             )
 
@@ -78,8 +76,7 @@ class QuestionRepository:
             select(func.count(func.distinct(Question.id)))
             .select_from(Question)
             .join(QuestionContextChunk, QuestionContextChunk.question_id == Question.id)
-            .join(DocumentChunk, DocumentChunk.id == QuestionContextChunk.chunk_id)
-            .where(DocumentChunk.document_id == document_id)
+            .where(QuestionContextChunk.document_id == document_id)
         )
         total = await self._session.scalar(stmt)
         return int(total or 0)

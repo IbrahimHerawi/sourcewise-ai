@@ -4,10 +4,9 @@ from __future__ import annotations
 
 import logging
 import uuid
-from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, Form, Query, Request, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, Query, Request, Response, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import get_current_verified_user
@@ -33,7 +32,12 @@ from app.db.session import get_db_session
 from app.repositories.collection_repository import CollectionRepository
 from app.repositories.document_repository import DocumentRepository
 from app.repositories.ingestion_job_repository import IngestionJobRepository
-from app.utils.files import StoredUpload, UploadValidationError, save_validated_upload
+from app.utils.files import (
+    StoredUpload,
+    UploadValidationError,
+    delete_stored_upload,
+    save_validated_upload,
+)
 from app.workers.ingestion import IngestionManager
 
 logger = logging.getLogger(__name__)
@@ -84,20 +88,16 @@ def _upload_exception(error: UploadValidationError) -> ValidationError:
     return ValidationError(message, status_code=status.HTTP_400_BAD_REQUEST)
 
 
-def _cleanup_saved_file(storage_path: str) -> None:
-    path = Path(storage_path)
+def _cleanup_saved_file(document_id: uuid.UUID, storage_path: str) -> None:
     try:
-        if path.exists():
-            path.unlink()
-        if path.parent.exists() and not any(path.parent.iterdir()):
-            path.parent.rmdir()
-    except OSError:
+        delete_stored_upload(document_id, storage_path)
+    except (OSError, UploadValidationError):
         logger.warning("Failed to clean up a staged upload file.")
 
 
 def _cleanup_saved_files(staged_uploads: list[tuple[uuid.UUID, StoredUpload]]) -> None:
-    for _, stored_upload in staged_uploads:
-        _cleanup_saved_file(stored_upload.storage_path)
+    for document_id, stored_upload in staged_uploads:
+        _cleanup_saved_file(document_id, stored_upload.storage_path)
 
 
 @router.get("", response_model=PaginatedDocumentListResponse)
@@ -267,3 +267,36 @@ async def get_document(
         raise NotFoundError("Document not found.")
 
     return DocumentDetailsResponse.model_validate(document)
+
+
+@router.delete("/{document_id:uuid}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_document(
+    document_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    current_user: Annotated[User, Depends(get_current_verified_user)],
+) -> Response:
+    """Delete one owned document before best-effort stored-file cleanup."""
+    document = await DocumentRepository(session).delete_document(
+        current_user.id,
+        document_id,
+    )
+    if document is None:
+        raise NotFoundError("Document not found.")
+
+    storage_path = document.storage_path
+    try:
+        await session.commit()
+    except Exception:
+        await session.rollback()
+        raise
+
+    try:
+        delete_stored_upload(document_id, storage_path)
+    except Exception:
+        logger.warning(
+            "Document metadata was deleted but stored-file cleanup failed "
+            "for document_id=%s.",
+            document_id,
+        )
+
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

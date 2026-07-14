@@ -16,7 +16,6 @@ from app.db.base import Base
 
 if TYPE_CHECKING:
     from app.db.models.documents import Document
-    from app.db.models.question_context_chunks import QuestionContextChunk
 
 EMBEDDING_DIM = get_settings().embedding_dim
 
@@ -47,8 +46,3 @@ class DocumentChunk(Base):
     )
 
     document: Mapped[Document] = relationship(back_populates="chunks")
-    question_links: Mapped[list[QuestionContextChunk]] = relationship(
-        back_populates="chunk",
-        cascade="all, delete-orphan",
-        passive_deletes=True,
-    )

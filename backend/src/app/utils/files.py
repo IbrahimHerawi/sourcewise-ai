@@ -114,6 +114,37 @@ async def save_validated_upload(upload: UploadFile, document_id: UUID) -> Stored
     )
 
 
+def delete_stored_upload(document_id: UUID, storage_path: str) -> None:
+    """Delete one verified stored file and remove its UUID directory when empty."""
+
+    upload_root = Path(get_settings().upload_root_dir).expanduser().resolve(strict=False)
+    document_path = _resolve_under_root(
+        upload_root,
+        Path(storage_path).expanduser(),
+    )
+    document_dir = _resolve_under_root(upload_root, document_path.parent)
+    expected_document_dir = _resolve_under_root(
+        upload_root,
+        upload_root / str(document_id),
+    )
+    if document_dir != expected_document_dir:
+        raise UploadValidationError(
+            "Document storage directory must match its UUID under UPLOAD_ROOT_DIR."
+        )
+
+    document_path.unlink(missing_ok=True)
+    try:
+        document_dir.rmdir()
+    except FileNotFoundError:
+        pass
+    except OSError as exc:
+        # A non-empty directory must remain intact; other cleanup failures should
+        # still be surfaced to the caller for safe logging.
+        if document_dir.is_dir() and any(document_dir.iterdir()):
+            return
+        raise exc
+
+
 def extract_text(original_extension: str, content: bytes) -> str:
     """Extract and lightly normalize text from supported stored content."""
 

@@ -284,13 +284,13 @@ class IngestionManager:
             persistence_started_at = perf_counter()
             persistence_status = "failure"
             try:
-                await self._persist_success(
+                persisted = await self._persist_success(
                     job_id=claimed.job_id,
                     document_id=claimed.document_id,
                     extracted_text=extracted_text,
                     chunks=chunk_rows,
                 )
-                persistence_status = "success"
+                persistence_status = "success" if persisted else "discarded"
             finally:
                 logger.info(
                     "Ingestion persistence summary job_id=%s document_id=%s chunk_count=%s "
@@ -301,12 +301,19 @@ class IngestionManager:
                     perf_counter() - persistence_started_at,
                     persistence_status,
                 )
-            logger.info(
-                "Worker %s completed ingestion job %s (%s chunks).",
-                worker_idx,
-                claimed.job_id,
-                len(chunk_rows),
-            )
+            if persisted:
+                logger.info(
+                    "Worker %s completed ingestion job %s (%s chunks).",
+                    worker_idx,
+                    claimed.job_id,
+                    len(chunk_rows),
+                )
+            else:
+                logger.info(
+                    "Worker %s discarded ingestion results for deleted job %s.",
+                    worker_idx,
+                    claimed.job_id,
+                )
         except Exception as exc:
             logger.error(
                 "Ingestion job status=failure worker=%s job_id=%s document_id=%s.",
@@ -340,27 +347,37 @@ class IngestionManager:
         """Atomically claim a single pending job using row locks."""
         async with self._session_maker() as session:
             async with session.begin():
-                result = await session.scalars(
-                    select(IngestionJob)
-                    .where(IngestionJob.id == job_id)
-                    .with_for_update(skip_locked=True)
-                )
-                job = result.first()
-                if job is None or job.status != IngestionJobStatus.PENDING:
+                job_row = (
+                    await session.execute(
+                        select(IngestionJob.document_id, IngestionJob.status).where(
+                            IngestionJob.id == job_id
+                        )
+                    )
+                ).one_or_none()
+                if job_row is None or job_row.status != IngestionJobStatus.PENDING:
                     return None
 
                 document = await session.get(
                     Document,
-                    job.document_id,
+                    job_row.document_id,
                     with_for_update=True,
                 )
-                if document is None:
-                    job.status = IngestionJobStatus.FAILED
-                    job.error_message = INGESTION_ERROR
+                if document is None or document.status != DocumentStatus.PENDING:
                     return None
 
-                if document.status != DocumentStatus.PENDING:
+                job = (
+                    await session.scalars(
+                        select(IngestionJob)
+                        .where(IngestionJob.id == job_id)
+                        .with_for_update(skip_locked=True)
+                    )
+                ).first()
+                if job is None or job.status != IngestionJobStatus.PENDING:
                     return None
+                if job.document_id != document.id:
+                    raise RuntimeError(
+                        "Ingestion job document changed while the job was being claimed."
+                    )
 
                 job.status = IngestionJobStatus.PROCESSING
                 job.error_message = None
@@ -381,14 +398,17 @@ class IngestionManager:
         document_id: uuid.UUID,
         extracted_text: str,
         chunks: list[ChunkWithEmbedding],
-    ) -> None:
-        """Persist chunks and finalize statuses as DONE/READY atomically."""
+    ) -> bool:
+        """Persist success atomically, or discard results when rows were deleted."""
         async with self._session_maker() as session:
             async with session.begin():
-                job = await session.get(IngestionJob, job_id, with_for_update=True)
                 document = await session.get(Document, document_id, with_for_update=True)
-                if job is None or document is None:
-                    raise RuntimeError("Ingestion job or document disappeared during finalization.")
+                if document is None:
+                    return False
+
+                job = await session.get(IngestionJob, job_id, with_for_update=True)
+                if job is None:
+                    return False
                 if (
                     job.status != IngestionJobStatus.PROCESSING
                     or document.status != DocumentStatus.PROCESSING
@@ -407,6 +427,7 @@ class IngestionManager:
                 document.extracted_text = extracted_text
                 document.status = DocumentStatus.READY
                 document.error_message = None
+                return True
 
     async def _persist_failure(
         self,
@@ -421,13 +442,16 @@ class IngestionManager:
 
         async with self._session_maker() as session:
             async with session.begin():
+                document = await session.get(Document, document_id, with_for_update=True)
+                if document is None:
+                    return
+
                 job = await session.get(IngestionJob, job_id, with_for_update=True)
                 if job is not None and job.status != IngestionJobStatus.DONE:
                     job.status = IngestionJobStatus.FAILED
                     job.error_message = error_message
 
-                document = await session.get(Document, document_id, with_for_update=True)
-                if document is not None and document.status != DocumentStatus.READY:
+                if document.status != DocumentStatus.READY:
                     document.status = DocumentStatus.FAILED
                     document.error_message = error_message
 
