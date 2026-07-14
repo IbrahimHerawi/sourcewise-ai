@@ -8,7 +8,6 @@ import pytest
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.endpoints.questions import list_question_history
 from app.core.settings import get_settings
 from app.db.models import Document, DocumentChunk, Question, QuestionContextChunk, User
 from app.repositories.question_context_repository import QuestionContextRepository
@@ -238,11 +237,11 @@ async def test_document_deletion_preserves_snapshots_and_history_uses_them(
     db_session.expunge_all()
 
     history = await QuestionRepository(db_session).list_questions(
+        user.id,
         limit=20,
         offset=0,
-        document_id=snapshot.document_id,
     )
-    assert await QuestionRepository(db_session).count_questions(snapshot.document_id) == 1
+    assert await QuestionRepository(db_session).count_questions(user.id) == 1
     assert len(history) == 1
     assert len(history[0].context_chunks) == 1
     citation = history[0].context_chunks[0]
@@ -252,21 +251,6 @@ async def test_document_deletion_preserves_snapshots_and_history_uses_them(
     assert citation.chunk_index == snapshot.chunk_index
     assert citation.chunk_content == snapshot.chunk_content
     assert citation.similarity_score == snapshot.similarity_score
-
-    response = await list_question_history(
-        db_session,
-        limit=20,
-        offset=0,
-        document_id=snapshot.document_id,
-    )
-    assert response.total == 1
-    assert len(response.items) == 1
-    assert len(response.items[0].sources) == 1
-    source = response.items[0].sources[0]
-    assert source.document_id == snapshot.document_id
-    assert source.chunk_id == snapshot.chunk_id
-    assert source.chunk_index == snapshot.chunk_index
-    assert source.distance == snapshot.similarity_score
 
 
 @pytest.mark.asyncio

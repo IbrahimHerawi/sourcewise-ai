@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.document_chunks import DocumentChunk
 from app.db.models.documents import Document, DocumentStatus
-from app.repositories.types import ChunkWithEmbedding
+from app.repositories.types import ChunkWithEmbedding, SimilaritySearchResult
 
 
 class ChunkRepository:
@@ -43,35 +43,59 @@ class ChunkRepository:
 
     async def similarity_search(
         self,
+        user_id: uuid.UUID,
         query_embedding: list[float],
         top_k: int,
-        document_ids: Sequence[uuid.UUID] | None = None,
-        *,
-        ready_only: bool = False,
+        collection_id: uuid.UUID | None = None,
         max_distance: float | None = None,
-    ) -> list[tuple[DocumentChunk, float]]:
-        """Search chunks by vector distance using pgvector `<=>` ordering."""
+    ) -> list[SimilaritySearchResult]:
+        """Search one owner's READY document chunks by cosine distance."""
         if top_k <= 0:
             raise ValueError("top_k must be greater than 0")
-        if document_ids is not None and not document_ids:
-            return []
-        if max_distance is not None and max_distance < 0:
+        if max_distance is not None and not max_distance >= 0:
             raise ValueError("max_distance must be greater than or equal to 0")
 
         distance_expr = DocumentChunk.embedding.cosine_distance(query_embedding)
-        stmt = select(DocumentChunk, distance_expr.label("distance"))
-        if ready_only:
-            stmt = stmt.join(Document, Document.id == DocumentChunk.document_id).where(
-                Document.status == DocumentStatus.READY
+        stmt = (
+            select(
+                DocumentChunk.id,
+                Document.id,
+                Document.filename,
+                DocumentChunk.chunk_index,
+                DocumentChunk.content,
+                distance_expr.label("distance"),
             )
-        if document_ids is not None:
-            stmt = stmt.where(DocumentChunk.document_id.in_(document_ids))
+            .join(Document, Document.id == DocumentChunk.document_id)
+            .where(
+                Document.user_id == user_id,
+                Document.status == DocumentStatus.READY,
+            )
+        )
+        if collection_id is not None:
+            stmt = stmt.where(Document.collection_id == collection_id)
         if max_distance is not None:
             stmt = stmt.where(distance_expr <= max_distance)
 
-        stmt = stmt.order_by(distance_expr).limit(top_k)
+        stmt = stmt.order_by(distance_expr.asc(), DocumentChunk.id.asc()).limit(top_k)
         result = await self._session.execute(stmt)
-        return [(chunk, float(distance_value)) for chunk, distance_value in result.all()]
+        return [
+            SimilaritySearchResult(
+                chunk_id=chunk_id,
+                document_id=document_id,
+                document_filename=document_filename,
+                chunk_index=chunk_index,
+                content=content,
+                distance=float(distance),
+            )
+            for (
+                chunk_id,
+                document_id,
+                document_filename,
+                chunk_index,
+                content,
+                distance,
+            ) in result.all()
+        ]
 
 
 __all__ = ["ChunkRepository"]

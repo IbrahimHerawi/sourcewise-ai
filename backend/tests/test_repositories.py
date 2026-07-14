@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
+from unittest.mock import AsyncMock
 
 import pytest
-from sqlalchemy import update
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,6 +13,7 @@ from app.core.settings import get_settings
 from app.db.models.auth import User
 from app.db.models.collections import Collection
 from app.db.models.documents import Document, DocumentStatus
+from app.db.models.question_context_chunks import QuestionContextChunk
 from app.db.models.questions import Question
 from app.repositories.chunk_repository import ChunkRepository
 from app.repositories.document_repository import DocumentRepository
@@ -353,156 +355,338 @@ async def test_chunk_repository_similarity_search_orders_by_cosine_distance(
             ),
         ],
     )
+    await DocumentRepository(db_session).update_status(
+        user.id,
+        document.id,
+        DocumentStatus.READY,
+    )
 
     query_embedding = _embedding(0.9, 0.1, settings.embedding_dim)
     results = await repository.similarity_search(
+        user_id=user.id,
         query_embedding=query_embedding,
         top_k=3,
-        document_ids=[document.id],
     )
 
-    assert [chunk.chunk_index for chunk, _ in results] == [0, 2, 1]
-    assert results[0][1] < results[1][1] < results[2][1]
+    assert [result.chunk_index for result in results] == [0, 2, 1]
+    assert results[0].distance < results[1].distance < results[2].distance
 
 
 @pytest.mark.asyncio
-async def test_question_repository_lists_and_counts_history_with_optional_document_filter(
+async def test_question_repository_creates_grounded_and_fallback_records_without_commit(
     db_session: AsyncSession,
 ) -> None:
     settings = get_settings()
-    question_repo = QuestionRepository(db_session)
-    context_repo = QuestionContextRepository(db_session)
-    user = await _create_user(db_session, "question-history-owner")
-
-    first_document = await _create_document(
+    repository = QuestionRepository(db_session)
+    user = await _create_user(db_session, "question-create-owner")
+    collection = await _create_collection(
         db_session,
         user_id=user.id,
-        filename="first-history.txt",
+        name="Question creation",
     )
-    second_document = await _create_document(
+    transaction = await db_session.begin_nested()
+
+    grounded = await repository.create_question(
+        user.id,
+        collection_id=collection.id,
+        question_text="What supports the grounded answer?",
+        embedding=_embedding(1.0, 0.0, settings.embedding_dim),
+        answer_text="A citation snapshot.",
+        ai_provider="ollama",
+        model_used="grounded-model",
+    )
+    fallback = await repository.create_question(
+        user.id,
+        question_text="What happens without enough context?",
+        embedding=_embedding(0.0, 1.0, settings.embedding_dim),
+        answer_text="A deterministic fallback is returned.",
+        ai_provider=None,
+        model_used=None,
+    )
+
+    assert grounded.user_id == user.id
+    assert grounded.collection_id == collection.id
+    assert grounded.ai_provider == "ollama"
+    assert grounded.model_used == "grounded-model"
+    assert fallback.user_id == user.id
+    assert fallback.collection_id is None
+    assert fallback.ai_provider is None
+    assert fallback.model_used is None
+
+    grounded_id = grounded.id
+    fallback_id = fallback.id
+    await transaction.rollback()
+    persisted = await db_session.scalar(
+        select(func.count())
+        .select_from(Question)
+        .where(Question.id.in_([grounded_id, fallback_id]))
+    )
+    assert persisted == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("ai_provider", "model_used"),
+    [("ollama", None), (None, "model-without-provider")],
+)
+async def test_question_repository_rejects_partial_llm_metadata_without_sql(
+    ai_provider: str | None,
+    model_used: str | None,
+) -> None:
+    session = AsyncMock(spec=AsyncSession)
+    repository = QuestionRepository(session)
+
+    with pytest.raises(
+        ValueError,
+        match="ai_provider and model_used must both be null or both be non-null",
+    ):
+        await repository.create_question(
+            uuid.uuid4(),
+            question_text="Invalid metadata pair?",
+            embedding=[0.0] * get_settings().embedding_dim,
+            answer_text="This must not be persisted.",
+            ai_provider=ai_provider,
+            model_used=model_used,
+        )
+
+    session.add.assert_not_called()
+    session.flush.assert_not_awaited()
+    session.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_question_repository_lists_counts_paginates_and_filters_per_owner(
+    db_session: AsyncSession,
+) -> None:
+    settings = get_settings()
+    repository = QuestionRepository(db_session)
+    owner = await _create_user(db_session, "question-history-owner")
+    other_user = await _create_user(db_session, "question-history-other")
+    first_collection = await _create_collection(
         db_session,
-        user_id=user.id,
-        filename="second-history.txt",
+        user_id=owner.id,
+        name="First question collection",
     )
-    first_document.status = DocumentStatus.READY
-    second_document.status = DocumentStatus.READY
-    await db_session.flush()
-
-    first_chunks = await ChunkRepository(db_session).bulk_insert_chunks(
-        first_document.id,
-        [
-            ChunkWithEmbedding(
-                chunk_index=0,
-                content="first chunk zero",
-                embedding=_embedding(1.0, 0.0, settings.embedding_dim),
-            ),
-            ChunkWithEmbedding(
-                chunk_index=1,
-                content="first chunk one",
-                embedding=_embedding(0.9, 0.1, settings.embedding_dim),
-            ),
-        ],
-    )
-    second_chunks = await ChunkRepository(db_session).bulk_insert_chunks(
-        second_document.id,
-        [
-            ChunkWithEmbedding(
-                chunk_index=0,
-                content="second chunk zero",
-                embedding=_embedding(0.0, 1.0, settings.embedding_dim),
-            )
-        ],
+    second_collection = await _create_collection(
+        db_session,
+        user_id=owner.id,
+        name="Second question collection",
     )
 
-    oldest_question = await question_repo.create_question(
+    oldest = await repository.create_question(
+        owner.id,
+        collection_id=first_collection.id,
         question_text="Oldest question?",
         embedding=_embedding(1.0, 0.0, settings.embedding_dim),
         answer_text="Oldest answer.",
         ai_provider="ollama",
         model_used="model-a",
     )
-    middle_question = await question_repo.create_question(
+    middle = await repository.create_question(
+        owner.id,
+        collection_id=first_collection.id,
         question_text="Middle question?",
         embedding=_embedding(0.8, 0.2, settings.embedding_dim),
         answer_text="Middle answer.",
-        ai_provider="ollama",
-        model_used="model-b",
+        ai_provider=None,
+        model_used=None,
     )
-    newest_question = await question_repo.create_question(
+    newest = await repository.create_question(
+        owner.id,
+        collection_id=second_collection.id,
         question_text="Newest question?",
         embedding=_embedding(0.0, 1.0, settings.embedding_dim),
         answer_text="Newest answer.",
-        ai_provider="ollama",
+        ai_provider="openai",
         model_used="model-c",
     )
-
-    await context_repo.bulk_insert_question_context(
-        oldest_question.id,
-        [
-            QuestionContextRow(
-                chunk_id=first_chunks[0].id,
-                similarity_score=0.11,
-                rank=1,
-            )
-        ],
+    foreign_question = await repository.create_question(
+        other_user.id,
+        question_text="Foreign question?",
+        embedding=_embedding(0.5, 0.5, settings.embedding_dim),
+        answer_text="This belongs to another user.",
+        ai_provider=None,
+        model_used=None,
     )
-    await context_repo.bulk_insert_question_context(
-        middle_question.id,
-        [
-            QuestionContextRow(
-                chunk_id=second_chunks[0].id,
-                similarity_score=0.22,
-                rank=1,
-            )
-        ],
-    )
-    await context_repo.bulk_insert_question_context(
-        newest_question.id,
-        [
-            QuestionContextRow(
-                chunk_id=first_chunks[0].id,
-                similarity_score=0.31,
-                rank=1,
-            ),
-            QuestionContextRow(
-                chunk_id=first_chunks[1].id,
-                similarity_score=0.32,
-                rank=2,
-            ),
-            QuestionContextRow(
-                chunk_id=second_chunks[0].id,
-                similarity_score=0.33,
-                rank=3,
-            ),
-        ],
-    )
-
     await _set_question_created_at(
         db_session,
-        oldest_question,
+        oldest,
         datetime(2026, 1, 1, 12, 0, tzinfo=UTC),
     )
     await _set_question_created_at(
         db_session,
-        middle_question,
+        middle,
         datetime(2026, 1, 2, 12, 0, tzinfo=UTC),
     )
     await _set_question_created_at(
         db_session,
-        newest_question,
+        newest,
         datetime(2026, 1, 3, 12, 0, tzinfo=UTC),
     )
+    await _set_question_created_at(
+        db_session,
+        foreign_question,
+        datetime(2026, 1, 4, 12, 0, tzinfo=UTC),
+    )
 
-    listed = await question_repo.list_questions(limit=2, offset=1)
-    filtered = await question_repo.list_questions(
+    page = await repository.list_questions(owner.id, limit=2, offset=1)
+    filtered = await repository.list_questions(
+        owner.id,
         limit=20,
         offset=0,
-        document_id=first_document.id,
+        collection_id=first_collection.id,
     )
-    total = await question_repo.count_questions()
-    filtered_total = await question_repo.count_questions(document_id=first_document.id)
 
-    assert [question.id for question in listed] == [middle_question.id, oldest_question.id]
-    assert [question.id for question in filtered] == [newest_question.id, oldest_question.id]
-    assert total == 3
-    assert filtered_total == 2
+    assert [question.id for question in page] == [middle.id, oldest.id]
+    assert [question.id for question in filtered] == [middle.id, oldest.id]
+    assert await repository.count_questions(owner.id) == 3
+    assert await repository.count_questions(owner.id, first_collection.id) == 2
+    assert await repository.count_questions(other_user.id) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("limit", "offset", "message"),
+    [
+        (0, 0, "limit must be greater than 0"),
+        (-1, 0, "limit must be greater than 0"),
+        (1, -1, "offset must be greater than or equal to 0"),
+    ],
+)
+async def test_question_repository_validates_pagination(
+    limit: int,
+    offset: int,
+    message: str,
+) -> None:
+    session = AsyncMock(spec=AsyncSession)
+    repository = QuestionRepository(session)
+
+    with pytest.raises(ValueError, match=message):
+        await repository.list_questions(uuid.uuid4(), limit=limit, offset=offset)
+
+    session.scalars.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_question_repository_detail_delete_citations_and_document_independence(
+    db_session: AsyncSession,
+) -> None:
+    settings = get_settings()
+    question_repository = QuestionRepository(db_session)
+    context_repository = QuestionContextRepository(db_session)
+    document_repository = DocumentRepository(db_session)
+    owner = await _create_user(db_session, "question-detail-owner")
+    other_user = await _create_user(db_session, "question-detail-other")
+
+    deleted_document = await _create_document(
+        db_session,
+        user_id=owner.id,
+        filename="deleted-source.txt",
+    )
+    deleted_chunk = (
+        await ChunkRepository(db_session).bulk_insert_chunks(
+            deleted_document.id,
+            [
+                ChunkWithEmbedding(
+                    chunk_index=4,
+                    content="Original live content that will be deleted.",
+                    embedding=_embedding(1.0, 0.0, settings.embedding_dim),
+                )
+            ],
+        )
+    )[0]
+    historical_question = await question_repository.create_question(
+        owner.id,
+        question_text="Will citation history survive source deletion?",
+        embedding=_embedding(1.0, 0.0, settings.embedding_dim),
+        answer_text="Yes, because citations are snapshots.",
+        ai_provider="ollama",
+        model_used="history-model",
+    )
+    await context_repository.bulk_insert_question_context(
+        historical_question.id,
+        [
+            QuestionContextRow(
+                rank=2,
+                document_id=deleted_document.id,
+                document_filename="deleted-source.txt",
+                chunk_id=uuid.uuid4(),
+                chunk_index=8,
+                chunk_content="Second-ranked immutable snapshot.",
+                similarity_score=0.22,
+            ),
+            QuestionContextRow(
+                rank=1,
+                document_id=deleted_document.id,
+                document_filename="deleted-source.txt",
+                chunk_id=deleted_chunk.id,
+                chunk_index=deleted_chunk.chunk_index,
+                chunk_content="First-ranked immutable snapshot.",
+                similarity_score=0.11,
+            ),
+        ],
+    )
+    assert await document_repository.delete_document(owner.id, deleted_document.id) is not None
+
+    live_document = await _create_document(
+        db_session,
+        user_id=owner.id,
+        filename="live-source.txt",
+    )
+    deletable_question = await question_repository.create_question(
+        owner.id,
+        question_text="Can this history item be deleted?",
+        embedding=_embedding(0.0, 1.0, settings.embedding_dim),
+        answer_text="Yes.",
+        ai_provider=None,
+        model_used=None,
+    )
+    await context_repository.bulk_insert_question_context(
+        deletable_question.id,
+        [
+            QuestionContextRow(
+                rank=1,
+                document_id=live_document.id,
+                document_filename=live_document.filename,
+                chunk_id=uuid.uuid4(),
+                chunk_index=0,
+                chunk_content="Citation removed only with its question.",
+                similarity_score=0.33,
+            )
+        ],
+    )
+    foreign_question = await question_repository.create_question(
+        other_user.id,
+        question_text="Who owns this question?",
+        embedding=_embedding(0.5, 0.5, settings.embedding_dim),
+        answer_text="Another user.",
+        ai_provider=None,
+        model_used=None,
+    )
+    historical_question_id = historical_question.id
+    deletable_question_id = deletable_question.id
+    foreign_question_id = foreign_question.id
+    live_document_id = live_document.id
+    db_session.expunge_all()
+
+    detail = await question_repository.get_question(owner.id, historical_question_id)
+    assert detail is not None
+    assert [citation.rank for citation in detail.context_chunks] == [1, 2]
+    assert [citation.chunk_content for citation in detail.context_chunks] == [
+        "First-ranked immutable snapshot.",
+        "Second-ranked immutable snapshot.",
+    ]
+    history = await question_repository.list_questions(owner.id, limit=20, offset=0)
+    assert historical_question_id in {question.id for question in history}
+    assert await question_repository.get_question(owner.id, foreign_question_id) is None
+    assert not await question_repository.delete_question(owner.id, foreign_question_id)
+
+    assert await question_repository.delete_question(owner.id, deletable_question_id)
+    citation_count = await db_session.scalar(
+        select(func.count())
+        .select_from(QuestionContextChunk)
+        .where(QuestionContextChunk.question_id == deletable_question_id)
+    )
+    assert citation_count == 0
+    assert await document_repository.get_document(owner.id, live_document_id) is not None
+    assert await question_repository.get_question(owner.id, deletable_question_id) is None
