@@ -40,6 +40,54 @@ export interface ResendVerificationResponse extends MessageResponse {
   verification_token?: string;
 }
 
+export type DocumentStatus = "PENDING" | "PROCESSING" | "READY" | "FAILED";
+
+export interface DocumentSummaryResponse {
+  id: string;
+  collection_id: string | null;
+  filename: string;
+  original_extension: string;
+  content_type: string;
+  size_bytes: number;
+  status: DocumentStatus;
+  error_message: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PaginatedDocumentListResponse {
+  items: DocumentSummaryResponse[];
+  limit: number;
+  offset: number;
+  total: number;
+}
+
+export interface DocumentUploadItemResponse {
+  document_id: string;
+  filename: string;
+  collection_id: string | null;
+  status: DocumentStatus;
+}
+
+export interface DocumentUploadResponse {
+  items: DocumentUploadItemResponse[];
+}
+
+export interface CollectionResponse {
+  id: string;
+  name: string;
+  description: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PaginatedCollectionListResponse {
+  items: CollectionResponse[];
+  limit: number;
+  offset: number;
+  total: number;
+}
+
 export interface ApiErrorDetail {
   type: string;
   loc: (string | number)[];
@@ -224,6 +272,73 @@ export const api = {
 
   async getMe(): Promise<User> {
     return request<User>("/auth/me", {
+      method: "GET",
+    });
+  },
+
+  async listDocuments({
+    limit = 20,
+    offset = 0,
+    collectionId,
+  }: {
+    limit?: number;
+    offset?: number;
+    collectionId?: string;
+  } = {}): Promise<PaginatedDocumentListResponse> {
+    const params = new URLSearchParams({
+      limit: String(limit),
+      offset: String(offset),
+    });
+    if (collectionId) {
+      params.set("collection_id", collectionId);
+    }
+
+    return request<PaginatedDocumentListResponse>(`/documents?${params.toString()}`, {
+      method: "GET",
+    });
+  },
+
+  async uploadDocuments(
+    files: readonly File[],
+    collectionId?: string,
+  ): Promise<DocumentUploadResponse> {
+    const formData = new FormData();
+    files.forEach((file) => formData.append("files", file));
+    if (collectionId) {
+      formData.append("collection_id", collectionId);
+    }
+
+    return request<DocumentUploadResponse>("/documents/upload", {
+      method: "POST",
+      body: formData,
+    });
+  },
+
+  async getDocument(documentId: string): Promise<DocumentSummaryResponse> {
+    return request<DocumentSummaryResponse>(`/documents/${encodeURIComponent(documentId)}`, {
+      method: "GET",
+    });
+  },
+
+  async deleteDocument(documentId: string): Promise<void> {
+    await request<void>(`/documents/${encodeURIComponent(documentId)}`, {
+      method: "DELETE",
+    });
+  },
+
+  async listCollections({
+    limit = 100,
+    offset = 0,
+  }: {
+    limit?: number;
+    offset?: number;
+  } = {}): Promise<PaginatedCollectionListResponse> {
+    const params = new URLSearchParams({
+      limit: String(limit),
+      offset: String(offset),
+    });
+
+    return request<PaginatedCollectionListResponse>(`/collections?${params.toString()}`, {
       method: "GET",
     });
   },
