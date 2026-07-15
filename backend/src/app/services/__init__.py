@@ -22,8 +22,12 @@ from app.services.llm import (
     generate_answer,
 )
 from app.services.question_answering import (
+    CollectionNotFoundError,
     QuestionAnsweringError,
+    QuestionRetrievalResult,
+    RetrievedContextChunk,
     answer_question,
+    retrieve_question_context,
 )
 
 __all__ = [
@@ -40,10 +44,14 @@ __all__ = [
     "OllamaTransientEmbeddingError",
     "build_openai_client",
     "close_embeddings_client",
+    "CollectionNotFoundError",
     "embed_documents",
     "embed_query",
     "generate_answer",
     "get_embeddings_client",
     "QuestionAnsweringError",
+    "QuestionRetrievalResult",
+    "RetrievedContextChunk",
     "answer_question",
+    "retrieve_question_context",
 ]
