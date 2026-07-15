@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, ForeignKey, Index, String, Text, func
+from sqlalchemy import DateTime, ForeignKey, Index, String, Text, desc, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -28,7 +28,6 @@ class Collection(Base):
         UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
-        index=True,
     )
     name: Mapped[str] = mapped_column(String(length=255), nullable=False)
     __table_args__ = (
@@ -37,6 +36,12 @@ class Collection(Base):
             "user_id",
             func.lower(name),
             unique=True,
+        ),
+        Index(
+            "ix_collections_user_created_desc",
+            "user_id",
+            desc("created_at"),
+            desc("id"),
         ),
     )
 

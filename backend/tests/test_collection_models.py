@@ -104,16 +104,15 @@ async def test_collection_persists_and_belongs_to_user(db_session: AsyncSession)
 
 
 @pytest.mark.asyncio
-async def test_collection_migration_creates_constraints_and_user_index(
+async def test_collection_migration_creates_constraints_and_owner_list_index(
     db_session: AsyncSession,
 ) -> None:
     async_connection = await db_session.connection()
     schema = await _collection_schema(async_connection)
 
     assert "collections" in schema["tables"]
-    assert "ix_collections_user_id" in schema["indexes"]
-    assert schema["indexes"]["ix_collections_user_id"]["unique"] is False
-    assert schema["indexes"]["ix_collections_user_id"]["column_names"] == ["user_id"]
+    assert "ix_collections_user_created_desc" in schema["indexes"]
+    assert "ix_collections_user_id" not in schema["indexes"]
     assert CASE_INSENSITIVE_INDEX_NAME in schema["indexes"]
     _assert_case_insensitive_index(schema)
     assert ORIGINAL_CONSTRAINT_NAME not in {
@@ -157,7 +156,8 @@ async def test_collection_migration_downgrades_and_reupgrades(
 
         assert CASE_INSENSITIVE_INDEX_NAME in upgraded_schema["indexes"]
         _assert_case_insensitive_index(upgraded_schema)
-        assert "ix_collections_user_id" in upgraded_schema["indexes"]
+        assert "ix_collections_user_created_desc" in upgraded_schema["indexes"]
+        assert "ix_collections_user_id" not in upgraded_schema["indexes"]
         assert ORIGINAL_CONSTRAINT_NAME not in {
             constraint["name"] for constraint in upgraded_schema["unique_constraints"]
         }
