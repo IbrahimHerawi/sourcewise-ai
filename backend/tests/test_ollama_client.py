@@ -406,13 +406,27 @@ async def test_document_summary_logs_are_safe_and_retry_log_is_conditional(
 
     http_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
     client = OllamaEmbeddingClient(settings=_settings(), http_client=http_client)
+    embedding_logger = logging.getLogger(embeddings_service.__name__)
+    previous_propagate = embedding_logger.propagate
+    previous_disabled = embedding_logger.disabled
 
-    with caplog.at_level(logging.INFO, logger=embeddings_service.__name__):
-        await client.embed_documents(
-            ["secret chunk text"],
-            job_id=job_id,
-            document_id=document_id,
-        )
+    # The application lifespan can replace root handlers. Attach the capture
+    # handler directly so this unit test verifies the service log contract
+    # rather than depending on prior application lifecycle tests.
+    embedding_logger.propagate = False
+    embedding_logger.disabled = False
+    embedding_logger.addHandler(caplog.handler)
+    try:
+        with caplog.at_level(logging.INFO, logger=embeddings_service.__name__):
+            await client.embed_documents(
+                ["secret chunk text"],
+                job_id=job_id,
+                document_id=document_id,
+            )
+    finally:
+        embedding_logger.removeHandler(caplog.handler)
+        embedding_logger.propagate = previous_propagate
+        embedding_logger.disabled = previous_disabled
 
     summaries = [record.message for record in caplog.records if "Embedding summary" in record.message]
     retries = [

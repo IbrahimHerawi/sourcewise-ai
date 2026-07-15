@@ -8,12 +8,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 import app.services.question_answering as question_answering_service
 from app.core.settings import get_settings
+from app.db.models.auth import User
 from app.db.models.documents import DocumentStatus
 from app.db.models.question_context_chunks import QuestionContextChunk
 from app.db.models.questions import Question
 from app.repositories.chunk_repository import ChunkRepository
 from app.repositories.document_repository import DocumentRepository
 from app.repositories.types import ChunkWithEmbedding
+from app.services.embeddings import OllamaEmbeddingError
+from app.services.llm import AnswerProviderUnavailableError as LLMProviderUnavailableError
 
 
 def _embedding(first_dim: float, second_dim: float, dim: int) -> list[float]:
@@ -29,6 +32,7 @@ async def _create_document(
     status: DocumentStatus,
 ) -> uuid.UUID:
     document = await DocumentRepository(session).create_document(
+        await _owner_id(session),
         filename=filename,
         original_extension=".txt",
         content_type="text/plain",
@@ -38,6 +42,25 @@ async def _create_document(
         status=status,
     )
     return document.id
+
+
+async def _owner_id(session: AsyncSession) -> uuid.UUID:
+    """Create one owner per transactional test session and reuse it for all documents."""
+    cached = session.info.get("question_answering_owner_id")
+    if isinstance(cached, uuid.UUID):
+        return cached
+
+    user = User(
+        email=f"question-answering-{uuid.uuid4()}@example.com",
+        password_hash="test-password-hash",
+        first_name="Question",
+        last_name="Owner",
+        is_email_verified=True,
+    )
+    session.add(user)
+    await session.flush()
+    session.info["question_answering_owner_id"] = user.id
+    return user.id
 
 
 @pytest.mark.asyncio
@@ -105,6 +128,7 @@ async def test_answer_question_retrieves_ready_chunks_generates_answer_and_persi
 
     response = await question_answering_service.answer_question(
         db_session,
+        user_id=await _owner_id(db_session),
         question_text="What do the READY chunks say?",
         document_ids=[pending_document_id, ready_document_id],
         top_k=3,
@@ -113,9 +137,9 @@ async def test_answer_question_retrieves_ready_chunks_generates_answer_and_persi
     assert response.answer == "Answer from retrieved context."
     assert response.provider == settings.ai_provider
     assert response.model == "unit-test-model"
-    assert [source.document_id for source in response.sources] == [ready_document_id, ready_document_id]
-    assert [source.chunk_id for source in response.sources] == [ready_chunks[0].id, ready_chunks[1].id]
-    assert [source.chunk_index for source in response.sources] == [0, 1]
+    assert [source.document_id for source in response.citations] == [ready_document_id, ready_document_id]
+    assert [source.chunk_id for source in response.citations] == [ready_chunks[0].id, ready_chunks[1].id]
+    assert [source.chunk_index for source in response.citations] == [0, 1]
 
     assert captured["embedded_question"] == "What do the READY chunks say?"
     assert captured["question"] == "What do the READY chunks say?"
@@ -145,8 +169,8 @@ async def test_answer_question_retrieves_ready_chunks_generates_answer_and_persi
     assert [row.chunk_id for row in context_rows] == [ready_chunks[0].id, ready_chunks[1].id]
     assert [row.rank for row in context_rows] == [1, 2]
     assert [row.similarity_score for row in context_rows] == [
-        response.sources[0].distance,
-        response.sources[1].distance,
+        response.citations[0].distance,
+        response.citations[1].distance,
     ]
 
 
@@ -184,12 +208,13 @@ async def test_answer_question_raises_when_requested_documents_are_not_ready(
     with pytest.raises(question_answering_service.QuestionAnsweringError) as exc_info:
         await question_answering_service.answer_question(
             db_session,
+            user_id=await _owner_id(db_session),
             question_text="Can you answer from processing docs?",
             document_ids=[pending_document_id],
         )
 
-    assert "READY yet" in str(exc_info.value)
-    assert "ignored for retrieval" in str(exc_info.value)
+    assert "No ready documents are available yet" in str(exc_info.value)
+    assert "not searchable" in str(exc_info.value)
 
     question_count = await db_session.scalar(select(func.count()).select_from(Question))
     assert question_count == 0
@@ -236,6 +261,7 @@ async def test_answer_question_caps_context_size_and_truncates_safely(
 
     response = await question_answering_service.answer_question(
         db_session,
+        user_id=await _owner_id(db_session),
         question_text="Use a small context budget.",
         top_k=1,
         max_context_chars=500,
@@ -277,17 +303,18 @@ async def test_answer_question_raises_without_calling_llm_when_no_related_chunks
     monkeypatch.setattr(question_answering_service, "_embed_question", fake_embed_question)
     monkeypatch.setattr(question_answering_service, "generate_answer", fail_generate_answer)
 
-    with pytest.raises(question_answering_service.QuestionAnsweringError) as exc_info:
-        await question_answering_service.answer_question(
-            db_session,
-            question_text="What is the employee vacation policy?",
-            top_k=3,
-        )
+    response = await question_answering_service.answer_question(
+        db_session,
+        user_id=await _owner_id(db_session),
+        question_text="What is the employee vacation policy?",
+        top_k=3,
+    )
 
-    assert str(exc_info.value) == "No related content was found in READY documents."
+    assert response.answer == question_answering_service.GROUNDED_NOT_FOUND_ANSWER
+    assert response.citations == []
 
     question_count = await db_session.scalar(select(func.count()).select_from(Question))
-    assert question_count == 0
+    assert question_count == 1
 
 
 @pytest.mark.asyncio
@@ -332,12 +359,116 @@ async def test_answer_question_accepts_related_chunk_with_moderate_cosine_distan
 
     response = await question_answering_service.answer_question(
         db_session,
+        user_id=await _owner_id(db_session),
         question_text="How many annual leave days do employees get?",
         top_k=3,
     )
 
     assert response.answer == "Employees receive 21 days of annual leave each year."
-    assert response.sources
-    assert response.sources[0].document_id == ready_document_id
-    assert response.sources[0].distance == pytest.approx(0.7411809549, abs=1e-6)
+    assert response.citations
+    assert response.citations[0].document_id == ready_document_id
+    assert response.citations[0].distance == pytest.approx(0.7411809549, abs=1e-6)
     assert "annual leave" in captured["context"]
+
+
+@pytest.mark.asyncio
+async def test_answer_question_classifies_embedding_unavailability(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fail_embedding(*args: object, **kwargs: object) -> list[float]:
+        raise OllamaEmbeddingError("connection failed")
+
+    monkeypatch.setattr(question_answering_service, "_embed_question", fail_embedding)
+
+    with pytest.raises(question_answering_service.QueryEmbeddingUnavailableError) as exc_info:
+        await question_answering_service.answer_question(
+            db_session,
+            user_id=await _owner_id(db_session),
+            question_text="Can the search service answer this?",
+        )
+
+    assert "document search service" in str(exc_info.value)
+
+
+@pytest.mark.asyncio
+async def test_answer_question_classifies_answer_provider_unavailability(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = get_settings()
+    document_id = await _create_document(
+        db_session,
+        filename="provider-test.txt",
+        status=DocumentStatus.READY,
+    )
+    await ChunkRepository(db_session).bulk_insert_chunks(
+        document_id,
+        [
+            ChunkWithEmbedding(
+                chunk_index=0,
+                content="A grounded source chunk.",
+                embedding=_embedding(1.0, 0.0, settings.embedding_dim),
+            )
+        ],
+    )
+
+    async def fake_embed_question(*args: object, **kwargs: object) -> list[float]:
+        return _embedding(1.0, 0.0, settings.embedding_dim)
+
+    async def fail_answer_provider(*args: object, **kwargs: object) -> tuple[str, str]:
+        raise LLMProviderUnavailableError("connection failed")
+
+    monkeypatch.setattr(question_answering_service, "_embed_question", fake_embed_question)
+    monkeypatch.setattr(question_answering_service, "generate_answer", fail_answer_provider)
+
+    with pytest.raises(question_answering_service.AnswerProviderUnavailableError) as exc_info:
+        await question_answering_service.answer_question(
+            db_session,
+            user_id=await _owner_id(db_session),
+            question_text="Can the provider answer this?",
+        )
+
+    assert "answer-generation service" in str(exc_info.value)
+
+
+@pytest.mark.asyncio
+async def test_answer_question_recovers_a_single_cited_email_after_provider_false_negative(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = get_settings()
+    document_id = await _create_document(
+        db_session,
+        filename="email.txt",
+        status=DocumentStatus.READY,
+    )
+    await ChunkRepository(db_session).bulk_insert_chunks(
+        document_id,
+        [
+            ChunkWithEmbedding(
+                chunk_index=0,
+                content="Contact: person@example.com",
+                embedding=_embedding(1.0, 0.0, settings.embedding_dim),
+            )
+        ],
+    )
+
+    async def fake_embed_question(*args: object, **kwargs: object) -> list[float]:
+        return _embedding(1.0, 0.0, settings.embedding_dim)
+
+    async def false_negative_provider(*args: object, **kwargs: object) -> tuple[str, str]:
+        return question_answering_service.GROUNDED_NOT_FOUND_ANSWER, "unit-test-model"
+
+    monkeypatch.setattr(question_answering_service, "_embed_question", fake_embed_question)
+    monkeypatch.setattr(question_answering_service, "generate_answer", false_negative_provider)
+
+    response = await question_answering_service.answer_question(
+        db_session,
+        user_id=await _owner_id(db_session),
+        question_text="What is my email?",
+        document_ids=[document_id],
+    )
+
+    assert response.answer == "The email address in the selected documents is person@example.com."
+    assert [citation.document_id for citation in response.citations] == [document_id]

@@ -120,7 +120,16 @@ def setup_logging(log_level: str = "INFO") -> None:
     root_logger = logging.getLogger()
     root_logger.setLevel(level)
 
+    # Keep handlers installed by the hosting process (for example pytest's
+    # capture handler, or a platform log collector). Only replace the handler
+    # previously installed by this application so repeated lifespan startups do
+    # not duplicate application log lines.
+    for existing_handler in root_logger.handlers[:]:
+        if getattr(existing_handler, "_sourcewise_handler", False):
+            root_logger.removeHandler(existing_handler)
+
     handler = logging.StreamHandler()
+    handler._sourcewise_handler = True  # type: ignore[attr-defined]
     handler.setLevel(level)
     handler.setFormatter(
         logging.Formatter("%(asctime)s %(levelname)s [%(request_id)s] %(name)s: %(message)s")
@@ -128,7 +137,6 @@ def setup_logging(log_level: str = "INFO") -> None:
     handler.addFilter(RequestIdFilter())
     handler.addFilter(SensitiveDataFilter())
 
-    root_logger.handlers.clear()
     root_logger.addHandler(handler)
 
 

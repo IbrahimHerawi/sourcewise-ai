@@ -56,7 +56,6 @@ def test_question_request_accepts_at_most_one_optional_collection() -> None:
 @pytest.mark.parametrize(
     "field",
     [
-        "document_ids",
         "conversation_id",
         "thread_id",
         "messages",
@@ -77,6 +76,20 @@ def test_question_request_rejects_obsolete_chat_and_unknown_fields(field: str) -
         )
 
     assert any(item["type"] == "extra_forbidden" for item in error.value.errors())
+
+
+def test_question_request_accepts_and_deduplicates_document_ids() -> None:
+    first_document_id = uuid4()
+    second_document_id = uuid4()
+
+    request = QuestionAnswerRequest.model_validate(
+        {
+            "question": "One independent question",
+            "document_ids": [str(first_document_id), str(second_document_id), str(first_document_id)],
+        }
+    )
+
+    assert request.document_ids == [first_document_id, second_document_id]
 
 
 @pytest.mark.parametrize(

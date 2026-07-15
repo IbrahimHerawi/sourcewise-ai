@@ -241,8 +241,8 @@ async def test_upload_ingest_ask_and_history_smoke(
     assert ask_response.status_code == 200
     ask_payload = ask_response.json()
     assert ask_payload["answer"] == "Mocked answer from integration smoke test."
-    assert len(ask_payload["sources"]) >= 1
-    assert ask_payload["sources"][0]["document_id"] == str(document_id)
+    assert len(ask_payload["citations"]) >= 1
+    assert ask_payload["citations"][0]["document_id"] == str(document_id)
     assert "ORBIT778 sentence" in smoke_context.llm_context_capture["context"]
 
     history_response = await smoke_context.client.get("/api/v1/questions/history")

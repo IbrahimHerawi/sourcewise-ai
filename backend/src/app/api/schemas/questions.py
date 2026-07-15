@@ -26,12 +26,21 @@ FiniteDistance = Annotated[float, Field(strict=True, allow_inf_nan=False)]
 
 
 class QuestionAnswerRequest(BaseModel):
-    """One independent question, optionally scoped to one collection."""
+    """One independent question, optionally narrowed to a collection or documents."""
 
     model_config = ConfigDict(extra="forbid")
 
     question: QuestionText
     collection_id: UUID | None = None
+    document_ids: list[UUID] | None = Field(default=None, max_length=100)
+
+    @field_validator("document_ids")
+    @classmethod
+    def normalize_document_ids(cls, value: list[UUID] | None) -> list[UUID] | None:
+        """Deduplicate a document selection while preserving the submitted order."""
+        if not value:
+            return None
+        return list(dict.fromkeys(value))
 
 
 class CitationResponse(BaseModel):

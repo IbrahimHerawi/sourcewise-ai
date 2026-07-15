@@ -1,21 +1,35 @@
-"""Unified answer generation via the OpenAI Python client."""
+"""Unified, timeout-bounded answer generation via the OpenAI Python client."""
 
 from __future__ import annotations
 
+import asyncio
+import logging
 from dataclasses import dataclass
 
-from openai import AsyncOpenAI
+from openai import APIConnectionError, APIStatusError, APITimeoutError, AsyncOpenAI
 from openai.types.responses import Response
 
 from app.core.settings import Settings, get_settings
 
+logger = logging.getLogger(__name__)
+
+GROUNDED_NOT_FOUND_ANSWER = "I could not find this information in the selected documents."
+
 SYSTEM_PROMPT = (
     "Answer using ONLY the provided context. "
+    "Extract precise facts such as email addresses verbatim when they appear in the context. "
     "If the context does not contain a supported answer then do not provide any extra information, reply exactly with: "
-    "I don't know based on the uploaded documents."
-    
+    f"{GROUNDED_NOT_FOUND_ANSWER}"
 )
-EMPTY_ANSWER_FALLBACK = "I don't know based on the uploaded documents."
+EMPTY_ANSWER_FALLBACK = GROUNDED_NOT_FOUND_ANSWER
+
+
+class AnswerProviderError(RuntimeError):
+    """Base class for a safe answer-provider failure."""
+
+
+class AnswerProviderUnavailableError(AnswerProviderError):
+    """Raised when the configured provider cannot answer a request right now."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -85,14 +99,32 @@ async def generate_answer(
     config = _resolve_provider_config(resolved_settings)
     prompt_input = _build_input(context_chunks_text=context_chunks_text, question=question)
 
-    async with build_openai_client(resolved_settings) as client:
-        response = await client.responses.create(
-            model=config.model,
-            instructions=SYSTEM_PROMPT,
-            input=prompt_input,
-        )
+    try:
+        async with build_openai_client(resolved_settings) as client:
+            response = await asyncio.wait_for(
+                client.responses.create(
+                    model=config.model,
+                    instructions=SYSTEM_PROMPT,
+                    input=prompt_input,
+                ),
+                timeout=float(getattr(resolved_settings, "answer_provider_timeout_s", 60.0)),
+            )
+    except (TimeoutError, APITimeoutError, APIConnectionError) as exc:
+        logger.warning("Answer provider request failed: %s", type(exc).__name__)
+        raise AnswerProviderUnavailableError("The answer provider is temporarily unavailable.") from exc
+    except APIStatusError as exc:
+        logger.warning("Answer provider returned status=%s", exc.status_code)
+        if exc.status_code >= 500 or exc.status_code == 429:
+            raise AnswerProviderUnavailableError("The answer provider is temporarily unavailable.") from exc
+        raise AnswerProviderError("The answer provider rejected this request.") from exc
 
     return _extract_answer_text(response), response.model or config.model
 
 
-__all__ = ["build_openai_client", "generate_answer"]
+__all__ = [
+    "AnswerProviderError",
+    "AnswerProviderUnavailableError",
+    "GROUNDED_NOT_FOUND_ANSWER",
+    "build_openai_client",
+    "generate_answer",
+]

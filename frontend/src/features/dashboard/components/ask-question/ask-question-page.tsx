@@ -25,6 +25,8 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -72,7 +74,24 @@ function getQuestionErrorMessage(error: unknown, fallback: string): string {
     return "Your account must be verified before asking questions.";
   }
   if (error instanceof ApiError && error.status === 404) {
-    return "The selected collection is no longer available. Choose another collection.";
+    return error.code === "documents_not_found"
+      ? "One or more selected documents are no longer available. Update your selection and try again."
+      : "The selected collection is no longer available. Choose another collection.";
+  }
+  if (error instanceof ApiError && error.code === "documents_not_ready") {
+    return "Selected documents are still processing. Choose ready documents or wait for processing to finish.";
+  }
+  if (error instanceof ApiError && error.code === "no_ready_documents") {
+    return "No ready documents are available in this scope. Upload a document or wait for processing to finish.";
+  }
+  if (error instanceof ApiError && error.code === "query_embedding_unavailable") {
+    return "Document search is temporarily unavailable. Please try again.";
+  }
+  if (error instanceof ApiError && error.code === "answer_provider_unavailable") {
+    return "The answer-generation service is temporarily unavailable. Please try again.";
+  }
+  if (error instanceof ApiError && error.code === "answer_provider_rejected") {
+    return "The answer-generation service could not process this question. Please try again.";
   }
   if (error instanceof ApiError && error.status >= 500) {
     return "The question-answering service is temporarily unavailable. Please try again.";
@@ -306,12 +325,90 @@ function DocumentReadiness({
   );
 }
 
+function DocumentSelector({
+  documents,
+  disabled,
+  selectedDocumentIds,
+  onChange,
+}: {
+  documents: readonly DocumentSummaryResponse[];
+  disabled: boolean;
+  selectedDocumentIds: readonly string[];
+  onChange: (documentIds: string[]) => void;
+}) {
+  const readyDocuments = documents.filter((document) => document.status === "READY");
+  const selectedIds = new Set(selectedDocumentIds);
+  const selectionLabel = selectedDocumentIds.length === 0
+    ? "All ready documents"
+    : selectedDocumentIds.length === 1
+      ? "1 document selected"
+      : `${selectedDocumentIds.length} documents selected`;
+
+  function toggleDocument(documentId: string, checked: boolean) {
+    if (checked) {
+      onChange([...selectedDocumentIds, documentId]);
+      return;
+    }
+    onChange(selectedDocumentIds.filter((selectedId) => selectedId !== documentId));
+  }
+
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button
+          aria-label="Choose documents to search"
+          className={styles.documentSelectorTrigger}
+          disabled={disabled || readyDocuments.length === 0}
+          size="sm"
+          type="button"
+          variant="outline"
+        >
+          <Files aria-hidden="true" />
+          {selectionLabel}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className={styles.documentSelectorContent}>
+        <div className={styles.documentSelectorHeader}>
+          <div>
+            <p className={styles.documentSelectorTitle}>Search documents</p>
+            <p className={styles.documentSelectorHint}>
+              Choose one or more ready documents, or leave this clear to search all ready documents.
+            </p>
+          </div>
+          <Button
+            disabled={selectedDocumentIds.length === 0}
+            onClick={() => onChange([])}
+            size="sm"
+            type="button"
+            variant="ghost"
+          >
+            Search all
+          </Button>
+        </div>
+        <div className={styles.documentSelectorList}>
+          {readyDocuments.map((document) => (
+            <label className={styles.documentOption} htmlFor={`search-document-${document.id}`} key={document.id}>
+              <Checkbox
+                checked={selectedIds.has(document.id)}
+                id={`search-document-${document.id}`}
+                onCheckedChange={(checked) => toggleDocument(document.id, checked === true)}
+              />
+              <span>{document.filename}</span>
+            </label>
+          ))}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 export function AskQuestionPage() {
   const { logout } = useAuth();
   const { toast } = useToast();
   const [collections, setCollections] = useState<CollectionResponse[]>([]);
   const [selectedCollection, setSelectedCollection] = useState(ALL_DOCUMENTS_VALUE);
   const [documents, setDocuments] = useState<DocumentSummaryResponse[]>([]);
+  const [selectedDocumentIds, setSelectedDocumentIds] = useState<string[]>([]);
   const [isCollectionsLoading, setIsCollectionsLoading] = useState(true);
   const [collectionsError, setCollectionsError] = useState<string | null>(null);
   const [collectionsErrorStatus, setCollectionsErrorStatus] = useState<number | null>(null);
@@ -392,6 +489,13 @@ export function AskQuestionPage() {
     }
   }, [collections, selectedCollection]);
 
+  useEffect(() => {
+    const readyDocumentIds = new Set(
+      documents.filter((document) => document.status === "READY").map((document) => document.id),
+    );
+    setSelectedDocumentIds((currentIds) => currentIds.filter((documentId) => readyDocumentIds.has(documentId)));
+  }, [documents]);
+
   const readyDocumentCount = useMemo(
     () => documents.filter((document) => document.status === "READY").length,
     [documents],
@@ -408,6 +512,7 @@ export function AskQuestionPage() {
 
   function handleCollectionChange(value: string) {
     setSelectedCollection(value);
+    setSelectedDocumentIds([]);
     setAnswer(null);
     setQuestionState("idle");
     setSubmissionError(null);
@@ -427,6 +532,7 @@ export function AskQuestionPage() {
       const response = await api.askQuestion({
         question: trimmedQuestion,
         collectionId: selectedCollection === ALL_DOCUMENTS_VALUE ? undefined : selectedCollection,
+        documentIds: selectedDocumentIds.length > 0 ? selectedDocumentIds : undefined,
       });
       setAnswer(response);
       setQuestionState("success");
@@ -499,6 +605,12 @@ export function AskQuestionPage() {
                   ))}
                 </SelectContent>
               </Select>
+              <DocumentSelector
+                disabled={isDocumentsLoading || Boolean(documentsError)}
+                documents={documents}
+                onChange={setSelectedDocumentIds}
+                selectedDocumentIds={selectedDocumentIds}
+              />
             </div>
             <Button className={styles.askButton} disabled={!canAsk} type="submit">
               {questionState === "loading" ? (

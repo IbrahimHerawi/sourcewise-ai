@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import uuid
 from typing import Annotated
 
@@ -17,13 +18,15 @@ from app.api.schemas.questions import (
     QuestionAnswerResponse,
     QuestionHistoryItemResponse,
 )
-from app.core.errors import NotFoundError, ValidationError
+from app.core.errors import AppError, NotFoundError, ValidationError
 from app.db.models.auth import User
 from app.db.session import get_db_session
 from app.repositories.collection_repository import CollectionRepository
+from app.repositories.document_repository import DocumentRepository
 from app.repositories.question_repository import QuestionRepository
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 @router.post("/ask", response_model=QuestionAnswerResponse)
@@ -32,7 +35,7 @@ async def ask_question(
     session: Annotated[AsyncSession, Depends(get_db_session)],
     current_user: Annotated[User, Depends(get_current_verified_user)],
 ) -> QuestionAnswerResponse:
-    """Answer a question using all owner documents or one owner collection."""
+    """Answer a grounded question using a user-owned collection and/or document selection."""
     if payload.collection_id is not None:
         collection = await CollectionRepository(session).get_collection(
             current_user.id,
@@ -41,17 +44,62 @@ async def ask_question(
         if collection is None:
             raise NotFoundError("Collection not found.")
 
+    document_ids = tuple(payload.document_ids or ())
+    if document_ids:
+        documents = await DocumentRepository(session).list_documents_by_ids(
+            current_user.id,
+            document_ids,
+            collection_id=payload.collection_id,
+        )
+        found_document_ids = {document.id for document in documents}
+        missing_document_ids = [
+            document_id for document_id in document_ids if document_id not in found_document_ids
+        ]
+        if missing_document_ids:
+            raise NotFoundError(
+                "One or more selected documents were not found.",
+                code="documents_not_found",
+                details={"document_ids": [str(document_id) for document_id in missing_document_ids]},
+            )
+
+        not_ready_documents = [
+            document for document in documents if document.status.value != "READY"
+        ]
+        if not_ready_documents:
+            raise ValidationError(
+                "Selected documents must finish processing before they can be searched.",
+                code="documents_not_ready",
+                details={
+                    "document_ids": [str(document.id) for document in not_ready_documents],
+                    "statuses": {str(document.id): document.status.value for document in not_ready_documents},
+                },
+                status_code=status.HTTP_409_CONFLICT,
+            )
+
     try:
-        return await question_answering_service.answer_question(
+        answer = await question_answering_service.answer_question(
             session,
             user_id=current_user.id,
             question_text=payload.question,
             collection_id=payload.collection_id,
+            document_ids=document_ids or None,
         )
+        # Authentication and scope checks issue reads that start SQLAlchemy's implicit
+        # transaction. Persist the successful question/citation write before this
+        # request-scoped session closes and rolls that transaction back.
+        await session.commit()
+        return answer
     except question_answering_service.QuestionAnsweringError as exc:
-        raise ValidationError(
+        await session.rollback()
+        logger.info(
+            "Question answer request rejected user_id=%s code=%s",
+            current_user.id,
+            exc.code,
+        )
+        raise AppError(
             str(exc),
-            status_code=status.HTTP_400_BAD_REQUEST,
+            code=exc.code,
+            status_code=exc.status_code,
         ) from exc
 
 

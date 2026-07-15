@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Sequence
 
 from sqlalchemy import delete, exists, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -110,6 +111,28 @@ class DocumentRepository:
             Document.id == document_id,
         )
         return await self._session.scalar(stmt)
+
+    async def list_documents_by_ids(
+        self,
+        user_id: uuid.UUID,
+        document_ids: Sequence[uuid.UUID],
+        *,
+        collection_id: uuid.UUID | None = None,
+    ) -> list[Document]:
+        """Return only documents owned by one user from an explicit selection."""
+        unique_document_ids = tuple(dict.fromkeys(document_ids))
+        if not unique_document_ids:
+            return []
+
+        stmt = select(Document).where(
+            Document.user_id == user_id,
+            Document.id.in_(unique_document_ids),
+        )
+        if collection_id is not None:
+            stmt = stmt.where(Document.collection_id == collection_id)
+
+        result = await self._session.scalars(stmt)
+        return list(result.all())
 
     async def delete_document(
         self,

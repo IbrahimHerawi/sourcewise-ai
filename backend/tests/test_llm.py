@@ -138,5 +138,5 @@ async def test_generate_answer_returns_safe_fallback_when_content_is_missing(
         ),
     )
 
-    assert answer_text == "I don't know based on the uploaded documents."
+    assert answer_text == llm.GROUNDED_NOT_FOUND_ANSWER
     assert model_used == "response-model"

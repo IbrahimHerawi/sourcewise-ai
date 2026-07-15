@@ -47,6 +47,7 @@ class ChunkRepository:
         query_embedding: list[float],
         top_k: int,
         collection_id: uuid.UUID | None = None,
+        document_ids: Sequence[uuid.UUID] | None = None,
         max_distance: float | None = None,
     ) -> list[SimilaritySearchResult]:
         """Search one owner's READY document chunks by cosine distance."""
@@ -73,6 +74,11 @@ class ChunkRepository:
         )
         if collection_id is not None:
             stmt = stmt.where(Document.collection_id == collection_id)
+        if document_ids is not None:
+            unique_document_ids = tuple(dict.fromkeys(document_ids))
+            if not unique_document_ids:
+                return []
+            stmt = stmt.where(Document.id.in_(unique_document_ids))
         if max_distance is not None:
             stmt = stmt.where(distance_expr <= max_distance)
 

@@ -60,12 +60,13 @@ class ValidationError(AppError):
         self,
         message: str = "Validation failed.",
         *,
+        code: str = "validation_error",
         details: Mapping[str, Any] | None = None,
         status_code: int = status.HTTP_400_BAD_REQUEST,
     ) -> None:
         super().__init__(
             message,
-            code="validation_error",
+            code=code,
             status_code=status_code,
             details=details,
         )

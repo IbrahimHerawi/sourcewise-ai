@@ -91,6 +91,7 @@ export interface PaginatedCollectionListResponse {
 export interface QuestionAnswerRequest {
   question: string;
   collection_id?: string;
+  document_ids?: string[];
 }
 
 export interface CitationResponse {
@@ -386,12 +387,23 @@ export const api = {
     });
   },
 
-  async askQuestion({ question, collectionId }: { question: string; collectionId?: string }): Promise<QuestionAnswerResponse> {
+  async askQuestion({
+    question,
+    collectionId,
+    documentIds,
+  }: {
+    question: string;
+    collectionId?: string;
+    documentIds?: readonly string[];
+  }): Promise<QuestionAnswerResponse> {
     const payload: QuestionAnswerRequest = {
       question,
     };
     if (collectionId) {
       payload.collection_id = collectionId;
+    }
+    if (documentIds?.length) {
+      payload.document_ids = [...new Set(documentIds)];
     }
 
     return request<QuestionAnswerResponse>("/questions/ask", {

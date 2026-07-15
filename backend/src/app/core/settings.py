@@ -92,6 +92,7 @@ class Settings(BaseSettings):
     ollama_embed_retry_attempts: int = Field(default=3, ge=1)
     ollama_embed_retry_min_wait_s: float = Field(default=0.2, gt=0)
     ollama_embed_retry_max_wait_s: float = Field(default=2.0, gt=0)
+    answer_provider_timeout_s: float = Field(default=60.0, gt=0)
     max_upload_mb: int = Field(default=10, gt=0)
     upload_root_dir: str = "/data/uploads"
 
