@@ -14,6 +14,7 @@ from app.db.models.questions import Question
 from app.repositories.chunk_repository import ChunkRepository
 from app.repositories.document_repository import DocumentRepository
 from app.repositories.types import ChunkWithEmbedding
+from app.services.llm import GeneratedAnswer
 
 
 def _embedding(first_dim: float, second_dim: float, dim: int) -> list[float]:
@@ -84,7 +85,7 @@ async def test_answer_question_retrieves_ready_chunks_generates_answer_and_persi
         ],
     )
 
-    captured: dict[str, str] = {}
+    captured: dict[str, object] = {}
 
     async def fake_embed_question(question_text: str, *, settings: object) -> list[float]:
         captured["embedded_question"] = question_text
@@ -93,12 +94,18 @@ async def test_answer_question_retrieves_ready_chunks_generates_answer_and_persi
     async def fake_generate_answer(
         context_chunks_text: str,
         question: str,
+        available_context_entries: int,
         *,
         settings: object | None = None,
-    ) -> tuple[str, str]:
+    ) -> GeneratedAnswer:
         captured["context"] = context_chunks_text
         captured["question"] = question
-        return "Answer from retrieved context.", "unit-test-model"
+        captured["available_context_entries"] = available_context_entries
+        return GeneratedAnswer(
+            answer_text="Answer from retrieved context [1].",
+            model_used="unit-test-model",
+            citation_ranks=(1,),
+        )
 
     monkeypatch.setattr(question_answering_service, "_embed_question", fake_embed_question)
     monkeypatch.setattr(question_answering_service, "generate_answer", fake_generate_answer)
@@ -110,7 +117,7 @@ async def test_answer_question_retrieves_ready_chunks_generates_answer_and_persi
         top_k=3,
     )
 
-    assert response.answer == "Answer from retrieved context."
+    assert response.answer == "Answer from retrieved context [1]."
     assert response.provider == settings.ai_provider
     assert response.model == "unit-test-model"
     assert [source.document_id for source in response.sources] == [ready_document_id, ready_document_id]
@@ -119,6 +126,9 @@ async def test_answer_question_retrieves_ready_chunks_generates_answer_and_persi
 
     assert captured["embedded_question"] == "What do the READY chunks say?"
     assert captured["question"] == "What do the READY chunks say?"
+    assert captured["available_context_entries"] == 2
+    assert "[1]\n" in captured["context"]
+    assert "[2]\n" in captured["context"]
     assert f"document_id: {ready_document_id}" in captured["context"]
     assert "chunk_index: 0" in captured["context"]
     assert "chunk_index: 1" in captured["context"]
@@ -129,7 +139,7 @@ async def test_answer_question_retrieves_ready_chunks_generates_answer_and_persi
     assert question is not None
     assert question.question_text == "What do the READY chunks say?"
     assert list(question.question_embedding) == pytest.approx(query_embedding)
-    assert question.answer_text == "Answer from retrieved context."
+    assert question.answer_text == "Answer from retrieved context [1]."
     assert question.ai_provider == settings.ai_provider
     assert question.model_used == "unit-test-model"
 
@@ -175,7 +185,7 @@ async def test_answer_question_raises_when_requested_documents_are_not_ready(
     async def fake_embed_question(question_text: str, *, settings: object) -> list[float]:
         return _embedding(1.0, 0.0, get_settings().embedding_dim)
 
-    async def fail_generate_answer(*args: object, **kwargs: object) -> tuple[str, str]:
+    async def fail_generate_answer(*args: object, **kwargs: object) -> GeneratedAnswer:
         raise AssertionError("generate_answer should not be called when no READY chunks exist")
 
     monkeypatch.setattr(question_answering_service, "_embed_question", fake_embed_question)
@@ -217,7 +227,7 @@ async def test_answer_question_caps_context_size_and_truncates_safely(
         ],
     )
 
-    captured: dict[str, str] = {}
+    captured: dict[str, object] = {}
 
     async def fake_embed_question(question_text: str, *, settings: object) -> list[float]:
         return _embedding(1.0, 0.0, get_settings().embedding_dim)
@@ -225,11 +235,17 @@ async def test_answer_question_caps_context_size_and_truncates_safely(
     async def fake_generate_answer(
         context_chunks_text: str,
         question: str,
+        available_context_entries: int,
         *,
         settings: object | None = None,
-    ) -> tuple[str, str]:
+    ) -> GeneratedAnswer:
         captured["context"] = context_chunks_text
-        return "Trimmed answer.", "trim-test-model"
+        captured["available_context_entries"] = available_context_entries
+        return GeneratedAnswer(
+            answer_text="Trimmed answer [1].",
+            model_used="trim-test-model",
+            citation_ranks=(1,),
+        )
 
     monkeypatch.setattr(question_answering_service, "_embed_question", fake_embed_question)
     monkeypatch.setattr(question_answering_service, "generate_answer", fake_generate_answer)
@@ -241,7 +257,8 @@ async def test_answer_question_caps_context_size_and_truncates_safely(
         max_context_chars=500,
     )
 
-    assert response.answer == "Trimmed answer."
+    assert response.answer == "Trimmed answer [1]."
+    assert captured["available_context_entries"] == 1
     assert len(captured["context"]) <= 500
     assert "[content truncated]" in captured["context"]
 
@@ -271,7 +288,7 @@ async def test_answer_question_raises_without_calling_llm_when_no_related_chunks
     async def fake_embed_question(question_text: str, *, settings: object) -> list[float]:
         return _embedding(0.0, 1.0, get_settings().embedding_dim)
 
-    async def fail_generate_answer(*args: object, **kwargs: object) -> tuple[str, str]:
+    async def fail_generate_answer(*args: object, **kwargs: object) -> GeneratedAnswer:
         raise AssertionError("generate_answer should not be called when no related chunks exist")
 
     monkeypatch.setattr(question_answering_service, "_embed_question", fake_embed_question)
@@ -312,7 +329,7 @@ async def test_answer_question_accepts_related_chunk_with_moderate_cosine_distan
         ],
     )
 
-    captured: dict[str, str] = {}
+    captured: dict[str, object] = {}
 
     async def fake_embed_question(question_text: str, *, settings: object) -> list[float]:
         return _embedding(1.0, 0.0, get_settings().embedding_dim)
@@ -320,12 +337,18 @@ async def test_answer_question_accepts_related_chunk_with_moderate_cosine_distan
     async def fake_generate_answer(
         context_chunks_text: str,
         question: str,
+        available_context_entries: int,
         *,
         settings: object | None = None,
-    ) -> tuple[str, str]:
+    ) -> GeneratedAnswer:
         captured["context"] = context_chunks_text
         captured["question"] = question
-        return "Employees receive 21 days of annual leave each year.", "unit-test-model"
+        captured["available_context_entries"] = available_context_entries
+        return GeneratedAnswer(
+            answer_text="Employees receive 21 days of annual leave each year [1].",
+            model_used="unit-test-model",
+            citation_ranks=(1,),
+        )
 
     monkeypatch.setattr(question_answering_service, "_embed_question", fake_embed_question)
     monkeypatch.setattr(question_answering_service, "generate_answer", fake_generate_answer)
@@ -336,7 +359,8 @@ async def test_answer_question_accepts_related_chunk_with_moderate_cosine_distan
         top_k=3,
     )
 
-    assert response.answer == "Employees receive 21 days of annual leave each year."
+    assert response.answer == "Employees receive 21 days of annual leave each year [1]."
+    assert captured["available_context_entries"] == 1
     assert response.sources
     assert response.sources[0].document_id == ready_document_id
     assert response.sources[0].distance == pytest.approx(0.7411809549, abs=1e-6)

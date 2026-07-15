@@ -104,7 +104,7 @@ def _render_context_section(
     max_chars: int,
 ) -> str:
     header = (
-        f"[Chunk {rank}]\n"
+        f"[{rank}]\n"
         f"document_id: {chunk.document_id}\n"
         f"chunk_id: {chunk.chunk_id}\n"
         f"chunk_index: {chunk.chunk_index}\n"
@@ -302,18 +302,19 @@ async def _answer_question_in_transaction(
     if not context_chunks:
         raise RuntimeError("Failed to construct question context from retrieved chunks.")
 
-    answer_text, model_used = await generate_answer(
+    generated_answer = await generate_answer(
         context_text,
         question,
+        len(context_chunks),
         settings=settings,
     )
 
     question_row = await QuestionRepository(session).create_question(
         question_text=question,
         embedding=query_embedding,
-        answer_text=answer_text,
+        answer_text=generated_answer.answer_text,
         ai_provider=settings.ai_provider,
-        model_used=model_used,
+        model_used=generated_answer.model_used,
     )
     await QuestionContextRepository(session).bulk_insert_question_context(
         question_row.id,
@@ -329,7 +330,7 @@ async def _answer_question_in_transaction(
 
     return QuestionAnswerResponse(
         question_id=question_row.id,
-        answer=answer_text,
+        answer=generated_answer.answer_text,
         sources=[
             QuestionSourceResponse(
                 document_id=chunk.document_id,
@@ -340,7 +341,7 @@ async def _answer_question_in_transaction(
             for chunk in context_chunks
         ],
         provider=settings.ai_provider,
-        model=model_used,
+        model=generated_answer.model_used,
     )
 
 
