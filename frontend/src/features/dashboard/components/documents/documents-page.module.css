@@ -1,6 +1,6 @@
 .page {
   min-height: 100%;
-  padding: clamp(1.25rem, 3vw, 2rem) 0 2rem;
+  padding: 0 0 var(--spacing-dashboard-page-block-end);
   background: var(--color-dashboard-background);
   color: var(--foreground);
   font-family: var(--font-dashboard);
@@ -19,18 +19,10 @@
   gap: 1rem;
 }
 
-.heading {
-  margin: 0;
-  color: var(--foreground);
-  font-size: clamp(1.5rem, 3vw, 1.875rem);
-  font-weight: 700;
-  line-height: 1.2;
-}
-
 .uploadSection {
   display: grid;
   gap: 1rem;
-  margin-top: clamp(1.5rem, 4vw, 2.25rem);
+  margin-top: var(--spacing-dashboard-page-section);
 }
 
 .subheading {
@@ -74,9 +66,7 @@
   width: 100%;
   min-height: 12.5rem;
   padding: 2rem 1rem;
-  border: 2px dashed var(--border);
-  border-radius: var(--radius-xl);
-  background: var(--card);
+  border-style: dashed;
   color: var(--foreground);
   text-align: center;
   transition: border-color 160ms ease, background-color 160ms ease;
@@ -152,10 +142,6 @@
   gap: 1rem;
   min-width: 0;
   padding: 1rem 1.25rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-xl);
-  background: var(--card);
-  box-shadow: var(--shadow-dashboard-sidebar);
 }
 
 .fileIdentity {
@@ -313,10 +299,6 @@
   overflow: hidden;
   gap: 0;
   padding: 0;
-  border-color: var(--border);
-  border-radius: var(--radius-xl);
-  background: var(--card);
-  box-shadow: var(--shadow-dashboard-sidebar);
 }
 
 .tableWrapper :global([data-slot="table-container"]) {
@@ -504,9 +486,7 @@
   justify-items: center;
   gap: 0.625rem;
   padding: clamp(2rem, 8vw, 4rem) 1.5rem;
-  border: 1px dashed var(--border);
-  border-radius: var(--radius-xl);
-  background: var(--card);
+  border-style: dashed;
   text-align: center;
 }
 
@@ -614,15 +594,10 @@
 }
 
 @media (max-width: 48rem) {
-  .pageHeader,
   .uploadHeader,
   .sectionHeader {
     align-items: stretch;
     flex-direction: column;
-  }
-
-  .refreshButton {
-    align-self: flex-start;
   }
 
   .controlGroup {

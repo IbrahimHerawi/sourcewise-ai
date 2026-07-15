@@ -19,6 +19,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/hooks/use-auth";
+import { DashboardPageHeader } from "@/features/dashboard/components/dashboard-page-header";
 import { useToast } from "@/hooks/use-toast";
 import type {
   CitationResponse,
@@ -167,7 +168,7 @@ function HistoryState({
   title: string;
 }) {
   return (
-    <div className={styles.stateCard} role="status">
+    <div className={`${styles.stateCard} dashboard-surface`} role="status">
       <Icon className={styles.stateIcon} aria-hidden="true" />
       <h2 className={styles.stateTitle}>{title}</h2>
       <p className={styles.stateDescription}>{description}</p>
@@ -276,11 +277,7 @@ export function HistoryPage() {
   return (
     <section className={styles.page} aria-labelledby="history-heading">
       <div className={styles.content}>
-        <header>
-          <h1 className={styles.heading} id="history-heading">
-            History
-          </h1>
-        </header>
+        <DashboardPageHeader id="history-heading" title="History" />
 
         <div className={styles.toolbar}>
           {documents.length > 0 ? (

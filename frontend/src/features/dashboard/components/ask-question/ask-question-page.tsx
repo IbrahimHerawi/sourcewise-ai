@@ -30,6 +30,7 @@ import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/hooks/use-auth";
+import { DashboardPageHeader } from "@/features/dashboard/components/dashboard-page-header";
 import { useToast } from "@/hooks/use-toast";
 import {
   ApiError,
@@ -153,7 +154,7 @@ function CitationsPanel({ citations }: { citations: readonly CitationResponse[] 
   }
 
   return (
-    <Accordion className={styles.sourcesAccordion} collapsible type="single">
+    <Accordion className={`${styles.sourcesAccordion} dashboard-surface`} collapsible type="single">
       <AccordionItem className={styles.sourcesItem} value="sources">
         <AccordionTrigger className={styles.sourcesTrigger}>
           <span className={styles.sourcesTriggerLabel}>
@@ -453,11 +454,7 @@ export function AskQuestionPage() {
   return (
     <section className={styles.page} aria-labelledby="ask-question-heading">
       <div className={styles.content}>
-        <header>
-          <h1 className={styles.heading} id="ask-question-heading">
-            Ask Your Documents
-          </h1>
-        </header>
+        <DashboardPageHeader id="ask-question-heading" title="Ask Your Documents" />
 
         <form className={styles.composer} onSubmit={handleSubmit}>
           <Label className={styles.questionLabel} htmlFor="question-input">

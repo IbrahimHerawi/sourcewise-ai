@@ -1,6 +1,6 @@
 .page {
   min-height: 100%;
-  padding: clamp(1.5rem, 4vw, 3rem) 0 2.5rem;
+  padding: 0 0 var(--spacing-dashboard-page-block-end);
   background: var(--color-dashboard-background);
   color: var(--foreground);
   font-family: var(--font-dashboard);
@@ -11,19 +11,10 @@
   margin-inline: 0;
 }
 
-.heading {
-  margin: 0;
-  color: var(--foreground);
-  font-size: clamp(1.625rem, 3vw, 2rem);
-  font-weight: 700;
-  line-height: 1.2;
-  letter-spacing: -0.02em;
-}
-
 .composer {
   display: grid;
   gap: 1rem;
-  margin-top: clamp(1.75rem, 5vw, 3rem);
+  margin-top: var(--spacing-dashboard-page-section);
 }
 
 .questionLabel {
@@ -148,10 +139,7 @@
   overflow: hidden;
   gap: 0;
   padding: 0;
-  border-color: var(--border);
-  border-radius: var(--radius-xl);
-  background: var(--muted);
-  box-shadow: none;
+  background: var(--card);
 }
 
 .answerContent {
@@ -207,13 +195,8 @@
   color: var(--border);
 }
 
-.sourcesAccordion,
-.noCitationsCard,
-.emptyCard {
+.sourcesAccordion {
   overflow: hidden;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: var(--card);
 }
 
 .sourcesItem {
@@ -261,9 +244,9 @@
   display: grid;
   gap: 0.375rem;
   padding: 0.75rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--muted);
+  border: 0;
+  border-radius: var(--radius-dashboard-surface);
+  background: color-mix(in srgb, var(--muted) 68%, var(--card));
 }
 
 .citationHeader {
@@ -378,9 +361,7 @@
   display: grid;
   gap: 1rem;
   padding: clamp(1.125rem, 3vw, 2rem);
-  border-color: var(--border);
-  border-radius: var(--radius-xl);
-  background: var(--muted);
+  background: var(--card);
 }
 
 .loadingHeading {

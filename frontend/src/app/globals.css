@@ -156,6 +156,15 @@
   --shadow-dashboard-nav-active: 0 0.0625rem 0.125rem rgb(0 0 0 / 5%);
   --spacing-dashboard-content-inline: 3rem;
   --size-dashboard-content-max-width: 72rem;
+  --size-dashboard-page-header-height: 4rem;
+  --font-size-dashboard-page-title: 1.75rem;
+  --font-weight-dashboard-page-title: 700;
+  --line-height-dashboard-page-title: 1.2;
+  --spacing-dashboard-page-section: 2rem;
+  --spacing-dashboard-page-block-end: 2rem;
+  --radius-dashboard-surface: 0.875rem;
+  --color-dashboard-surface-border: rgb(18 19 23 / 4%);
+  --shadow-dashboard-surface: 0 0.0625rem 0.1875rem rgb(18 19 23 / 4%), 0 0.375rem 1.125rem rgb(18 19 23 / 3%);
 }
 
 @media (max-width: 64rem) {
@@ -217,6 +226,13 @@ html:has([data-dashboard-shell]),
 body:has([data-dashboard-shell]) {
   overflow: hidden;
   overscroll-behavior: none;
+}
+
+.dashboard-surface {
+  border: 1px solid var(--color-dashboard-surface-border);
+  border-radius: var(--radius-dashboard-surface);
+  background: var(--card);
+  box-shadow: var(--shadow-dashboard-surface);
 }
 
 @layer components {

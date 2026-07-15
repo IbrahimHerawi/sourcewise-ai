@@ -1,6 +1,6 @@
 .page {
   min-height: 100%;
-  padding: clamp(1.25rem, 3vw, 2rem) 0 2rem;
+  padding: 0 0 var(--spacing-dashboard-page-block-end);
   background: var(--color-dashboard-background);
   color: var(--foreground);
   font-family: var(--font-dashboard);
@@ -11,18 +11,10 @@
   margin-inline: 0;
 }
 
-.heading {
-  margin: 0;
-  color: var(--foreground);
-  font-size: clamp(1.5rem, 3vw, 1.875rem);
-  font-weight: 700;
-  line-height: 1.2;
-}
-
 .toolbar {
   display: flex;
   justify-content: flex-end;
-  margin: clamp(1.5rem, 4vw, 2.25rem) 0 1rem;
+  margin: var(--spacing-dashboard-page-section) 0 1rem;
 }
 
 .controlGroup {
@@ -54,9 +46,6 @@
   overflow: hidden;
   gap: 0;
   padding: 0;
-  border-color: var(--border);
-  border-radius: var(--radius-xl);
-  box-shadow: var(--shadow-dashboard-sidebar);
 }
 
 .cardBody {
@@ -196,9 +185,9 @@
   display: grid;
   gap: 0.25rem;
   padding: 0.75rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: var(--muted);
+  border: 0;
+  border-radius: var(--radius-dashboard-surface);
+  background: color-mix(in srgb, var(--muted) 68%, var(--card));
 }
 
 .sourceHeader {
@@ -244,9 +233,7 @@
   justify-items: center;
   gap: 0.5rem;
   padding: clamp(2rem, 8vw, 4rem) 1.5rem;
-  border: 1px dashed var(--border);
-  border-radius: var(--radius-xl);
-  background: var(--card);
+  border-style: dashed;
   text-align: center;
 }
 

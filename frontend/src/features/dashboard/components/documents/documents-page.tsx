@@ -60,6 +60,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
+import { DashboardPageHeader } from "@/features/dashboard/components/dashboard-page-header";
 import {
   ApiError,
   api,
@@ -138,7 +139,7 @@ function UploadRow({
   onUpload: (item: PendingUpload) => void;
 }) {
   return (
-    <div className={styles.uploadRow}>
+    <div className={`${styles.uploadRow} dashboard-surface`}>
       <div className={styles.fileIdentity}>
         <span className={styles.fileType} aria-hidden="true">
           <FileText />
@@ -313,7 +314,7 @@ function DocumentsState({
   icon: typeof AlertCircle;
 }) {
   return (
-    <div className={styles.stateCard} role="status">
+    <div className={`${styles.stateCard} dashboard-surface`} role="status">
       <Icon className={styles.stateIcon} aria-hidden="true" />
       <h3 className={styles.stateTitle}>{title}</h3>
       <p className={styles.stateDescription}>{description}</p>
@@ -555,11 +556,7 @@ export function DocumentsPage() {
   return (
     <section className={styles.page} aria-labelledby="documents-heading">
       <div className={styles.content}>
-        <header>
-          <h1 className={styles.heading} id="documents-heading">
-            Documents
-          </h1>
-        </header>
+        <DashboardPageHeader id="documents-heading" title="Documents" />
 
         <section className={styles.uploadSection} aria-labelledby="upload-heading">
           <div className={styles.uploadHeader}>
@@ -595,7 +592,7 @@ export function DocumentsPage() {
             type="file"
           />
           <button
-            className={`${styles.dropzone} ${isDragging ? styles.dropzoneActive : ""}`}
+            className={`${styles.dropzone} dashboard-surface ${isDragging ? styles.dropzoneActive : ""}`}
             onClick={() => fileInputRef.current?.click()}
             onDragEnter={(event) => {
               event.preventDefault();

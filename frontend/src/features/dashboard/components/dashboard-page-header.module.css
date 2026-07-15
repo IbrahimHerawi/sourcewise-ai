@@ -1,0 +1,20 @@
+.header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  height: var(--size-dashboard-page-header-height);
+  background: var(--color-dashboard-background);
+  font-family: var(--font-dashboard);
+}
+
+.title {
+  margin: 0;
+  color: var(--foreground);
+  font-size: clamp(1.5rem, 2vw, var(--font-size-dashboard-page-title));
+  font-weight: var(--font-weight-dashboard-page-title);
+  line-height: var(--line-height-dashboard-page-title);
+  letter-spacing: -0.02em;
+}
