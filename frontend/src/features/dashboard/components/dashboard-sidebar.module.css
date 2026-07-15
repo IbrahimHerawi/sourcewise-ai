@@ -1,6 +1,11 @@
 .sidebar {
+  width: var(--size-dashboard-sidebar-width);
   flex: 0 0 var(--size-dashboard-sidebar-width);
-  min-height: 100svh;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  max-height: 100%;
+  overflow: hidden;
   background: var(--color-dashboard-sidebar-background);
   box-shadow: var(--shadow-dashboard-sidebar);
   font-family: var(--font-dashboard);
@@ -10,6 +15,7 @@
 
 .logo {
   display: block;
+  flex: none;
   margin-top: var(--spacing-dashboard-sidebar-logo-block-start);
   margin-left: var(--spacing-dashboard-sidebar-content-inline);
   color: var(--color-dashboard-logo);
@@ -22,10 +28,15 @@
 .navigation {
   display: flex;
   flex-direction: column;
+  min-width: 0;
+  min-height: 0;
   gap: var(--spacing-dashboard-nav-items);
   margin-top: var(--spacing-dashboard-nav-block-start);
   padding-inline: var(--spacing-dashboard-sidebar-content-inline);
   flex: 1;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .item {
@@ -73,6 +84,7 @@
 }
 
 .footer {
+  flex: none;
   padding: var(--spacing-dashboard-profile-footer);
   border-top: 1px solid var(--border);
   margin-top: auto;
@@ -178,8 +190,10 @@
 
 @media (max-width: 48rem) {
   .sidebar {
-    min-height: auto;
-    flex-basis: auto;
+    width: 100%;
+    height: auto;
+    max-height: none;
+    flex: 0 0 auto;
   }
 
   .logo {
@@ -190,8 +204,10 @@
 
   .navigation {
     flex-direction: row;
+    min-height: auto;
     margin-top: 0;
     overflow-x: auto;
+    overflow-y: hidden;
     padding-block-end: var(--spacing-dashboard-sidebar-content-inline);
     flex: none;
   }

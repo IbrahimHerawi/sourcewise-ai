@@ -199,6 +199,12 @@
   }
 }
 
+html:has([data-dashboard-shell]),
+body:has([data-dashboard-shell]) {
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
 @layer components {
   .toast-notification-viewport {
     position: fixed;

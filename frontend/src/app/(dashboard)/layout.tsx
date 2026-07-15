@@ -41,7 +41,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div className={`${styles.shell} ${inter.variable}`}>
+    <div className={`${styles.shell} ${inter.variable}`} data-dashboard-shell>
       <DashboardSidebar />
       <main className={styles.content}>{children}</main>
     </div>
