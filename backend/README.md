@@ -43,7 +43,7 @@ This structure is intentional for maintainability and separation of concerns.
 
 ## 6. Answering Behavior
 The chat model is instructed to answer using only retrieved context.  
-If retrieved content is insufficient or irrelevant, the response is a strict unknown-answer fallback: `I don't know based on the uploaded documents.`
+If retrieved content is insufficient or irrelevant, the response is a strict unknown-answer fallback: `I could not find the answer in the uploaded documents.`
 
 ## 7. AI Provider Switching
 `AI_PROVIDER` controls which chat backend is used.

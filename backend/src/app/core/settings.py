@@ -82,6 +82,11 @@ class Settings(BaseSettings):
 
     ollama_openai_base_url: str = "http://localhost:11434/v1"
     ollama_chat_model: str = "llama3.2:1b"
+    llm_connect_timeout_s: float = Field(default=5.0, gt=0)
+    llm_read_timeout_s: float = Field(default=60.0, gt=0)
+    llm_retry_attempts: int = Field(default=3, ge=1)
+    llm_retry_min_wait_s: float = Field(default=0.5, gt=0)
+    llm_retry_max_wait_s: float = Field(default=4.0, gt=0)
     ollama_embed_model: str = "nomic-embed-text"
     embed_concurrency: int = Field(default=4, gt=0)
     ollama_embed_batch_size: int = Field(default=32, ge=1, le=128)
@@ -250,6 +255,12 @@ class Settings(BaseSettings):
             raise ValueError(
                 "OLLAMA_EMBED_RETRY_MAX_WAIT_S must be greater than or equal to "
                 "OLLAMA_EMBED_RETRY_MIN_WAIT_S."
+            )
+
+        if self.llm_retry_max_wait_s < self.llm_retry_min_wait_s:
+            raise ValueError(
+                "LLM_RETRY_MAX_WAIT_S must be greater than or equal to "
+                "LLM_RETRY_MIN_WAIT_S."
             )
 
         return self

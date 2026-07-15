@@ -17,6 +17,7 @@ from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 import app.db.session as db_session_module
+import app.main as app_main
 import app.services.question_answering as question_answering_service
 import app.workers.ingestion as ingestion_worker
 from app.core.security import create_access_token
@@ -24,6 +25,7 @@ from app.core.settings import get_settings
 from app.db.models.document_chunks import DocumentChunk
 from app.main import app
 from app.repositories.user_repository import UserRepository
+from app.services.llm import GeneratedAnswer
 
 _TRUNCATE_TABLES_SQL = text(
     "TRUNCATE TABLE question_context_chunks, questions, document_chunks, ingestion_jobs, "
@@ -35,7 +37,7 @@ _TOKEN_PATTERN = re.compile(r"[A-Za-z0-9_-]+")
 @dataclass(slots=True)
 class SmokeContext:
     client: httpx.AsyncClient
-    llm_context_capture: dict[str, str]
+    llm_context_capture: dict[str, object]
 
 
 def _deterministic_embedding(text_value: str, *, dim: int) -> list[float]:
@@ -151,7 +153,7 @@ async def smoke_context(
     await _truncate_all_tables(postgres_database_url)
     user_id = await _create_verified_user(postgres_database_url)
 
-    llm_capture: dict[str, str] = {}
+    llm_capture: dict[str, object] = {}
 
     async def fake_embed_documents(
         texts: list[str],
@@ -164,31 +166,44 @@ async def smoke_context(
 
     async def fake_embed_question(
         question_text: str,
-        *,
-        settings: object | None,
     ) -> list[float]:
-        dim = int(getattr(settings, "embedding_dim", get_settings().embedding_dim))
+        dim = get_settings().embedding_dim
         return _deterministic_embedding(question_text, dim=dim)
 
     async def fake_generate_answer(
         context_chunks_text: str,
         question: str,
+        available_context_entries: int,
         *,
         settings: object | None = None,
-    ) -> tuple[str, str]:
+    ) -> GeneratedAnswer:
         llm_capture["context"] = context_chunks_text
         llm_capture["question"] = question
-        return "Mocked answer from integration smoke test.", "mock-smoke-model"
+        llm_capture["available_context_entries"] = available_context_entries
+        return GeneratedAnswer(
+            answer_text="Mocked answer from integration smoke test [1].",
+            model_used="mock-smoke-model",
+            citation_ranks=(1,),
+        )
 
     monkeypatch.setattr(ingestion_worker, "embed_documents", fake_embed_documents)
-    monkeypatch.setattr(question_answering_service, "_embed_question", fake_embed_question)
+    monkeypatch.setattr(
+        question_answering_service.embeddings_service,
+        "embed_query",
+        fake_embed_question,
+    )
     monkeypatch.setattr(question_answering_service, "generate_answer", fake_generate_answer)
+
+    def preserve_pytest_logging(_: str) -> None:
+        pass
+
+    monkeypatch.setattr(app_main, "setup_logging", preserve_pytest_logging)
 
     original_overrides = app.dependency_overrides.copy()
     app.dependency_overrides.clear()
 
     try:
-        async with app.router.lifespan_context(app):
+        async with app_main.lifespan(app):
             transport = httpx.ASGITransport(app=app)
             async with httpx.AsyncClient(
                 transport=transport,
@@ -240,9 +255,10 @@ async def test_upload_ingest_ask_and_history_smoke(
 
     assert ask_response.status_code == 200
     ask_payload = ask_response.json()
-    assert ask_payload["answer"] == "Mocked answer from integration smoke test."
+    assert ask_payload["answer"] == "Mocked answer from integration smoke test [1]."
     assert len(ask_payload["citations"]) >= 1
     assert ask_payload["citations"][0]["document_id"] == str(document_id)
+    assert smoke_context.llm_context_capture["available_context_entries"] >= 1
     assert "ORBIT778 sentence" in smoke_context.llm_context_capture["context"]
 
     history_response = await smoke_context.client.get("/api/v1/questions/history")
