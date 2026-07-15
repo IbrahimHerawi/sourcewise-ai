@@ -457,9 +457,6 @@ export function AskQuestionPage() {
           <h1 className={styles.heading} id="ask-question-heading">
             Ask Your Documents
           </h1>
-          <p className={styles.description}>
-            Query your knowledge base with precision and get instant, cited answers.
-          </p>
         </header>
 
         <form className={styles.composer} onSubmit={handleSubmit}>

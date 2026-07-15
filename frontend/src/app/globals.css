@@ -154,6 +154,20 @@
   --font-weight-dashboard-profile-text: 400;
   --shadow-dashboard-sidebar: 0 0.25rem 1.25rem rgb(0 0 0 / 3%);
   --shadow-dashboard-nav-active: 0 0.0625rem 0.125rem rgb(0 0 0 / 5%);
+  --spacing-dashboard-content-inline: 3rem;
+  --size-dashboard-content-max-width: 72rem;
+}
+
+@media (max-width: 64rem) {
+  :root {
+    --spacing-dashboard-content-inline: 2rem;
+  }
+}
+
+@media (max-width: 48rem) {
+  :root {
+    --spacing-dashboard-content-inline: 1rem;
+  }
 }
 
 /* Keep the page bright even if a .dark class is ever applied */

@@ -1,14 +1,14 @@
 .page {
   min-height: 100%;
-  padding: clamp(1.5rem, 4vw, 3rem) clamp(1rem, 4vw, 2.5rem) 2.5rem;
+  padding: clamp(1.5rem, 4vw, 3rem) 0 2.5rem;
   background: var(--color-dashboard-background);
   color: var(--foreground);
   font-family: var(--font-dashboard);
 }
 
 .content {
-  width: min(100%, 52rem);
-  margin-inline: auto;
+  width: min(100%, var(--size-dashboard-content-max-width));
+  margin-inline: 0;
 }
 
 .heading {
@@ -18,14 +18,6 @@
   font-weight: 700;
   line-height: 1.2;
   letter-spacing: -0.02em;
-}
-
-.description {
-  max-width: 42rem;
-  margin: 0.625rem 0 0;
-  color: var(--muted-foreground);
-  font-size: 0.875rem;
-  line-height: 1.5;
 }
 
 .composer {

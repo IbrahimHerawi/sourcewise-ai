@@ -555,27 +555,10 @@ export function DocumentsPage() {
   return (
     <section className={styles.page} aria-labelledby="documents-heading">
       <div className={styles.content}>
-        <header className={styles.pageHeader}>
-          <div>
-            <h1 className={styles.heading} id="documents-heading">
-              Documents
-            </h1>
-            <p className={styles.description}>
-              Manage and analyze your knowledge base with precision.
-            </p>
-          </div>
-          <Button
-            aria-label="Refresh documents"
-            className={styles.refreshButton}
-            disabled={isLoading || isRefreshing}
-            onClick={() => void loadDocuments({ silent: true })}
-            size="sm"
-            type="button"
-            variant="outline"
-          >
-            <RefreshCw className={isRefreshing ? "animate-spin" : ""} aria-hidden="true" />
-            Refresh
-          </Button>
+        <header>
+          <h1 className={styles.heading} id="documents-heading">
+            Documents
+          </h1>
         </header>
 
         <section className={styles.uploadSection} aria-labelledby="upload-heading">

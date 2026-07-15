@@ -6,7 +6,6 @@ import {
   ChevronDown,
   Clock3,
   FileText,
-  RefreshCw,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -207,19 +206,14 @@ export function HistoryPage() {
   const [selectedDocument, setSelectedDocument] = useState("all");
   const [page, setPage] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
-  const [isRefreshing, setIsRefreshing] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loadErrorStatus, setLoadErrorStatus] = useState<number | null>(null);
 
   const loadHistory = useCallback(
-    async ({ silent = false }: { silent?: boolean } = {}) => {
-      if (silent) {
-        setIsRefreshing(true);
-      } else {
-        setIsLoading(true);
-        setLoadError(null);
-        setLoadErrorStatus(null);
-      }
+    async () => {
+      setIsLoading(true);
+      setLoadError(null);
+      setLoadErrorStatus(null);
 
       try {
         const response = await api.listQuestionHistory({
@@ -238,7 +232,6 @@ export function HistoryPage() {
         setLoadErrorStatus(error instanceof ApiError ? error.status : null);
       } finally {
         setIsLoading(false);
-        setIsRefreshing(false);
       }
     },
     [page, selectedDocument],
@@ -283,25 +276,10 @@ export function HistoryPage() {
   return (
     <section className={styles.page} aria-labelledby="history-heading">
       <div className={styles.content}>
-        <header className={styles.pageHeader}>
-          <div>
-            <h1 className={styles.heading} id="history-heading">
-              History
-            </h1>
-            <p className={styles.description}>Review your previous questions and source-backed answers.</p>
-          </div>
-          <Button
-            aria-label="Refresh history"
-            className={styles.refreshButton}
-            disabled={isLoading || isRefreshing}
-            onClick={() => void loadHistory({ silent: true })}
-            size="sm"
-            type="button"
-            variant="outline"
-          >
-            <RefreshCw className={isRefreshing ? "animate-spin" : ""} aria-hidden="true" />
-            Refresh
-          </Button>
+        <header>
+          <h1 className={styles.heading} id="history-heading">
+            History
+          </h1>
         </header>
 
         <div className={styles.toolbar}>
@@ -372,7 +350,7 @@ export function HistoryPage() {
                   <PaginationItem>
                     <Button
                       className={styles.paginationButton}
-                      disabled={!canGoPrevious || isRefreshing}
+                      disabled={!canGoPrevious}
                       onClick={() => setPage((currentPage) => Math.max(0, currentPage - 1))}
                       size="default"
                       type="button"
@@ -384,7 +362,7 @@ export function HistoryPage() {
                   <PaginationItem>
                     <Button
                       className={styles.paginationButton}
-                      disabled={!canGoNext || isRefreshing}
+                      disabled={!canGoNext}
                       onClick={() => setPage((currentPage) => currentPage + 1)}
                       size="default"
                       type="button"

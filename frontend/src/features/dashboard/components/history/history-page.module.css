@@ -1,21 +1,14 @@
 .page {
   min-height: 100%;
-  padding: clamp(1.25rem, 3vw, 2rem) clamp(1rem, 3vw, 2.5rem) 2rem;
+  padding: clamp(1.25rem, 3vw, 2rem) 0 2rem;
   background: var(--color-dashboard-background);
   color: var(--foreground);
   font-family: var(--font-dashboard);
 }
 
 .content {
-  width: min(100%, 72rem);
-  margin-inline: auto;
-}
-
-.pageHeader {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 1rem;
+  width: min(100%, var(--size-dashboard-content-max-width));
+  margin-inline: 0;
 }
 
 .heading {
@@ -24,23 +17,6 @@
   font-size: clamp(1.5rem, 3vw, 1.875rem);
   font-weight: 700;
   line-height: 1.2;
-}
-
-.description {
-  max-width: 42rem;
-  margin: 0.625rem 0 0;
-  color: var(--muted-foreground);
-  font-size: 0.875rem;
-  line-height: 1.5;
-}
-
-.refreshButton {
-  flex: none;
-}
-
-.refreshButton svg {
-  width: 0.875rem;
-  height: 0.875rem;
 }
 
 .toolbar {
@@ -357,14 +333,6 @@
 }
 
 @media (max-width: 40rem) {
-  .pageHeader {
-    flex-direction: column;
-  }
-
-  .refreshButton {
-    align-self: flex-start;
-  }
-
   .toolbar {
     justify-content: flex-start;
   }
