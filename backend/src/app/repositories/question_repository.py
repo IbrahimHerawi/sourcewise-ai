@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, exists, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.db.models.question_context_chunks import QuestionContextChunk
 from app.db.models.questions import Question
 
 
@@ -53,8 +54,9 @@ class QuestionRepository:
         limit: int,
         offset: int,
         collection_id: uuid.UUID | None = None,
+        document_id: uuid.UUID | None = None,
     ) -> list[Question]:
-        """List one owner's history, optionally filtered by collection."""
+        """List one owner's history with optional collection or source filters."""
         self._validate_required_id(user_id, "user_id")
         self._validate_pagination(limit=limit, offset=offset)
 
@@ -68,6 +70,13 @@ class QuestionRepository:
         )
         if collection_id is not None:
             stmt = stmt.where(Question.collection_id == collection_id)
+        if document_id is not None:
+            stmt = stmt.where(
+                exists().where(
+                    QuestionContextChunk.question_id == Question.id,
+                    QuestionContextChunk.document_id == document_id,
+                )
+            )
 
         result = await self._session.scalars(stmt)
         return list(result.all())
@@ -76,16 +85,20 @@ class QuestionRepository:
         self,
         user_id: uuid.UUID,
         collection_id: uuid.UUID | None = None,
+        document_id: uuid.UUID | None = None,
     ) -> int:
-        """Count one owner's questions, optionally filtered by collection."""
+        """Count one owner's questions with optional collection or source filters."""
         self._validate_required_id(user_id, "user_id")
-        stmt = (
-            select(func.count())
-            .select_from(Question)
-            .where(Question.user_id == user_id)
-        )
+        stmt = select(func.count()).select_from(Question).where(Question.user_id == user_id)
         if collection_id is not None:
             stmt = stmt.where(Question.collection_id == collection_id)
+        if document_id is not None:
+            stmt = stmt.where(
+                exists().where(
+                    QuestionContextChunk.question_id == Question.id,
+                    QuestionContextChunk.document_id == document_id,
+                )
+            )
 
         total = await self._session.scalar(stmt)
         return int(total or 0)

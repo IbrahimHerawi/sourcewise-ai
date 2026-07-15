@@ -10,14 +10,13 @@ from typing import Final
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.schemas.questions import QuestionAnswerResponse, QuestionSourceResponse
+from app.api.schemas.questions import CitationResponse, QuestionAnswerResponse
 from app.core.settings import Settings, get_settings
-from app.db.models.document_chunks import DocumentChunk
 from app.db.models.documents import Document, DocumentStatus
 from app.repositories.chunk_repository import ChunkRepository
 from app.repositories.question_context_repository import QuestionContextRepository
 from app.repositories.question_repository import QuestionRepository
-from app.repositories.types import QuestionContextRow
+from app.repositories.types import QuestionContextRow, SimilaritySearchResult
 from app.services.embeddings import embed_query
 from app.services.llm import generate_answer
 
@@ -35,19 +34,10 @@ class QuestionAnsweringError(ValueError):
 class _RetrievedChunk:
     chunk_id: uuid.UUID
     document_id: uuid.UUID
+    document_filename: str
     chunk_index: int
     content: str
     distance: float
-
-
-def _normalize_document_ids(
-    document_ids: Sequence[uuid.UUID] | None,
-) -> tuple[uuid.UUID, ...] | None:
-    if document_ids is None:
-        return None
-
-    deduplicated = tuple(dict.fromkeys(document_ids))
-    return deduplicated or None
 
 
 async def _embed_question(
@@ -58,22 +48,16 @@ async def _embed_question(
     return await embed_query(question_text)
 
 
-async def _load_document_statuses(
+async def _count_documents_by_status(
     session: AsyncSession,
     *,
-    document_ids: Sequence[uuid.UUID],
-) -> dict[uuid.UUID, DocumentStatus]:
-    if not document_ids:
-        return {}
-
-    result = await session.execute(
-        select(Document.id, Document.status).where(Document.id.in_(document_ids))
-    )
-    return {document_id: status for document_id, status in result.all()}
-
-
-async def _count_documents_by_status(session: AsyncSession) -> dict[DocumentStatus, int]:
-    result = await session.execute(select(Document.status, func.count()).group_by(Document.status))
+    user_id: uuid.UUID,
+    collection_id: uuid.UUID | None,
+) -> dict[DocumentStatus, int]:
+    stmt = select(Document.status, func.count()).where(Document.user_id == user_id)
+    if collection_id is not None:
+        stmt = stmt.where(Document.collection_id == collection_id)
+    result = await session.execute(stmt.group_by(Document.status))
     return {status: int(count) for status, count in result.all()}
 
 
@@ -150,33 +134,10 @@ def _build_context(
     return "".join(sections), included_chunks
 
 
-def _message_for_missing_requested_chunks(
-    requested_statuses: dict[uuid.UUID, DocumentStatus],
-    *,
-    ready_document_ids: Sequence[uuid.UUID],
-) -> str:
-    if not requested_statuses:
-        return "None of the requested documents were found."
-
-    if not ready_document_ids:
-        if any(
-            status in (DocumentStatus.PENDING, DocumentStatus.PROCESSING)
-            for status in requested_statuses.values()
-        ):
-            return (
-                "None of the requested documents are READY yet. "
-                "Documents in PENDING or PROCESSING are ignored for retrieval."
-            )
-        return "None of the requested documents are READY for retrieval."
-
-    return "No related content was found in the requested READY documents."
-
-
 def _message_for_missing_global_chunks(status_counts: dict[DocumentStatus, int]) -> str:
     ready_count = status_counts.get(DocumentStatus.READY, 0)
-    pending_or_processing_count = (
-        status_counts.get(DocumentStatus.PENDING, 0)
-        + status_counts.get(DocumentStatus.PROCESSING, 0)
+    pending_or_processing_count = status_counts.get(DocumentStatus.PENDING, 0) + status_counts.get(
+        DocumentStatus.PROCESSING, 0
     )
 
     if ready_count == 0 and pending_or_processing_count > 0:
@@ -192,8 +153,9 @@ def _message_for_missing_global_chunks(status_counts: dict[DocumentStatus, int])
 async def answer_question(
     session: AsyncSession,
     *,
+    user_id: uuid.UUID,
     question_text: str,
-    document_ids: Sequence[uuid.UUID] | None = None,
+    collection_id: uuid.UUID | None = None,
     top_k: int | None = None,
     max_context_chars: int = DEFAULT_MAX_CONTEXT_CHARS,
     settings: Settings | None = None,
@@ -210,7 +172,6 @@ async def answer_question(
     if effective_top_k <= 0:
         raise ValueError("top_k must be greater than 0.")
 
-    normalized_document_ids = _normalize_document_ids(document_ids)
     query_embedding = await _embed_question(
         question,
         settings=resolved_settings if settings is not None else None,
@@ -219,9 +180,10 @@ async def answer_question(
     if session.in_transaction():
         return await _answer_question_in_transaction(
             session,
+            user_id=user_id,
             question=question,
             query_embedding=query_embedding,
-            document_ids=normalized_document_ids,
+            collection_id=collection_id,
             top_k=effective_top_k,
             max_context_chars=max_context_chars,
             settings=resolved_settings,
@@ -230,9 +192,10 @@ async def answer_question(
     async with session.begin():
         return await _answer_question_in_transaction(
             session,
+            user_id=user_id,
             question=question,
             query_embedding=query_embedding,
-            document_ids=normalized_document_ids,
+            collection_id=collection_id,
             top_k=effective_top_k,
             max_context_chars=max_context_chars,
             settings=resolved_settings,
@@ -242,58 +205,43 @@ async def answer_question(
 async def _answer_question_in_transaction(
     session: AsyncSession,
     *,
+    user_id: uuid.UUID,
     question: str,
     query_embedding: list[float],
-    document_ids: tuple[uuid.UUID, ...] | None,
+    collection_id: uuid.UUID | None,
     top_k: int,
     max_context_chars: int,
     settings: Settings,
 ) -> QuestionAnswerResponse:
-    requested_statuses: dict[uuid.UUID, DocumentStatus] = {}
-    ready_document_ids = document_ids
-    if document_ids is not None:
-        requested_statuses = await _load_document_statuses(
-            session,
-            document_ids=document_ids,
-        )
-        ready_document_ids = tuple(
-            document_id
-            for document_id in document_ids
-            if requested_statuses.get(document_id) == DocumentStatus.READY
-        )
-
-    search_results: list[tuple[DocumentChunk, float]] = []
-    if document_ids is None or ready_document_ids:
-        search_results = await ChunkRepository(session).similarity_search(
-            query_embedding=query_embedding,
-            top_k=top_k,
-            document_ids=ready_document_ids,
-            ready_only=True,
-            max_distance=settings.retrieval_max_cosine_distance,
-        )
+    search_results: list[SimilaritySearchResult] = await ChunkRepository(session).similarity_search(
+        user_id,
+        query_embedding,
+        top_k,
+        collection_id=collection_id,
+        max_distance=settings.retrieval_max_cosine_distance,
+    )
 
     if not search_results:
-        if document_ids is not None:
-            raise QuestionAnsweringError(
-                _message_for_missing_requested_chunks(
-                    requested_statuses,
-                    ready_document_ids=ready_document_ids or (),
+        raise QuestionAnsweringError(
+            _message_for_missing_global_chunks(
+                await _count_documents_by_status(
+                    session,
+                    user_id=user_id,
+                    collection_id=collection_id,
                 )
             )
-
-        raise QuestionAnsweringError(
-            _message_for_missing_global_chunks(await _count_documents_by_status(session))
         )
 
     retrieved_chunks = [
         _RetrievedChunk(
-            chunk_id=chunk.id,
-            document_id=chunk.document_id,
-            chunk_index=chunk.chunk_index,
-            content=chunk.content,
-            distance=distance,
+            chunk_id=result.chunk_id,
+            document_id=result.document_id,
+            document_filename=result.document_filename,
+            chunk_index=result.chunk_index,
+            content=result.content,
+            distance=result.distance,
         )
-        for chunk, distance in search_results
+        for result in search_results
     ]
     context_text, context_chunks = _build_context(
         retrieved_chunks,
@@ -309,6 +257,8 @@ async def _answer_question_in_transaction(
     )
 
     question_row = await QuestionRepository(session).create_question(
+        user_id,
+        collection_id=collection_id,
         question_text=question,
         embedding=query_embedding,
         answer_text=answer_text,
@@ -320,6 +270,9 @@ async def _answer_question_in_transaction(
         [
             QuestionContextRow(
                 chunk_id=chunk.chunk_id,
+                document_id=chunk.document_id,
+                document_filename=chunk.document_filename,
+                chunk_content=chunk.content,
                 similarity_score=chunk.distance,
                 rank=rank,
             )
@@ -329,16 +282,21 @@ async def _answer_question_in_transaction(
 
     return QuestionAnswerResponse(
         question_id=question_row.id,
+        collection_id=collection_id,
         answer=answer_text,
-        sources=[
-            QuestionSourceResponse(
+        citations=[
+            CitationResponse(
+                rank=rank,
                 document_id=chunk.document_id,
+                document_filename=chunk.document_filename,
                 chunk_id=chunk.chunk_id,
                 chunk_index=chunk.chunk_index,
+                excerpt=chunk.content,
                 distance=chunk.distance,
             )
-            for chunk in context_chunks
+            for rank, chunk in enumerate(context_chunks, start=1)
         ],
+        created_at=question_row.created_at,
         provider=settings.ai_provider,
         model=model_used,
     )

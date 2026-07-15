@@ -88,6 +88,34 @@ export interface PaginatedCollectionListResponse {
   total: number;
 }
 
+export interface CitationResponse {
+  rank: number;
+  document_id: string;
+  document_filename: string;
+  chunk_id: string;
+  chunk_index: number;
+  excerpt: string;
+  distance: number;
+}
+
+export interface QuestionHistoryItemResponse {
+  question_id: string;
+  collection_id: string | null;
+  question: string;
+  answer: string;
+  citations: CitationResponse[];
+  created_at: string;
+  provider: "openai" | "ollama" | null;
+  model: string | null;
+}
+
+export interface PaginatedQuestionHistoryResponse {
+  items: QuestionHistoryItemResponse[];
+  limit: number;
+  offset: number;
+  total: number;
+}
+
 export interface ApiErrorDetail {
   type: string;
   loc: (string | number)[];
@@ -339,6 +367,28 @@ export const api = {
     });
 
     return request<PaginatedCollectionListResponse>(`/collections?${params.toString()}`, {
+      method: "GET",
+    });
+  },
+
+  async listQuestionHistory({
+    limit = 20,
+    offset = 0,
+    documentId,
+  }: {
+    limit?: number;
+    offset?: number;
+    documentId?: string;
+  } = {}): Promise<PaginatedQuestionHistoryResponse> {
+    const params = new URLSearchParams({
+      limit: String(limit),
+      offset: String(offset),
+    });
+    if (documentId) {
+      params.set("document_id", documentId);
+    }
+
+    return request<PaginatedQuestionHistoryResponse>(`/questions/history?${params.toString()}`, {
       method: "GET",
     });
   },
