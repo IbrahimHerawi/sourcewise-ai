@@ -1,0 +1,450 @@
+.page {
+  min-height: 100%;
+  padding: clamp(1.5rem, 4vw, 3rem) clamp(1rem, 4vw, 2.5rem) 2.5rem;
+  background: var(--color-dashboard-background);
+  color: var(--foreground);
+  font-family: var(--font-dashboard);
+}
+
+.content {
+  width: min(100%, 52rem);
+  margin-inline: auto;
+}
+
+.heading {
+  margin: 0;
+  color: var(--foreground);
+  font-size: clamp(1.625rem, 3vw, 2rem);
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+}
+
+.description {
+  max-width: 42rem;
+  margin: 0.625rem 0 0;
+  color: var(--muted-foreground);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.composer {
+  display: grid;
+  gap: 1rem;
+  margin-top: clamp(1.75rem, 5vw, 3rem);
+}
+
+.questionLabel {
+  margin-bottom: -0.5rem;
+  color: var(--foreground);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.questionInput {
+  min-height: 7rem;
+  resize: vertical;
+  background: var(--card);
+  font-size: 0.9375rem;
+  line-height: 1.55;
+}
+
+.inputFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  min-height: 2.25rem;
+}
+
+.scopeGroup {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.scopeLabel {
+  flex: none;
+  color: var(--muted-foreground);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.scopeSelect {
+  width: min(100%, 20rem);
+  background: var(--card);
+}
+
+.askButton {
+  min-width: 7.25rem;
+  flex: none;
+}
+
+.askButton svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.errorAlert {
+  margin: 0;
+}
+
+.errorAlert button {
+  margin-top: 0.5rem;
+}
+
+.readinessLoading {
+  display: flex;
+  align-items: center;
+  min-height: 1.5rem;
+}
+
+.readinessSkeleton {
+  width: min(100%, 19rem);
+  height: 0.875rem;
+}
+
+.readinessEmpty,
+.readinessBlocked,
+.readinessReady {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
+.readinessEmpty svg,
+.readinessBlocked svg,
+.readinessReady svg {
+  width: 1rem;
+  height: 1rem;
+  flex: none;
+}
+
+.readinessEmpty svg,
+.readinessBlocked svg {
+  color: var(--muted-foreground);
+}
+
+.readinessReady svg {
+  color: var(--primary);
+}
+
+.readinessEmpty button {
+  min-height: 1.5rem;
+  padding: 0;
+  font-size: 0.75rem;
+}
+
+.resultsDivider {
+  margin: clamp(1.75rem, 5vw, 3rem) 0 2rem;
+  background: var(--border);
+}
+
+.answerStack {
+  display: grid;
+  gap: 1.25rem;
+}
+
+.answerCard {
+  overflow: hidden;
+  gap: 0;
+  padding: 0;
+  border-color: var(--border);
+  border-radius: var(--radius-xl);
+  background: var(--muted);
+  box-shadow: none;
+}
+
+.answerContent {
+  display: grid;
+  gap: 1.125rem;
+  padding: clamp(1.125rem, 3vw, 2rem);
+}
+
+.answerHeading {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+  color: var(--primary);
+  font-size: 1.125rem;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.answerHeading svg {
+  width: 1.25rem;
+  height: 1.25rem;
+  flex: none;
+}
+
+.answerText {
+  margin: 0;
+  color: var(--foreground);
+  font-size: 0.9375rem;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.answerMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem 0.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
+.answerMetaItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.metaSeparator {
+  color: var(--border);
+}
+
+.sourcesAccordion,
+.noCitationsCard,
+.emptyCard {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--card);
+}
+
+.sourcesItem {
+  border: 0;
+}
+
+.sourcesTrigger {
+  align-items: center;
+  padding: 1rem;
+  color: var(--foreground);
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.sourcesTrigger:hover {
+  text-decoration: none;
+}
+
+.sourcesTriggerLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.sourcesTriggerLabel svg {
+  width: 1rem;
+  height: 1rem;
+  color: var(--muted-foreground);
+}
+
+.sourcesContent {
+  padding-inline: 1rem;
+}
+
+.citationList {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0 0 1rem;
+  list-style: none;
+}
+
+.citation {
+  display: grid;
+  gap: 0.375rem;
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--muted);
+}
+
+.citationHeader {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.citationRank {
+  flex: none;
+  color: var(--primary);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.citationName {
+  overflow: hidden;
+  color: var(--foreground);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.citationExcerpt {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.citationMetadata {
+  color: var(--muted-foreground);
+  font-size: 0.6875rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.noCitationsContent {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 1rem;
+  color: var(--muted-foreground);
+  font-size: 0.8125rem;
+}
+
+.noCitationsContent svg {
+  width: 1rem;
+  height: 1rem;
+  flex: none;
+}
+
+.emptyContent {
+  display: grid;
+  justify-items: center;
+  gap: 0.5rem;
+  padding: clamp(2rem, 8vw, 4rem) 1.5rem;
+  text-align: center;
+}
+
+.emptyContent svg {
+  width: 1.75rem;
+  height: 1.75rem;
+  color: var(--muted-foreground);
+}
+
+.emptyContent h2,
+.emptyContent p {
+  margin: 0;
+}
+
+.emptyContent h2 {
+  color: var(--foreground);
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.emptyContent p {
+  color: var(--muted-foreground);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.answerActions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.resetButton {
+  min-height: 2rem;
+  padding-inline: 0.5rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.resetButton svg {
+  width: 0.875rem;
+  height: 0.875rem;
+}
+
+.historyLink {
+  font-size: 0.8125rem;
+}
+
+.loadingCard {
+  display: grid;
+  gap: 1rem;
+  padding: clamp(1.125rem, 3vw, 2rem);
+  border-color: var(--border);
+  border-radius: var(--radius-xl);
+  background: var(--muted);
+}
+
+.loadingHeading {
+  width: 7rem;
+  height: 1.5rem;
+}
+
+.loadingLine {
+  width: 100%;
+  height: 0.875rem;
+}
+
+.loadingLineShort {
+  width: 72%;
+  height: 0.875rem;
+}
+
+.loadingMeta {
+  width: 10rem;
+  height: 0.75rem;
+  margin-top: 0.5rem;
+}
+
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (max-width: 40rem) {
+  .inputFooter {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .scopeGroup {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .scopeSelect,
+  .askButton {
+    width: 100%;
+  }
+
+  .scopeSelect {
+    max-width: none;
+  }
+
+  .answerActions {
+    flex-direction: column;
+  }
+}

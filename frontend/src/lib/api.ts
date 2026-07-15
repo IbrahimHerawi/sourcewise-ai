@@ -88,6 +88,11 @@ export interface PaginatedCollectionListResponse {
   total: number;
 }
 
+export interface QuestionAnswerRequest {
+  question: string;
+  collection_id?: string;
+}
+
 export interface CitationResponse {
   rank: number;
   document_id: string;
@@ -96,6 +101,16 @@ export interface CitationResponse {
   chunk_index: number;
   excerpt: string;
   distance: number;
+}
+
+export interface QuestionAnswerResponse {
+  question_id: string;
+  collection_id: string | null;
+  answer: string;
+  citations: CitationResponse[];
+  created_at: string;
+  provider: "openai" | "ollama" | null;
+  model: string | null;
 }
 
 export interface QuestionHistoryItemResponse {
@@ -368,6 +383,20 @@ export const api = {
 
     return request<PaginatedCollectionListResponse>(`/collections?${params.toString()}`, {
       method: "GET",
+    });
+  },
+
+  async askQuestion({ question, collectionId }: { question: string; collectionId?: string }): Promise<QuestionAnswerResponse> {
+    const payload: QuestionAnswerRequest = {
+      question,
+    };
+    if (collectionId) {
+      payload.collection_id = collectionId;
+    }
+
+    return request<QuestionAnswerResponse>("/questions/ask", {
+      method: "POST",
+      body: JSON.stringify(payload),
     });
   },
 
