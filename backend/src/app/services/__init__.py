@@ -13,6 +13,8 @@ from app.services.embeddings import (
     get_embeddings_client,
 )
 from app.services.llm import (
+    FALLBACK_ANSWER,
+    GeneratedAnswer,
     LLMInvalidResponseError,
     LLMRejectedError,
     LLMTransientError,
@@ -27,6 +29,8 @@ from app.services.question_answering import (
 __all__ = [
     "EmbeddingCardinalityMismatchError",
     "EmbeddingDimensionMismatchError",
+    "FALLBACK_ANSWER",
+    "GeneratedAnswer",
     "LLMInvalidResponseError",
     "LLMRejectedError",
     "LLMTransientError",

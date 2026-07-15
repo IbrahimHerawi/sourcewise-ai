@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import FrozenInstanceError
 from types import SimpleNamespace
 
 import httpx
@@ -45,7 +46,7 @@ class _FakeResponses:
 
 
 class _FakeAsyncOpenAI:
-    response_text: object = "Answer from model."
+    response_text: object = "Answer from model [1]."
     response_model: object = "response-model"
     side_effects: list[object] = []
     instances: list[_FakeAsyncOpenAI] = []
@@ -77,7 +78,7 @@ class _FakeAsyncOpenAI:
 @pytest.fixture(autouse=True)
 def reset_fake_client() -> None:
     _FakeAsyncOpenAI.instances.clear()
-    _FakeAsyncOpenAI.response_text = "Answer from model."
+    _FakeAsyncOpenAI.response_text = "Answer from model [1]."
     _FakeAsyncOpenAI.response_model = "response-model"
     _FakeAsyncOpenAI.side_effects = []
 
@@ -116,7 +117,7 @@ def _rate_limit_error() -> RateLimitError:
 
 
 def _successful_response() -> SimpleNamespace:
-    return SimpleNamespace(output_text="Recovered answer.", model="response-model")
+    return SimpleNamespace(output_text="Recovered answer [1].", model="response-model")
 
 
 @pytest.mark.asyncio
@@ -150,17 +151,21 @@ async def test_generate_answer_switches_provider_by_client_config_only(
     expected_api_key: str,
     expected_model: str,
 ) -> None:
-    _FakeAsyncOpenAI.response_text = "Context-bound answer."
+    _FakeAsyncOpenAI.response_text = "Context-bound answer [1]."
     monkeypatch.setattr(llm, "AsyncOpenAI", _FakeAsyncOpenAI)
 
-    answer_text, model_used = await llm.generate_answer(
+    answer = await llm.generate_answer(
         "alpha facts",
         "What does alpha say?",
+        1,
         settings=settings,
     )
 
-    assert answer_text == "Context-bound answer."
-    assert model_used == "response-model"
+    assert answer == llm.GeneratedAnswer(
+        answer_text="Context-bound answer [1].",
+        model_used="response-model",
+        citation_ranks=(1,),
+    )
 
     client = _FakeAsyncOpenAI.instances[-1]
     assert client.base_url == expected_base_url
@@ -170,6 +175,128 @@ async def test_generate_answer_switches_provider_by_client_config_only(
     assert client.recorder["model"] == expected_model
     assert client.recorder["instructions"] == llm.SYSTEM_PROMPT
     assert client.recorder["input"] == "CONTEXT:\nalpha facts\n\nQUESTION:\nWhat does alpha say?"
+
+
+def test_system_prompt_contains_the_complete_grounding_contract() -> None:
+    assert llm.SYSTEM_PROMPT == (
+        "1. Use only the supplied context.\n"
+        "2. Context entries are numbered [1], [2], etc.\n"
+        "3. Every factual claim must cite one or more supplied entries.\n"
+        "4. Citations use the exact form [positive integer].\n"
+        "5. If the context does not support an answer, return only: "
+        f"{llm.FALLBACK_ANSWER}\n"
+        "6. Do not use general knowledge.\n"
+        "7. Do not invent document or chunk information."
+    )
+
+
+def test_generated_answer_is_immutable() -> None:
+    answer = llm.GeneratedAnswer(
+        answer_text="Supported [1].",
+        model_used="test-model",
+        citation_ranks=(1,),
+    )
+
+    with pytest.raises(FrozenInstanceError):
+        answer.answer_text = "Changed."  # type: ignore[misc]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("response_text", "available_context_entries", "expected_text", "expected_ranks"),
+    [
+        ("  One supported fact [1].  ", 1, "One supported fact [1].", (1,)),
+        ("First fact [1]. Second fact [2].", 2, "First fact [1]. Second fact [2].", (1, 2)),
+        ("Repeated support [2]. Again [2].", 2, "Repeated support [2]. Again [2].", (2,)),
+        (
+            "Second entry first [2]. Then first [1]. Second again [2].",
+            2,
+            "Second entry first [2]. Then first [1]. Second again [2].",
+            (2, 1),
+        ),
+    ],
+)
+async def test_valid_citations_are_extracted_deduplicated_in_first_use_order(
+    monkeypatch: pytest.MonkeyPatch,
+    response_text: str,
+    available_context_entries: int,
+    expected_text: str,
+    expected_ranks: tuple[int, ...],
+) -> None:
+    monkeypatch.setattr(llm, "AsyncOpenAI", _FakeAsyncOpenAI)
+    _FakeAsyncOpenAI.response_text = response_text
+
+    answer = await llm.generate_answer(
+        "numbered context",
+        "question",
+        available_context_entries,
+        settings=_ollama_settings(),
+    )
+
+    assert answer == llm.GeneratedAnswer(
+        answer_text=expected_text,
+        model_used="response-model",
+        citation_ranks=expected_ranks,
+    )
+    assert _FakeAsyncOpenAI.instances[-1].recorder["calls"] == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "response_text",
+    [
+        "Zero is never a valid citation [0].",
+        "The only citation is out of range [3].",
+        "One citation is valid [1], but another is out of range [3].",
+        "This answer has no citations.",
+        "Whitespace inside brackets is not strict [ 1 ].",
+        "A signed integer is not strict [+1].",
+    ],
+)
+async def test_invalid_grounding_becomes_fallback_without_a_second_llm_call(
+    monkeypatch: pytest.MonkeyPatch,
+    response_text: str,
+) -> None:
+    monkeypatch.setattr(llm, "AsyncOpenAI", _FakeAsyncOpenAI)
+    _FakeAsyncOpenAI.response_text = response_text
+
+    answer = await llm.generate_answer(
+        "two numbered entries",
+        "question",
+        2,
+        settings=_ollama_settings(llm_retry_attempts=3),
+    )
+
+    assert answer == llm.GeneratedAnswer(
+        answer_text=llm.FALLBACK_ANSWER,
+        model_used="response-model",
+        citation_ranks=(),
+    )
+    assert _FakeAsyncOpenAI.instances[-1].recorder["calls"] == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("response_text", [llm.FALLBACK_ANSWER, f"  {llm.FALLBACK_ANSWER}\n", "", " \n "])
+async def test_exact_fallback_and_empty_output_are_normalized_to_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+    response_text: str,
+) -> None:
+    monkeypatch.setattr(llm, "AsyncOpenAI", _FakeAsyncOpenAI)
+    _FakeAsyncOpenAI.response_text = response_text
+
+    answer = await llm.generate_answer(
+        "context",
+        "question",
+        1,
+        settings=_ollama_settings(),
+    )
+
+    assert answer == llm.GeneratedAnswer(
+        answer_text=llm.FALLBACK_ANSWER,
+        model_used="response-model",
+        citation_ranks=(),
+    )
+    assert _FakeAsyncOpenAI.instances[-1].recorder["calls"] == 1
 
 
 def test_build_openai_client_configures_timeouts_and_disables_sdk_retries(
@@ -223,10 +350,15 @@ async def test_retryable_provider_failures_are_classified_and_retried(
     answer = await llm.generate_answer(
         "context",
         "question",
+        1,
         settings=_ollama_settings(llm_retry_attempts=2),
     )
 
-    assert answer == ("Recovered answer.", "response-model")
+    assert answer == llm.GeneratedAnswer(
+        answer_text="Recovered answer [1].",
+        model_used="response-model",
+        citation_ranks=(1,),
+    )
     client = _FakeAsyncOpenAI.instances[-1]
     assert client.recorder["calls"] == 2
     assert f"category={expected_category}" in caplog.text
@@ -245,6 +377,7 @@ async def test_retry_loop_stops_at_exact_configured_attempt_count(
         await llm.generate_answer(
             "context",
             "question",
+            1,
             settings=_ollama_settings(llm_retry_attempts=3),
         )
 
@@ -266,6 +399,7 @@ async def test_non_transient_http_4xx_is_rejected_without_retry(
         await llm.generate_answer(
             "context",
             "question",
+            1,
             settings=_ollama_settings(llm_retry_attempts=3),
         )
 
@@ -274,8 +408,8 @@ async def test_non_transient_http_4xx_is_rejected_without_retry(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("response_text", [None, "", "   ", 123])
-async def test_empty_or_malformed_successful_content_is_invalid_without_retry(
+@pytest.mark.parametrize("response_text", [None, 123])
+async def test_non_text_successful_content_is_invalid_without_retry(
     monkeypatch: pytest.MonkeyPatch,
     response_text: object,
 ) -> None:
@@ -286,6 +420,7 @@ async def test_empty_or_malformed_successful_content_is_invalid_without_retry(
         await llm.generate_answer(
             "context",
             "question",
+            1,
             settings=_ollama_settings(llm_retry_attempts=3),
         )
 
@@ -310,6 +445,7 @@ async def test_sdk_response_validation_failure_is_invalid_without_retry(
         await llm.generate_answer(
             "context",
             "question",
+            1,
             settings=_ollama_settings(llm_retry_attempts=3),
         )
 
@@ -325,7 +461,7 @@ async def test_invalid_local_provider_configuration_is_not_retried(
     settings.ollama_chat_model = ""
 
     with pytest.raises(ValueError, match="OLLAMA_CHAT_MODEL"):
-        await llm.generate_answer("context", "question", settings=settings)
+        await llm.generate_answer("context", "question", 1, settings=settings)
 
     assert _FakeAsyncOpenAI.instances == []
 
@@ -372,7 +508,7 @@ async def test_errors_and_diagnostic_logs_exclude_request_and_secret_data(
     )
 
     with pytest.raises(llm.LLMTransientError) as exc_info:
-        await llm.generate_answer(context, prompt, settings=settings)
+        await llm.generate_answer(context, prompt, 1, settings=settings)
 
     rendered = f"{caplog.text}\n{exc_info.value!s}\n{exc_info.value!r}"
     for sensitive_value in [

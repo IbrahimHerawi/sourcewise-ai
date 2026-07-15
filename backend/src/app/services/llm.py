@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass
 from time import perf_counter
+from typing import Final
 
 import httpx
 from openai import (
@@ -23,11 +25,17 @@ from app.core.settings import Settings, get_settings
 
 logger = logging.getLogger(__name__)
 
-SYSTEM_PROMPT = (
-    "Answer using ONLY the provided context. "
-    "If the context does not contain a supported answer then do not provide any extra "
-    "information, reply exactly with: I don't know based on the uploaded documents."
+FALLBACK_ANSWER: Final[str] = "I could not find the answer in the uploaded documents."
+SYSTEM_PROMPT: Final[str] = (
+    "1. Use only the supplied context.\n"
+    "2. Context entries are numbered [1], [2], etc.\n"
+    "3. Every factual claim must cite one or more supplied entries.\n"
+    "4. Citations use the exact form [positive integer].\n"
+    f"5. If the context does not support an answer, return only: {FALLBACK_ANSWER}\n"
+    "6. Do not use general knowledge.\n"
+    "7. Do not invent document or chunk information."
 )
+_CITATION_PATTERN: Final[re.Pattern[str]] = re.compile(r"\[([0-9]+)\]")
 
 
 class _LLMError(RuntimeError):
@@ -83,6 +91,15 @@ class _ProviderConfig:
     base_url: str
     api_key: SecretStr
     model: str
+
+
+@dataclass(frozen=True, slots=True)
+class GeneratedAnswer:
+    """Validated answer text and its grounding metadata."""
+
+    answer_text: str
+    model_used: str
+    citation_ranks: tuple[int, ...]
 
 
 def _resolve_provider_config(settings: Settings) -> _ProviderConfig:
@@ -144,7 +161,7 @@ def _build_input(context_chunks_text: str, question: str) -> str:
 
 def _extract_answer(response: Response, *, configured_model: str) -> tuple[str, str]:
     output_text = getattr(response, "output_text", None)
-    if not isinstance(output_text, str) or not output_text.strip():
+    if not isinstance(output_text, str):
         raise LLMInvalidResponseError()
 
     response_model = getattr(response, "model", None)
@@ -155,7 +172,45 @@ def _extract_answer(response: Response, *, configured_model: str) -> tuple[str, 
     else:
         model_used = response_model.strip()
 
-    return output_text.strip(), model_used
+    return output_text, model_used
+
+
+def _validate_generated_answer(
+    answer_text: str,
+    *,
+    model_used: str,
+    available_context_entries: int,
+) -> GeneratedAnswer:
+    stripped_answer = answer_text.strip()
+    fallback = GeneratedAnswer(
+        answer_text=FALLBACK_ANSWER,
+        model_used=model_used,
+        citation_ranks=(),
+    )
+    if not stripped_answer or stripped_answer == FALLBACK_ANSWER:
+        return fallback
+
+    citation_ranks: list[int] = []
+    seen_ranks: set[int] = set()
+    for match in _CITATION_PATTERN.finditer(stripped_answer):
+        try:
+            rank = int(match.group(1))
+        except ValueError:
+            return fallback
+        if rank <= 0 or rank > available_context_entries:
+            return fallback
+        if rank not in seen_ranks:
+            seen_ranks.add(rank)
+            citation_ranks.append(rank)
+
+    if not citation_ranks:
+        return fallback
+
+    return GeneratedAnswer(
+        answer_text=stripped_answer,
+        model_used=model_used,
+        citation_ranks=tuple(citation_ranks),
+    )
 
 
 async def _request_generation(
@@ -213,10 +268,14 @@ def _log_generation_attempt(
 async def generate_answer(
     context_chunks_text: str,
     question: str,
+    available_context_entries: int,
     *,
     settings: Settings | None = None,
-) -> tuple[str, str]:
+) -> GeneratedAnswer:
     """Generate an answer from context using the configured provider."""
+    if available_context_entries < 0:
+        raise ValueError("available_context_entries must not be negative.")
+
     resolved_settings = settings or get_settings()
     config = _resolve_provider_config(resolved_settings)
     prompt_input = _build_input(context_chunks_text=context_chunks_text, question=question)
@@ -242,7 +301,10 @@ async def generate_answer(
                         model=config.model,
                         prompt_input=prompt_input,
                     )
-                    answer = _extract_answer(response, configured_model=config.model)
+                    answer_text, model_used = _extract_answer(
+                        response,
+                        configured_model=config.model,
+                    )
                 except _LLMError as exc:
                     status: str | int = exc.status_code or (
                         "success" if isinstance(exc, LLMInvalidResponseError) else "none"
@@ -265,12 +327,18 @@ async def generate_answer(
                     started_at=started_at,
                     level=logging.INFO,
                 )
-                return answer
+                return _validate_generated_answer(
+                    answer_text,
+                    model_used=model_used,
+                    available_context_entries=available_context_entries,
+                )
 
     raise RuntimeError("LLM retry loop exited without returning a result.")
 
 
 __all__ = [
+    "FALLBACK_ANSWER",
+    "GeneratedAnswer",
     "LLMInvalidResponseError",
     "LLMRejectedError",
     "LLMTransientError",
