@@ -10,15 +10,16 @@ from typing import Final
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import app.services.embeddings as embeddings_service
 from app.api.schemas.questions import QuestionAnswerResponse, QuestionSourceResponse
 from app.core.settings import Settings, get_settings
 from app.db.models.document_chunks import DocumentChunk
 from app.db.models.documents import Document, DocumentStatus
 from app.repositories.chunk_repository import ChunkRepository
+from app.repositories.collection_repository import CollectionRepository
 from app.repositories.question_context_repository import QuestionContextRepository
 from app.repositories.question_repository import QuestionRepository
-from app.repositories.types import QuestionContextRow
-from app.services.embeddings import embed_query
+from app.repositories.types import QuestionContextRow, SimilaritySearchResult
 from app.services.llm import generate_answer
 
 DEFAULT_TOP_K: Final[int] = 5
@@ -29,6 +30,38 @@ _TRUNCATION_MARKER: Final[str] = "\n[content truncated]"
 
 class QuestionAnsweringError(ValueError):
     """Raised when a question cannot be answered from the available document set."""
+
+
+class CollectionNotFoundError(LookupError):
+    """Raised when a requested collection is not owned by the requesting user."""
+
+    def __init__(self, collection_id: uuid.UUID) -> None:
+        super().__init__("Collection not found.")
+        self.collection_id = collection_id
+
+
+@dataclass(frozen=True, slots=True)
+class RetrievedContextChunk:
+    """An immutable snapshot of one chunk included in an LLM context."""
+
+    rank: int
+    document_id: uuid.UUID
+    document_filename: str
+    chunk_id: uuid.UUID
+    chunk_index: int
+    content: str
+    distance: float
+
+
+@dataclass(frozen=True, slots=True)
+class QuestionRetrievalResult:
+    """The complete immutable output of owner-scoped question retrieval."""
+
+    normalized_question: str
+    query_embedding: tuple[float, ...]
+    collection_id: uuid.UUID | None
+    context_text: str
+    chunks: tuple[RetrievedContextChunk, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,7 +88,7 @@ async def _embed_question(
     *,
     settings: Settings | None,
 ) -> list[float]:
-    return await embed_query(question_text)
+    return await embeddings_service.embed_query(question_text)
 
 
 async def _load_document_statuses(
@@ -148,6 +181,140 @@ def _build_context(
             break
 
     return "".join(sections), included_chunks
+
+
+def _retrieval_section_header(
+    chunk: SimilaritySearchResult,
+    *,
+    rank: int,
+) -> str:
+    return (
+        f"[{rank}]\n"
+        f"document_filename: {chunk.document_filename}\n"
+        f"document_id: {chunk.document_id}\n"
+        f"chunk_id: {chunk.chunk_id}\n"
+        f"chunk_index: {chunk.chunk_index}\n"
+        "content:\n"
+    )
+
+
+def _truncate_retrieval_content(
+    content: str,
+    *,
+    max_chars: int,
+) -> tuple[str, bool]:
+    normalized_content = content.strip()
+    if not normalized_content:
+        return "", False
+    if len(normalized_content) <= max_chars:
+        return normalized_content, False
+    return _truncate_text(normalized_content, max_chars=max_chars), True
+
+
+def _build_retrieval_context(
+    search_results: Sequence[SimilaritySearchResult],
+    *,
+    max_chars: int,
+) -> tuple[str, tuple[RetrievedContextChunk, ...]]:
+    """Format ranked retrieval snapshots within the complete context budget."""
+    sections: list[str] = []
+    chunks: list[RetrievedContextChunk] = []
+    used_chars = 0
+
+    for search_result in search_results:
+        rank = len(chunks) + 1
+        separator = _CHUNK_SEPARATOR if sections else ""
+        header = _retrieval_section_header(search_result, rank=rank)
+        content_budget = max_chars - used_chars - len(separator) - len(header)
+        if content_budget <= 0:
+            break
+
+        content, was_truncated = _truncate_retrieval_content(
+            search_result.content,
+            max_chars=content_budget,
+        )
+        if not content:
+            continue
+
+        section = f"{header}{content}"
+        sections.append(f"{separator}{section}")
+        chunks.append(
+            RetrievedContextChunk(
+                rank=rank,
+                document_id=search_result.document_id,
+                document_filename=search_result.document_filename,
+                chunk_id=search_result.chunk_id,
+                chunk_index=search_result.chunk_index,
+                content=content,
+                distance=search_result.distance,
+            )
+        )
+        used_chars += len(separator) + len(section)
+
+        if was_truncated:
+            break
+
+    return "".join(sections), tuple(chunks)
+
+
+async def retrieve_question_context(
+    session: AsyncSession,
+    *,
+    user_id: uuid.UUID,
+    question_text: str,
+    collection_id: uuid.UUID | None = None,
+    top_k: int | None = None,
+    max_context_chars: int | None = None,
+) -> QuestionRetrievalResult:
+    """Embed and retrieve owner-scoped context without calling an LLM or writing history."""
+    normalized_question = question_text.strip()
+    if not normalized_question:
+        raise ValueError("question_text must not be blank.")
+
+    resolved_settings = get_settings()
+    effective_top_k = top_k if top_k is not None else resolved_settings.top_k
+    effective_max_context_chars = (
+        max_context_chars
+        if max_context_chars is not None
+        else DEFAULT_MAX_CONTEXT_CHARS
+    )
+    if effective_top_k <= 0:
+        raise ValueError("top_k must be greater than 0.")
+    if effective_max_context_chars <= 0:
+        raise ValueError("max_context_chars must be greater than 0.")
+    if session.in_transaction():
+        raise RuntimeError("Question retrieval requires a session without an active transaction.")
+
+    query_embedding = await embeddings_service.embed_query(normalized_question)
+
+    async with session.begin():
+        if collection_id is not None:
+            collection = await CollectionRepository(session).get_collection(
+                user_id,
+                collection_id,
+            )
+            if collection is None:
+                raise CollectionNotFoundError(collection_id)
+
+        search_results = await ChunkRepository(session).similarity_search(
+            user_id,
+            query_embedding,
+            top_k=effective_top_k,
+            collection_id=collection_id,
+            max_distance=resolved_settings.retrieval_max_cosine_distance,
+        )
+
+    context_text, chunks = _build_retrieval_context(
+        search_results,
+        max_chars=effective_max_context_chars,
+    )
+    return QuestionRetrievalResult(
+        normalized_question=normalized_question,
+        query_embedding=tuple(query_embedding),
+        collection_id=collection_id,
+        context_text=context_text,
+        chunks=chunks,
+    )
 
 
 def _message_for_missing_requested_chunks(
@@ -346,8 +513,12 @@ async def _answer_question_in_transaction(
 
 
 __all__ = [
+    "CollectionNotFoundError",
     "DEFAULT_MAX_CONTEXT_CHARS",
     "DEFAULT_TOP_K",
     "QuestionAnsweringError",
+    "QuestionRetrievalResult",
+    "RetrievedContextChunk",
     "answer_question",
+    "retrieve_question_context",
 ]
