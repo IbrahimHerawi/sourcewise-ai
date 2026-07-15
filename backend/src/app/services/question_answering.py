@@ -7,20 +7,19 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Final
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import app.services.embeddings as embeddings_service
-from app.api.schemas.questions import QuestionAnswerResponse, QuestionSourceResponse
-from app.core.settings import Settings, get_settings
-from app.db.models.document_chunks import DocumentChunk
-from app.db.models.documents import Document, DocumentStatus
+from app.api.schemas.questions import CitationResponse, QuestionAnswerResponse
+from app.core.settings import get_settings
+from app.db.models.collections import Collection
 from app.repositories.chunk_repository import ChunkRepository
 from app.repositories.collection_repository import CollectionRepository
 from app.repositories.question_context_repository import QuestionContextRepository
 from app.repositories.question_repository import QuestionRepository
 from app.repositories.types import QuestionContextRow, SimilaritySearchResult
-from app.services.llm import generate_answer
+from app.services.llm import FALLBACK_ANSWER, GeneratedAnswer, generate_answer
 
 DEFAULT_TOP_K: Final[int] = 5
 DEFAULT_MAX_CONTEXT_CHARS: Final[int] = 12_000
@@ -64,52 +63,6 @@ class QuestionRetrievalResult:
     chunks: tuple[RetrievedContextChunk, ...]
 
 
-@dataclass(frozen=True, slots=True)
-class _RetrievedChunk:
-    chunk_id: uuid.UUID
-    document_id: uuid.UUID
-    chunk_index: int
-    content: str
-    distance: float
-
-
-def _normalize_document_ids(
-    document_ids: Sequence[uuid.UUID] | None,
-) -> tuple[uuid.UUID, ...] | None:
-    if document_ids is None:
-        return None
-
-    deduplicated = tuple(dict.fromkeys(document_ids))
-    return deduplicated or None
-
-
-async def _embed_question(
-    question_text: str,
-    *,
-    settings: Settings | None,
-) -> list[float]:
-    return await embeddings_service.embed_query(question_text)
-
-
-async def _load_document_statuses(
-    session: AsyncSession,
-    *,
-    document_ids: Sequence[uuid.UUID],
-) -> dict[uuid.UUID, DocumentStatus]:
-    if not document_ids:
-        return {}
-
-    result = await session.execute(
-        select(Document.id, Document.status).where(Document.id.in_(document_ids))
-    )
-    return {document_id: status for document_id, status in result.all()}
-
-
-async def _count_documents_by_status(session: AsyncSession) -> dict[DocumentStatus, int]:
-    result = await session.execute(select(Document.status, func.count()).group_by(Document.status))
-    return {status: int(count) for status, count in result.all()}
-
-
 def _truncate_text(text: str, *, max_chars: int) -> str:
     if max_chars <= 0:
         return ""
@@ -128,59 +81,6 @@ def _truncate_text(text: str, *, max_chars: int) -> str:
         candidate = candidate[:safe_cut]
 
     return candidate.rstrip() + _TRUNCATION_MARKER
-
-
-def _render_context_section(
-    chunk: _RetrievedChunk,
-    *,
-    rank: int,
-    max_chars: int,
-) -> str:
-    header = (
-        f"[{rank}]\n"
-        f"document_id: {chunk.document_id}\n"
-        f"chunk_id: {chunk.chunk_id}\n"
-        f"chunk_index: {chunk.chunk_index}\n"
-        f"distance: {chunk.distance:.6f}\n"
-        "content:\n"
-    )
-    if len(header) >= max_chars:
-        return _truncate_text(header, max_chars=max_chars)
-
-    content = _truncate_text(chunk.content, max_chars=max_chars - len(header))
-    return f"{header}{content}"
-
-
-def _build_context(
-    chunks: Sequence[_RetrievedChunk],
-    *,
-    max_chars: int,
-) -> tuple[str, list[_RetrievedChunk]]:
-    if max_chars <= 0:
-        raise ValueError("max_context_chars must be greater than 0.")
-
-    sections: list[str] = []
-    included_chunks: list[_RetrievedChunk] = []
-    used_chars = 0
-
-    for rank, chunk in enumerate(chunks, start=1):
-        separator = _CHUNK_SEPARATOR if sections else ""
-        remaining_budget = max_chars - used_chars - len(separator)
-        if remaining_budget <= 0:
-            break
-
-        section = _render_context_section(chunk, rank=rank, max_chars=remaining_budget)
-        if not section:
-            break
-
-        sections.append(f"{separator}{section}")
-        included_chunks.append(chunk)
-        used_chars += len(separator) + len(section)
-
-        if len(section) < len(_render_context_section(chunk, rank=rank, max_chars=max_chars)):
-            break
-
-    return "".join(sections), included_chunks
 
 
 def _retrieval_section_header(
@@ -317,198 +217,133 @@ async def retrieve_question_context(
     )
 
 
-def _message_for_missing_requested_chunks(
-    requested_statuses: dict[uuid.UUID, DocumentStatus],
-    *,
-    ready_document_ids: Sequence[uuid.UUID],
-) -> str:
-    if not requested_statuses:
-        return "None of the requested documents were found."
-
-    if not ready_document_ids:
-        if any(
-            status in (DocumentStatus.PENDING, DocumentStatus.PROCESSING)
-            for status in requested_statuses.values()
-        ):
-            return (
-                "None of the requested documents are READY yet. "
-                "Documents in PENDING or PROCESSING are ignored for retrieval."
-            )
-        return "None of the requested documents are READY for retrieval."
-
-    return "No related content was found in the requested READY documents."
-
-
-def _message_for_missing_global_chunks(status_counts: dict[DocumentStatus, int]) -> str:
-    ready_count = status_counts.get(DocumentStatus.READY, 0)
-    pending_or_processing_count = (
-        status_counts.get(DocumentStatus.PENDING, 0)
-        + status_counts.get(DocumentStatus.PROCESSING, 0)
-    )
-
-    if ready_count == 0 and pending_or_processing_count > 0:
-        return (
-            "No READY documents are available yet. "
-            "Documents in PENDING or PROCESSING are ignored for retrieval."
-        )
-    if ready_count == 0:
-        return "No READY documents are available for question answering."
-    return "No related content was found in READY documents."
-
-
 async def answer_question(
     session: AsyncSession,
     *,
+    user_id: uuid.UUID,
     question_text: str,
-    document_ids: Sequence[uuid.UUID] | None = None,
+    collection_id: uuid.UUID | None = None,
     top_k: int | None = None,
-    max_context_chars: int = DEFAULT_MAX_CONTEXT_CHARS,
-    settings: Settings | None = None,
+    max_context_chars: int | None = None,
 ) -> QuestionAnswerResponse:
-    """Embed a question, retrieve relevant context, generate an answer, and persist history."""
-    question = question_text.strip()
-    if not question:
-        raise ValueError("question_text must not be blank.")
-    if max_context_chars <= 0:
-        raise ValueError("max_context_chars must be greater than 0.")
-
-    resolved_settings = settings or get_settings()
-    effective_top_k = top_k if top_k is not None else resolved_settings.top_k
-    if effective_top_k <= 0:
-        raise ValueError("top_k must be greater than 0.")
-
-    normalized_document_ids = _normalize_document_ids(document_ids)
-    query_embedding = await _embed_question(
-        question,
-        settings=resolved_settings if settings is not None else None,
+    """Generate and atomically persist one owner-scoped question and its citations."""
+    retrieval = await retrieve_question_context(
+        session,
+        user_id=user_id,
+        question_text=question_text,
+        collection_id=collection_id,
+        top_k=top_k,
+        max_context_chars=max_context_chars,
     )
 
-    if session.in_transaction():
-        return await _answer_question_in_transaction(
-            session,
-            question=question,
-            query_embedding=query_embedding,
-            document_ids=normalized_document_ids,
-            top_k=effective_top_k,
-            max_context_chars=max_context_chars,
-            settings=resolved_settings,
+    answer_text = FALLBACK_ANSWER
+    ai_provider: str | None = None
+    model_used: str | None = None
+    cited_chunks: tuple[RetrievedContextChunk, ...] = ()
+
+    if retrieval.chunks:
+        settings = get_settings()
+        generated_answer = await generate_answer(
+            retrieval.context_text,
+            retrieval.normalized_question,
+            len(retrieval.chunks),
+            settings=settings,
+        )
+        ai_provider = settings.ai_provider
+        model_used = generated_answer.model_used
+        answer_text, cited_chunks = _ground_generated_answer(
+            generated_answer,
+            chunks=retrieval.chunks,
         )
 
     async with session.begin():
-        return await _answer_question_in_transaction(
-            session,
-            question=question,
-            query_embedding=query_embedding,
-            document_ids=normalized_document_ids,
-            top_k=effective_top_k,
-            max_context_chars=max_context_chars,
-            settings=resolved_settings,
-        )
-
-
-async def _answer_question_in_transaction(
-    session: AsyncSession,
-    *,
-    question: str,
-    query_embedding: list[float],
-    document_ids: tuple[uuid.UUID, ...] | None,
-    top_k: int,
-    max_context_chars: int,
-    settings: Settings,
-) -> QuestionAnswerResponse:
-    requested_statuses: dict[uuid.UUID, DocumentStatus] = {}
-    ready_document_ids = document_ids
-    if document_ids is not None:
-        requested_statuses = await _load_document_statuses(
-            session,
-            document_ids=document_ids,
-        )
-        ready_document_ids = tuple(
-            document_id
-            for document_id in document_ids
-            if requested_statuses.get(document_id) == DocumentStatus.READY
-        )
-
-    search_results: list[tuple[DocumentChunk, float]] = []
-    if document_ids is None or ready_document_ids:
-        search_results = await ChunkRepository(session).similarity_search(
-            query_embedding=query_embedding,
-            top_k=top_k,
-            document_ids=ready_document_ids,
-            ready_only=True,
-            max_distance=settings.retrieval_max_cosine_distance,
-        )
-
-    if not search_results:
-        if document_ids is not None:
-            raise QuestionAnsweringError(
-                _message_for_missing_requested_chunks(
-                    requested_statuses,
-                    ready_document_ids=ready_document_ids or (),
-                )
+        if retrieval.collection_id is not None:
+            await _lock_owned_collection(
+                session,
+                user_id=user_id,
+                collection_id=retrieval.collection_id,
             )
 
-        raise QuestionAnsweringError(
-            _message_for_missing_global_chunks(await _count_documents_by_status(session))
+        question = await QuestionRepository(session).create_question(
+            user_id,
+            collection_id=retrieval.collection_id,
+            question_text=retrieval.normalized_question,
+            embedding=list(retrieval.query_embedding),
+            answer_text=answer_text,
+            ai_provider=ai_provider,
+            model_used=model_used,
         )
-
-    retrieved_chunks = [
-        _RetrievedChunk(
-            chunk_id=chunk.id,
-            document_id=chunk.document_id,
-            chunk_index=chunk.chunk_index,
-            content=chunk.content,
-            distance=distance,
+        snapshots = await QuestionContextRepository(session).bulk_insert_question_context(
+            question.id,
+            [_context_row(chunk) for chunk in cited_chunks],
         )
-        for chunk, distance in search_results
-    ]
-    context_text, context_chunks = _build_context(
-        retrieved_chunks,
-        max_chars=max_context_chars,
-    )
-    if not context_chunks:
-        raise RuntimeError("Failed to construct question context from retrieved chunks.")
-
-    generated_answer = await generate_answer(
-        context_text,
-        question,
-        len(context_chunks),
-        settings=settings,
-    )
-
-    question_row = await QuestionRepository(session).create_question(
-        question_text=question,
-        embedding=query_embedding,
-        answer_text=generated_answer.answer_text,
-        ai_provider=settings.ai_provider,
-        model_used=generated_answer.model_used,
-    )
-    await QuestionContextRepository(session).bulk_insert_question_context(
-        question_row.id,
-        [
-            QuestionContextRow(
-                chunk_id=chunk.chunk_id,
-                similarity_score=chunk.distance,
-                rank=rank,
-            )
-            for rank, chunk in enumerate(context_chunks, start=1)
-        ],
-    )
 
     return QuestionAnswerResponse(
-        question_id=question_row.id,
-        answer=generated_answer.answer_text,
-        sources=[
-            QuestionSourceResponse(
-                document_id=chunk.document_id,
-                chunk_id=chunk.chunk_id,
-                chunk_index=chunk.chunk_index,
-                distance=chunk.distance,
-            )
-            for chunk in context_chunks
-        ],
-        provider=settings.ai_provider,
-        model=generated_answer.model_used,
+        question_id=question.id,
+        collection_id=question.collection_id,
+        answer=question.answer_text,
+        citations=[CitationResponse.model_validate(snapshot) for snapshot in snapshots],
+        created_at=question.created_at,
+        provider=question.ai_provider,
+        model=question.model_used,
+    )
+
+
+def _ground_generated_answer(
+    generated_answer: GeneratedAnswer,
+    *,
+    chunks: Sequence[RetrievedContextChunk],
+) -> tuple[str, tuple[RetrievedContextChunk, ...]]:
+    """Resolve validated model citation ranks to unique retrieval snapshots."""
+    if generated_answer.answer_text == FALLBACK_ANSWER:
+        return FALLBACK_ANSWER, ()
+
+    chunks_by_rank = {chunk.rank: chunk for chunk in chunks}
+    cited_chunks: list[RetrievedContextChunk] = []
+    seen_ranks: set[int] = set()
+    for rank in generated_answer.citation_ranks:
+        if rank in seen_ranks:
+            continue
+        chunk = chunks_by_rank.get(rank)
+        if chunk is None:
+            return FALLBACK_ANSWER, ()
+        seen_ranks.add(rank)
+        cited_chunks.append(chunk)
+
+    if not cited_chunks:
+        return FALLBACK_ANSWER, ()
+    cited_chunks.sort(key=lambda chunk: chunk.rank)
+    return generated_answer.answer_text, tuple(cited_chunks)
+
+
+async def _lock_owned_collection(
+    session: AsyncSession,
+    *,
+    user_id: uuid.UUID,
+    collection_id: uuid.UUID,
+) -> None:
+    """Protect an owned collection's FK key for the duration of the write."""
+    stmt = (
+        select(Collection.id)
+        .where(
+            Collection.id == collection_id,
+            Collection.user_id == user_id,
+        )
+        .with_for_update(read=True, key_share=True)
+    )
+    if await session.scalar(stmt) is None:
+        raise CollectionNotFoundError(collection_id)
+
+
+def _context_row(chunk: RetrievedContextChunk) -> QuestionContextRow:
+    return QuestionContextRow(
+        rank=chunk.rank,
+        document_id=chunk.document_id,
+        document_filename=chunk.document_filename,
+        chunk_id=chunk.chunk_id,
+        chunk_index=chunk.chunk_index,
+        chunk_content=chunk.content,
+        similarity_score=chunk.distance,
     )
 
 

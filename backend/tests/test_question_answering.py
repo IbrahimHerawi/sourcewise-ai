@@ -12,10 +12,20 @@ from app.core.settings import get_settings
 from app.db.models.auth import User
 from app.db.models.collections import Collection
 from app.db.models.documents import Document, DocumentStatus
+from app.db.models.question_context_chunks import QuestionContextChunk
 from app.db.models.questions import Question
 from app.repositories.chunk_repository import ChunkRepository
 from app.repositories.document_repository import DocumentRepository
-from app.repositories.types import ChunkWithEmbedding
+from app.repositories.question_context_repository import QuestionContextRepository
+from app.repositories.question_repository import QuestionRepository
+from app.repositories.types import ChunkWithEmbedding, QuestionContextRow
+from app.services.llm import (
+    FALLBACK_ANSWER,
+    GeneratedAnswer,
+    LLMInvalidResponseError,
+    LLMRejectedError,
+    LLMTransientError,
+)
 
 
 def _embedding(first_dim: float, second_dim: float) -> list[float]:
@@ -89,6 +99,40 @@ async def _insert_chunk(
         ],
     )
     return chunks[0].id
+
+
+def _retrieved_chunk(
+    rank: int,
+    *,
+    document_id: uuid.UUID | None = None,
+    chunk_id: uuid.UUID | None = None,
+    content: str | None = None,
+) -> question_answering_service.RetrievedContextChunk:
+    return question_answering_service.RetrievedContextChunk(
+        rank=rank,
+        document_id=document_id or uuid.uuid4(),
+        document_filename=f"source-{rank}.txt",
+        chunk_id=chunk_id or uuid.uuid4(),
+        chunk_index=rank - 1,
+        content=content or f"Exact retrieved content {rank}.",
+        distance=rank / 10,
+    )
+
+
+def _retrieval_result(
+    *,
+    collection_id: uuid.UUID | None = None,
+    chunks: tuple[question_answering_service.RetrievedContextChunk, ...] = (),
+) -> question_answering_service.QuestionRetrievalResult:
+    return question_answering_service.QuestionRetrievalResult(
+        normalized_question="What is persisted?",
+        query_embedding=tuple(_embedding(1.0, 0.0)),
+        collection_id=collection_id,
+        context_text="\n\n---\n\n".join(
+            f"[{chunk.rank}]\ncontent:\n{chunk.content}" for chunk in chunks
+        ),
+        chunks=chunks,
+    )
 
 
 @pytest.mark.asyncio
@@ -526,3 +570,461 @@ async def test_retrieve_question_context_rejects_an_existing_transaction_before_
 
     await session.rollback()
     await session.close()
+
+
+@pytest.mark.asyncio
+async def test_answer_question_persists_no_context_fallback_without_calling_llm(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    owner = await _create_user(db_session, "answer-empty")
+    owner_id = owner.id
+    await db_session.commit()
+
+    async def fake_retrieve(*args: object, **kwargs: object) -> object:
+        assert not db_session.in_transaction()
+        assert kwargs["user_id"] == owner_id
+        assert kwargs["question_text"] == "  What is persisted?  "
+        return _retrieval_result()
+
+    async def fail_generate(*args: object, **kwargs: object) -> object:
+        raise AssertionError("the LLM must not be called without context")
+
+    monkeypatch.setattr(
+        question_answering_service,
+        "retrieve_question_context",
+        fake_retrieve,
+    )
+    monkeypatch.setattr(question_answering_service, "generate_answer", fail_generate)
+
+    response = await question_answering_service.answer_question(
+        db_session,
+        user_id=owner_id,
+        question_text="  What is persisted?  ",
+    )
+
+    assert not db_session.in_transaction()
+    assert response.answer == FALLBACK_ANSWER
+    assert response.citations == []
+    assert response.provider is None
+    assert response.model is None
+    assert response.created_at is not None
+
+    question = await db_session.get(Question, response.question_id)
+    assert question is not None
+    assert question.user_id == owner_id
+    assert question.question_text == "What is persisted?"
+    assert question.answer_text == FALLBACK_ANSWER
+    assert question.ai_provider is None
+    assert question.model_used is None
+
+
+@pytest.mark.asyncio
+async def test_answer_question_persists_only_unique_cited_chunks_and_owner_collection(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    owner = await _create_user(db_session, "answer-grounded")
+    collection = await _create_collection(
+        db_session,
+        user_id=owner.id,
+        name="Grounded",
+    )
+    owner_id = owner.id
+    collection_id = collection.id
+    chunks = tuple(_retrieved_chunk(rank) for rank in range(1, 4))
+    await db_session.commit()
+
+    async def fake_retrieve(*args: object, **kwargs: object) -> object:
+        assert not db_session.in_transaction()
+        assert kwargs["user_id"] == owner_id
+        assert kwargs["collection_id"] == collection_id
+        assert kwargs["top_k"] == 3
+        assert kwargs["max_context_chars"] == 900
+        return _retrieval_result(collection_id=collection_id, chunks=chunks)
+
+    async def fake_generate(
+        context_text: str,
+        question: str,
+        available_context_entries: int,
+        **kwargs: object,
+    ) -> GeneratedAnswer:
+        assert not db_session.in_transaction()
+        assert context_text
+        assert question == "What is persisted?"
+        assert available_context_entries == 3
+        assert kwargs["settings"] is get_settings()
+        return GeneratedAnswer(
+            answer_text="Grounded in the first and third sources [3] [1] [3].",
+            model_used="actual-provider-model",
+            citation_ranks=(3, 1, 3),
+        )
+
+    original_create = QuestionRepository.create_question
+    original_insert = QuestionContextRepository.bulk_insert_question_context
+
+    async def observed_create(
+        repository: QuestionRepository,
+        user_id: uuid.UUID,
+        **kwargs: object,
+    ) -> Question:
+        assert db_session.in_transaction()
+        assert user_id == owner_id
+        assert kwargs["collection_id"] == collection_id
+        return await original_create(repository, user_id, **kwargs)
+
+    async def observed_insert(
+        repository: QuestionContextRepository,
+        question_id: uuid.UUID,
+        rows: list[QuestionContextRow],
+    ) -> list[QuestionContextChunk]:
+        assert db_session.in_transaction()
+        assert [row.rank for row in rows] == [1, 3]
+        return await original_insert(repository, question_id, rows)
+
+    monkeypatch.setattr(
+        question_answering_service,
+        "retrieve_question_context",
+        fake_retrieve,
+    )
+    monkeypatch.setattr(question_answering_service, "generate_answer", fake_generate)
+    monkeypatch.setattr(QuestionRepository, "create_question", observed_create)
+    monkeypatch.setattr(
+        QuestionContextRepository,
+        "bulk_insert_question_context",
+        observed_insert,
+    )
+
+    response = await question_answering_service.answer_question(
+        db_session,
+        user_id=owner_id,
+        question_text="ignored by fake retrieval",
+        collection_id=collection_id,
+        top_k=3,
+        max_context_chars=900,
+    )
+
+    assert not db_session.in_transaction()
+    assert response.collection_id == collection_id
+    assert response.answer == "Grounded in the first and third sources [3] [1] [3]."
+    assert [citation.rank for citation in response.citations] == [1, 3]
+    assert response.provider == get_settings().ai_provider
+    assert response.model == "actual-provider-model"
+
+    question = await db_session.get(Question, response.question_id)
+    snapshots = list(
+        (
+            await db_session.scalars(
+                select(QuestionContextChunk)
+                .where(QuestionContextChunk.question_id == response.question_id)
+                .order_by(QuestionContextChunk.rank)
+            )
+        ).all()
+    )
+    assert question is not None
+    assert question.user_id == owner_id
+    assert question.collection_id == collection_id
+    assert [snapshot.rank for snapshot in snapshots] == [1, 3]
+    assert [snapshot.chunk_content for snapshot in snapshots] == [
+        chunks[0].content,
+        chunks[2].content,
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("generated_answer", "expected_answer"),
+    [
+        (
+            GeneratedAnswer(
+                answer_text=FALLBACK_ANSWER,
+                model_used="fallback-model",
+                citation_ranks=(1,),
+            ),
+            FALLBACK_ANSWER,
+        ),
+        (
+            GeneratedAnswer(
+                answer_text="Invalid grounding [99].",
+                model_used="invalid-grounding-model",
+                citation_ranks=(99,),
+            ),
+            FALLBACK_ANSWER,
+        ),
+    ],
+)
+async def test_answer_question_model_fallback_has_metadata_and_no_citations(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    generated_answer: GeneratedAnswer,
+    expected_answer: str,
+) -> None:
+    owner = await _create_user(db_session, f"answer-{generated_answer.model_used}")
+    owner_id = owner.id
+    chunks = (_retrieved_chunk(1),)
+    await db_session.commit()
+
+    async def fake_retrieve(*args: object, **kwargs: object) -> object:
+        return _retrieval_result(chunks=chunks)
+
+    async def fake_generate(*args: object, **kwargs: object) -> GeneratedAnswer:
+        assert not db_session.in_transaction()
+        return generated_answer
+
+    monkeypatch.setattr(
+        question_answering_service,
+        "retrieve_question_context",
+        fake_retrieve,
+    )
+    monkeypatch.setattr(question_answering_service, "generate_answer", fake_generate)
+
+    response = await question_answering_service.answer_question(
+        db_session,
+        user_id=owner_id,
+        question_text="What is persisted?",
+    )
+
+    assert response.answer == expected_answer
+    assert response.citations == []
+    assert response.provider == get_settings().ai_provider
+    assert response.model == generated_answer.model_used
+    citation_count = await db_session.scalar(
+        select(func.count())
+        .select_from(QuestionContextChunk)
+        .where(QuestionContextChunk.question_id == response.question_id)
+    )
+    assert citation_count == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "provider_error",
+    [
+        pytest.param(LLMTransientError(category="timeout"), id="transient"),
+        pytest.param(LLMRejectedError(status_code=400), id="rejected"),
+        pytest.param(LLMInvalidResponseError(), id="invalid-response"),
+    ],
+)
+async def test_answer_question_provider_failures_persist_nothing(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    provider_error: Exception,
+) -> None:
+    owner = await _create_user(db_session, f"provider-{provider_error.__class__.__name__}")
+    owner_id = owner.id
+    await db_session.commit()
+
+    async def fake_retrieve(*args: object, **kwargs: object) -> object:
+        return _retrieval_result(chunks=(_retrieved_chunk(1),))
+
+    async def fake_generate(*args: object, **kwargs: object) -> GeneratedAnswer:
+        assert not db_session.in_transaction()
+        raise provider_error
+
+    monkeypatch.setattr(
+        question_answering_service,
+        "retrieve_question_context",
+        fake_retrieve,
+    )
+    monkeypatch.setattr(question_answering_service, "generate_answer", fake_generate)
+
+    with pytest.raises(type(provider_error)) as exc_info:
+        await question_answering_service.answer_question(
+            db_session,
+            user_id=owner_id,
+            question_text="What is persisted?",
+        )
+
+    assert exc_info.value is provider_error
+    assert not db_session.in_transaction()
+    question_count = await db_session.scalar(
+        select(func.count()).select_from(Question).where(Question.user_id == owner_id)
+    )
+    assert question_count == 0
+
+
+@pytest.mark.asyncio
+async def test_answer_question_rolls_back_question_when_citation_insert_fails(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    owner = await _create_user(db_session, "citation-rollback")
+    owner_id = owner.id
+    await db_session.commit()
+
+    async def fake_retrieve(*args: object, **kwargs: object) -> object:
+        return _retrieval_result(chunks=(_retrieved_chunk(1),))
+
+    async def fake_generate(*args: object, **kwargs: object) -> GeneratedAnswer:
+        return GeneratedAnswer(
+            answer_text="Grounded answer [1].",
+            model_used="rollback-model",
+            citation_ranks=(1,),
+        )
+
+    async def fail_insert(
+        repository: QuestionContextRepository,
+        question_id: uuid.UUID,
+        rows: list[QuestionContextRow],
+    ) -> list[QuestionContextChunk]:
+        assert db_session.in_transaction()
+        assert rows
+        raise RuntimeError("simulated citation insert failure")
+
+    monkeypatch.setattr(
+        question_answering_service,
+        "retrieve_question_context",
+        fake_retrieve,
+    )
+    monkeypatch.setattr(question_answering_service, "generate_answer", fake_generate)
+    monkeypatch.setattr(
+        QuestionContextRepository,
+        "bulk_insert_question_context",
+        fail_insert,
+    )
+
+    with pytest.raises(RuntimeError, match="simulated citation insert failure"):
+        await question_answering_service.answer_question(
+            db_session,
+            user_id=owner_id,
+            question_text="What is persisted?",
+        )
+
+    assert not db_session.in_transaction()
+    question_count = await db_session.scalar(
+        select(func.count()).select_from(Question).where(Question.user_id == owner_id)
+    )
+    assert question_count == 0
+
+
+@pytest.mark.asyncio
+async def test_answer_question_collection_deleted_after_retrieval_persists_nothing(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    owner = await _create_user(db_session, "collection-race")
+    collection = await _create_collection(
+        db_session,
+        user_id=owner.id,
+        name="Delete between phases",
+    )
+    owner_id = owner.id
+    collection_id = collection.id
+    await db_session.commit()
+
+    async def fake_retrieve(*args: object, **kwargs: object) -> object:
+        return _retrieval_result(
+            collection_id=collection_id,
+            chunks=(_retrieved_chunk(1),),
+        )
+
+    async def delete_collection_then_generate(
+        *args: object,
+        **kwargs: object,
+    ) -> GeneratedAnswer:
+        assert not db_session.in_transaction()
+        async with db_session.begin():
+            await db_session.delete(collection)
+        return GeneratedAnswer(
+            answer_text="Grounded answer [1].",
+            model_used="race-model",
+            citation_ranks=(1,),
+        )
+
+    monkeypatch.setattr(
+        question_answering_service,
+        "retrieve_question_context",
+        fake_retrieve,
+    )
+    monkeypatch.setattr(
+        question_answering_service,
+        "generate_answer",
+        delete_collection_then_generate,
+    )
+
+    with pytest.raises(question_answering_service.CollectionNotFoundError):
+        await question_answering_service.answer_question(
+            db_session,
+            user_id=owner_id,
+            question_text="What is persisted?",
+            collection_id=collection_id,
+        )
+
+    assert not db_session.in_transaction()
+    question_count = await db_session.scalar(
+        select(func.count()).select_from(Question).where(Question.user_id == owner_id)
+    )
+    assert question_count == 0
+
+
+@pytest.mark.asyncio
+async def test_answer_question_document_deleted_after_retrieval_keeps_snapshot(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    owner = await _create_user(db_session, "document-race")
+    document = await _create_document(
+        db_session,
+        user_id=owner.id,
+        filename="deleted-after-retrieval.txt",
+    )
+    chunk_id = await _insert_chunk(
+        db_session,
+        document=document,
+        content="Live chunk content before deletion.",
+        embedding=_embedding(1.0, 0.0),
+    )
+    owner_id = owner.id
+    document_id = document.id
+    retrieved_content = "Exact retrieved snapshot, independent of the live chunk."
+    chunk = _retrieved_chunk(
+        1,
+        document_id=document_id,
+        chunk_id=chunk_id,
+        content=retrieved_content,
+    )
+    await db_session.commit()
+
+    async def fake_retrieve(*args: object, **kwargs: object) -> object:
+        return _retrieval_result(chunks=(chunk,))
+
+    async def delete_document_then_generate(
+        *args: object,
+        **kwargs: object,
+    ) -> GeneratedAnswer:
+        assert not db_session.in_transaction()
+        async with db_session.begin():
+            await db_session.delete(document)
+        return GeneratedAnswer(
+            answer_text="Grounded answer [1].",
+            model_used="snapshot-model",
+            citation_ranks=(1,),
+        )
+
+    monkeypatch.setattr(
+        question_answering_service,
+        "retrieve_question_context",
+        fake_retrieve,
+    )
+    monkeypatch.setattr(
+        question_answering_service,
+        "generate_answer",
+        delete_document_then_generate,
+    )
+
+    response = await question_answering_service.answer_question(
+        db_session,
+        user_id=owner_id,
+        question_text="What is persisted?",
+    )
+
+    assert [citation.rank for citation in response.citations] == [1]
+    snapshot = await db_session.scalar(
+        select(QuestionContextChunk).where(
+            QuestionContextChunk.question_id == response.question_id
+        )
+    )
+    assert snapshot is not None
+    assert snapshot.document_id == document_id
+    assert snapshot.chunk_id == chunk_id
+    assert snapshot.chunk_content == retrieved_content
