@@ -95,7 +95,8 @@ async def test_content_ownership_schema_has_nullability_indexes_and_delete_actio
         table_schema = schema[table_name]
         assert table_schema["columns"]["user_id"]["nullable"] is False
         assert table_schema["columns"]["collection_id"]["nullable"] is True
-        assert f"ix_{table_name}_user_id" in table_schema["indexes"]
+        assert f"ix_{table_name}_user_created_desc" in table_schema["indexes"]
+        assert f"ix_{table_name}_user_id" not in table_schema["indexes"]
         assert f"ix_{table_name}_collection_id" in table_schema["indexes"]
 
         foreign_keys = {
