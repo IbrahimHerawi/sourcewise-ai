@@ -17,6 +17,7 @@ from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 import app.db.session as db_session_module
+import app.main as app_main
 import app.services.question_answering as question_answering_service
 import app.workers.ingestion as ingestion_worker
 from app.core.security import create_access_token
@@ -165,10 +166,8 @@ async def smoke_context(
 
     async def fake_embed_question(
         question_text: str,
-        *,
-        settings: object | None,
     ) -> list[float]:
-        dim = int(getattr(settings, "embedding_dim", get_settings().embedding_dim))
+        dim = get_settings().embedding_dim
         return _deterministic_embedding(question_text, dim=dim)
 
     async def fake_generate_answer(
@@ -188,14 +187,23 @@ async def smoke_context(
         )
 
     monkeypatch.setattr(ingestion_worker, "embed_documents", fake_embed_documents)
-    monkeypatch.setattr(question_answering_service, "_embed_question", fake_embed_question)
+    monkeypatch.setattr(
+        question_answering_service.embeddings_service,
+        "embed_query",
+        fake_embed_question,
+    )
     monkeypatch.setattr(question_answering_service, "generate_answer", fake_generate_answer)
+
+    def preserve_pytest_logging(_: str) -> None:
+        pass
+
+    monkeypatch.setattr(app_main, "setup_logging", preserve_pytest_logging)
 
     original_overrides = app.dependency_overrides.copy()
     app.dependency_overrides.clear()
 
     try:
-        async with app.router.lifespan_context(app):
+        async with app_main.lifespan(app):
             transport = httpx.ASGITransport(app=app)
             async with httpx.AsyncClient(
                 transport=transport,
@@ -248,8 +256,8 @@ async def test_upload_ingest_ask_and_history_smoke(
     assert ask_response.status_code == 200
     ask_payload = ask_response.json()
     assert ask_payload["answer"] == "Mocked answer from integration smoke test [1]."
-    assert len(ask_payload["sources"]) >= 1
-    assert ask_payload["sources"][0]["document_id"] == str(document_id)
+    assert len(ask_payload["citations"]) >= 1
+    assert ask_payload["citations"][0]["document_id"] == str(document_id)
     assert smoke_context.llm_context_capture["available_context_entries"] >= 1
     assert "ORBIT778 sentence" in smoke_context.llm_context_capture["context"]
 
