@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass
 from io import BytesIO
@@ -9,12 +10,14 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 from uuid import UUID, uuid4
 
+import httpx
 import pytest
 import pytest_asyncio
 from pypdf import PdfWriter
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+import app.services.embeddings as embeddings_service
 import app.workers.ingestion as ingestion_worker
 from app.db.models.auth import User
 from app.db.models.document_chunks import DocumentChunk
@@ -22,6 +25,7 @@ from app.db.models.documents import Document, DocumentStatus
 from app.db.models.ingestion_jobs import IngestionJob, IngestionJobStatus
 from app.repositories.chunk_repository import ChunkRepository
 from app.repositories.document_repository import DocumentRepository
+from app.services.embeddings import OllamaEmbeddingClient
 from app.workers.ingestion import (
     EMBEDDING_GENERATION_ERROR,
     INGESTION_ERROR,
@@ -221,11 +225,7 @@ async def test_worker_extracts_chunks_embeds_once_per_chunk_and_finalizes_atomic
         job_id=job_id,
         document_id=document_id,
     )
-    rendered_logs = [
-        call.args[0] % call.args[1:]
-        for call in info_mock.call_args_list
-        if call.args
-    ]
+    rendered_logs = [call.args[0] % call.args[1:] for call in info_mock.call_args_list if call.args]
     persistence_logs = [
         message for message in rendered_logs if "Ingestion persistence summary" in message
     ]
@@ -235,6 +235,76 @@ async def test_worker_extracts_chunks_embeds_once_per_chunk_and_finalizes_atomic
     assert "chunk_count=2" in persistence_logs[0]
     assert "status=success" in persistence_logs[0]
     assert all(extracted_text not in message for message in rendered_logs)
+
+
+@pytest.mark.asyncio
+async def test_later_http_embedding_batch_failure_persists_no_partial_ingestion_results(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    worker_database: WorkerDatabase,
+) -> None:
+    storage_path = tmp_path / "later-batch-failure.txt"
+    storage_path.write_text("one two three", encoding="utf-8")
+    document_id, job_id = await _create_job(worker_database, storage_path)
+    manager = IngestionManager(
+        settings=_settings(),
+        session_maker=worker_database.session_maker,
+    )
+    monkeypatch.setattr(ingestion_worker, "chunk_text", lambda _: ["one", "two", "three"])
+    submitted_batches: list[list[str]] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content.decode("utf-8"))
+        prompts = list(payload["input"])
+        submitted_batches.append(prompts)
+        if len(submitted_batches) == 2:
+            return httpx.Response(500, json={"error": "simulated later batch failure"})
+        return httpx.Response(
+            200,
+            json={"embeddings": [[0.1] * _EMBEDDING_DIM for _ in prompts]},
+        )
+
+    http_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    embedding_client = OllamaEmbeddingClient(
+        settings=SimpleNamespace(
+            ollama_embed_model="test-embed-model",
+            embedding_dim=_EMBEDDING_DIM,
+            ollama_openai_base_url="http://ollama.test:11434/v1",
+            embed_concurrency=1,
+            ollama_embed_batch_size=2,
+            ollama_embed_connect_timeout_s=0.1,
+            ollama_embed_read_timeout_s=1.0,
+            ollama_embed_max_connections=1,
+            ollama_embed_max_keepalive_connections=0,
+            ollama_embed_retry_attempts=1,
+            ollama_embed_retry_min_wait_s=0.001,
+            ollama_embed_retry_max_wait_s=0.001,
+        ),
+        http_client=http_client,
+    )
+    original_client = embeddings_service._DEFAULT_EMBEDDINGS_CLIENT
+    embeddings_service._DEFAULT_EMBEDDINGS_CLIENT = embedding_client
+    try:
+        await manager._process_job(job_id, worker_idx=1)
+    finally:
+        embeddings_service._DEFAULT_EMBEDDINGS_CLIENT = original_client
+        await http_client.aclose()
+
+    document, job, chunks = await _load_result(
+        worker_database,
+        document_id=document_id,
+        job_id=job_id,
+    )
+    assert submitted_batches == [
+        ["search_document: one", "search_document: two"],
+        ["search_document: three"],
+    ]
+    assert document.status == DocumentStatus.FAILED
+    assert job.status == IngestionJobStatus.FAILED
+    assert document.error_message == EMBEDDING_GENERATION_ERROR
+    assert job.error_message == EMBEDDING_GENERATION_ERROR
+    assert document.extracted_text is None
+    assert chunks == []
 
 
 @pytest.mark.asyncio
@@ -572,7 +642,9 @@ async def test_deletion_during_extraction_discards_results_and_worker_processes_
 
     async def _successful_embeddings(
         chunks: list[str],
-        **_: object,
+        *,
+        job_id: UUID | None = None,
+        document_id: UUID | None = None,
     ) -> list[list[float]]:
         return [[0.1] * _EMBEDDING_DIM for _ in chunks]
 
@@ -628,16 +700,16 @@ async def test_deletion_during_later_embedding_batch_keeps_all_results_memory_on
 
     async def _controlled_batches(
         chunks: list[str],
-        **_: object,
+        *,
+        job_id: UUID | None = None,
+        document_id: UUID | None = None,
     ) -> list[list[float]]:
         completed_earlier_batches.append([0.1] * _EMBEDDING_DIM)
         later_batch_started.set()
         await resume_later_batch.wait()
         if later_batch_fails:
             raise RuntimeError("api_key=raw-embedding-race-secret")
-        return completed_earlier_batches + [
-            [0.2] * _EMBEDDING_DIM for _ in chunks[1:]
-        ]
+        return completed_earlier_batches + [[0.2] * _EMBEDDING_DIM for _ in chunks[1:]]
 
     monkeypatch.setattr(ingestion_worker, "embed_documents", _controlled_batches)
     processing = asyncio.create_task(manager._process_job(job_id, worker_idx=1))
@@ -674,7 +746,9 @@ async def test_deletion_immediately_before_finalization_does_not_recreate_rows(
 
     async def _successful_embeddings(
         chunks: list[str],
-        **_: object,
+        *,
+        job_id: UUID | None = None,
+        document_id: UUID | None = None,
     ) -> list[list[float]]:
         return [[0.1] * _EMBEDDING_DIM for _ in chunks]
 
