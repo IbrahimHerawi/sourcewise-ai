@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import uuid
 from collections.abc import AsyncGenerator, Generator
 from datetime import UTC, datetime
@@ -318,7 +319,10 @@ async def test_question_endpoints_require_active_verified_users(
         {"question": "Single question", "document_ids": []},
         {"question": "Single question", "messages": []},
         {"question": "Single question", "conversation_id": str(uuid.uuid4())},
-        {"question": "Single question", "prompt": "private"},
+        {
+            "question": "Single question",
+            "prompt": "SENTINEL_REJECTED_PROMPT_27",
+        },
     ],
 )
 async def test_ask_rejects_invalid_or_conversation_state_requests(
@@ -332,6 +336,7 @@ async def test_ask_rejects_invalid_or_conversation_state_requests(
 
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "validation_error"
+    assert "SENTINEL_REJECTED_PROMPT_27" not in response.text
 
 
 @pytest.mark.asyncio
@@ -463,7 +468,9 @@ async def test_ask_returns_grounded_snapshot_citations_without_private_fields(
         filename="grounded.txt",
         collection_id=collection.id,
     )
-    original_content = "Exact supporting snapshot from the document."
+    chunk_tail_secret = "SENTINEL_FULL_CHUNK_TAIL_27"
+    original_content = ("Exact supporting snapshot from the document. " * 15) + chunk_tail_secret
+    expected_excerpt = f"{original_content[:500]}…"
     chunk = (
         await ChunkRepository(db_session).bulk_insert_chunks(
             document.id,
@@ -522,18 +529,23 @@ async def test_ask_returns_grounded_snapshot_citations_without_private_fields(
             "document_filename": document.filename,
             "chunk_id": str(chunk.id),
             "chunk_index": 7,
-            "excerpt": original_content,
+            "excerpt": expected_excerpt,
             "distance": pytest.approx(0.0, abs=1e-6),
         }
     ]
-    assert not {
-        "embedding",
-        "prompt",
-        "chunk_content",
-        "storage_path",
-        "question_embedding",
-    } & payload.keys()
+    assert (
+        not {
+            "user_id",
+            "embedding",
+            "prompt",
+            "chunk_content",
+            "storage_path",
+            "question_embedding",
+        }
+        & payload.keys()
+    )
     assert not {"prompt", "chunk_content", "storage_path"} & payload["citations"][0].keys()
+    assert chunk_tail_secret not in response.text
 
     await db_session.execute(
         update(DocumentChunk)
@@ -545,7 +557,8 @@ async def test_ask_returns_grounded_snapshot_citations_without_private_fields(
         headers=_auth_headers(user),
     )
     assert detail.status_code == 200
-    assert detail.json()["citations"][0]["excerpt"] == original_content
+    assert detail.json()["citations"][0]["excerpt"] == expected_excerpt
+    assert chunk_tail_secret not in detail.text
 
 
 @pytest.mark.asyncio
@@ -781,7 +794,20 @@ async def test_ask_maps_unexpected_failure_to_secret_free_500(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     user = await _create_user(db_session, "unexpected")
-    raw_secret = "sk-live-secret prompt=/private/prompt storage=/private/chunk"
+    sentinels = [
+        "SENTINEL_OPENAI_API_KEY_27",
+        "SENTINEL_RESEND_KEY_27",
+        "SENTINEL_SMTP_PASSWORD_27",
+        "SENTINEL_JWT_SIGNING_KEY_27",
+        "SENTINEL_POSTGRES_PASSWORD_27",
+        "SENTINEL_BEARER_TOKEN_27",
+        "SENTINEL_VERIFICATION_TOKEN_27",
+        "SENTINEL_RESET_TOKEN_27",
+        "SENTINEL_PROVIDER_PROMPT_27",
+        "SENTINEL_PROVIDER_CONTEXT_27",
+        "SENTINEL_PROVIDER_RAW_BODY_27",
+    ]
+    raw_secret = " ".join(sentinels)
 
     async def fail_answer(*args: object, **kwargs: object) -> QuestionAnswerResponse:
         raise RuntimeError(raw_secret)
@@ -801,6 +827,7 @@ async def test_ask_maps_unexpected_failure_to_secret_free_500(
             "message": "An unexpected error occurred.",
         }
     }
-    assert raw_secret not in response.text
-    assert raw_secret not in caplog.text
+    rendered = response.text + json.dumps(dict(response.headers)) + caplog.text
+    for sentinel in sentinels:
+        assert sentinel not in rendered
     assert FALLBACK_ANSWER not in response.text

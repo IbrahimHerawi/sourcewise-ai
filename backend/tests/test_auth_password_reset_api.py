@@ -374,13 +374,18 @@ async def test_reset_password_rejects_weak_password_without_consuming_token(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("token_state", ["invalid", "expired", "used", "empty", "whitespace"])
+@pytest.mark.parametrize(
+    "token_state",
+    ["invalid", "sentinel", "expired", "used", "empty", "whitespace"],
+)
 async def test_reset_password_uses_same_error_for_unusable_tokens(
     auth_client: httpx.AsyncClient,
     db_session: AsyncSession,
     token_state: str,
 ) -> None:
-    raw_token = f"{token_state}-raw-reset-token"
+    raw_token = (
+        "SENTINEL_RESET_TOKEN_27" if token_state == "sentinel" else f"{token_state}-raw-reset-token"
+    )
     request_token = raw_token
     if token_state in {"expired", "used"}:
         user = await _create_user(db_session, email=f"{token_state}-reset@example.com")
@@ -407,6 +412,9 @@ async def test_reset_password_uses_same_error_for_unusable_tokens(
 
     assert response.status_code == 400
     assert response.json() == _INVALID_TOKEN_RESPONSE
+    if request_token.strip():
+        assert request_token not in response.text
+        assert request_token not in repr(dict(response.headers))
 
 
 @pytest.mark.asyncio

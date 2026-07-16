@@ -25,3 +25,32 @@ def test_sensitive_data_filter_redacts_exception_tracebacks() -> None:
 
     assert "raw-diagnostic-secret" not in rendered
     assert "password=<redacted>" in rendered
+
+
+def test_sensitive_data_filter_redacts_every_secret_category() -> None:
+    sentinels = {
+        "openai_api_key": "SENTINEL_OPENAI_API_KEY_27",
+        "resend_api_key": "SENTINEL_RESEND_KEY_27",
+        "smtp_password": "SENTINEL_SMTP_PASSWORD_27",
+        "secret_key": "SENTINEL_JWT_SIGNING_KEY_27",
+        "postgres_password": "SENTINEL_POSTGRES_PASSWORD_27",
+        "authorization": "Bearer SENTINEL_BEARER_TOKEN_27",
+        "verification_token": "SENTINEL_VERIFICATION_TOKEN_27",
+        "reset_token": "SENTINEL_RESET_TOKEN_27",
+    }
+    record = logging.LogRecord(
+        name="test",
+        level=logging.ERROR,
+        pathname=__file__,
+        lineno=40,
+        msg="Provider failure metadata=%s",
+        args=(sentinels,),
+        exc_info=None,
+    )
+
+    SensitiveDataFilter().filter(record)
+    rendered = logging.Formatter("%(message)s").format(record)
+
+    for sentinel in sentinels.values():
+        assert sentinel not in rendered
+    assert rendered.count("<redacted>") == len(sentinels)

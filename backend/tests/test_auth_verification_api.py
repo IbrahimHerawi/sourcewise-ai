@@ -133,7 +133,10 @@ async def test_verify_email_marks_user_and_token_used(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("raw_token", ["unknown-token", "", "   "])
+@pytest.mark.parametrize(
+    "raw_token",
+    ["unknown-token", "SENTINEL_VERIFICATION_TOKEN_27", "", "   "],
+)
 async def test_verify_email_rejects_invalid_or_empty_token(
     auth_client: httpx.AsyncClient,
     raw_token: str,
@@ -145,6 +148,9 @@ async def test_verify_email_rejects_invalid_or_empty_token(
 
     assert response.status_code == 400
     assert response.json() == _INVALID_TOKEN_RESPONSE
+    if raw_token.strip():
+        assert raw_token not in response.text
+        assert raw_token not in repr(dict(response.headers))
 
 
 @pytest.mark.asyncio

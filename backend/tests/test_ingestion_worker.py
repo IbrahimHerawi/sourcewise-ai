@@ -249,6 +249,7 @@ async def test_worker_extracts_chunks_embeds_once_per_chunk_and_finalizes_atomic
         ("chunking", INGESTION_ERROR),
         ("embedding", EMBEDDING_GENERATION_ERROR),
         ("embedding_count", EMBEDDING_GENERATION_ERROR),
+        ("embedding_dimension", EMBEDDING_GENERATION_ERROR),
         ("finalization", INGESTION_ERROR),
     ],
 )
@@ -258,6 +259,7 @@ async def test_worker_failure_paths_store_only_approved_messages(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     worker_database: WorkerDatabase,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     extension = ".pdf" if failure_case == "image_only_pdf" else ".txt"
     storage_path = tmp_path / f"{failure_case}{extension}"
@@ -310,6 +312,18 @@ async def test_worker_failure_paths_store_only_approved_messages(
         )
     elif failure_case == "embedding_count":
         monkeypatch.setattr(ingestion_worker, "embed_documents", AsyncMock(return_value=[]))
+    elif failure_case == "embedding_dimension":
+        monkeypatch.setattr(
+            ingestion_worker,
+            "embed_documents",
+            AsyncMock(
+                side_effect=RuntimeError(
+                    "SENTINEL_EMBEDDING_DIAGNOSTIC_27 "
+                    "expected_dimension=768 actual_dimension=3 vector=[1.0,2.0,3.0] "
+                    "raw_body=SENTINEL_OLLAMA_RAW_BODY_27"
+                )
+            ),
+        )
     elif failure_case == "finalization":
         monkeypatch.setattr(
             ChunkRepository,
@@ -332,6 +346,10 @@ async def test_worker_failure_paths_store_only_approved_messages(
     assert chunks == []
     assert "raw-" not in document.error_message
     assert "raw-" not in job.error_message
+    assert "SENTINEL_EMBEDDING_DIAGNOSTIC_27" not in caplog.text
+    assert "SENTINEL_OLLAMA_RAW_BODY_27" not in caplog.text
+    assert "expected_dimension=768" not in document.error_message
+    assert "actual_dimension=3" not in job.error_message
 
 
 @pytest.mark.asyncio
