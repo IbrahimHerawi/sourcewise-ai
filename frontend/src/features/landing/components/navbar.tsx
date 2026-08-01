@@ -87,7 +87,7 @@ export function Navbar({ onOpenAuth }: { onOpenAuth: (tab: "signin" | "signup") 
         transition={{ duration: 0.55, ease: [0.16, 1, 0.3, 1] }}
         // Full-width, pinned flush to the very top.
         // Solid flat white background — no shadow, no border, no blur/overlay.
-        className="fixed inset-x-0 top-0 z-50 w-full bg-white"
+        className="fixed inset-x-0 top-0 z-50 w-full bg-background"
         style={{ willChange: "transform, opacity" }}
       >
         <nav
@@ -97,7 +97,7 @@ export function Navbar({ onOpenAuth }: { onOpenAuth: (tab: "signin" | "signup") 
           {/* Left cluster: brand + nav links, close together */}
           <a href="#top" className="group flex shrink-0 items-center gap-2.5">
             <span className="relative flex size-8 items-center justify-center rounded-lg bg-brand-gradient transition-transform group-hover:scale-105">
-              <BrainCircuit className="size-5 text-white" />
+              <BrainCircuit className="size-5 text-primary-foreground" />
             </span>
             <span className="text-base font-semibold tracking-tight">
               Source<span className="text-gradient-brand-strong">Wise</span>
@@ -162,7 +162,7 @@ export function Navbar({ onOpenAuth }: { onOpenAuth: (tab: "signin" | "signup") 
             style={{ top: `${NAVBAR_HEIGHT}px` }}
           >
             <div
-              className="absolute inset-0 bg-white"
+              className="absolute inset-0 bg-background"
               onClick={() => setMobileOpen(false)}
             />
             <motion.div
@@ -171,7 +171,7 @@ export function Navbar({ onOpenAuth }: { onOpenAuth: (tab: "signin" | "signup") 
               exit={{ y: -16, opacity: 0 }}
               transition={{ duration: 0.25 }}
               // Solid white panel, no shadow — only a subtle border for separation.
-              className="absolute inset-x-4 top-3 rounded-2xl border border-border bg-white p-4"
+              className="absolute inset-x-4 top-3 rounded-2xl border border-border bg-background p-4"
             >
               <div className="flex flex-col gap-1">
                 {NAV_LINKS.map((link) => (

@@ -38,9 +38,9 @@ function MailIcon(props: React.SVGProps<SVGSVGElement>) {
 
 // Official brand colors.
 const BRAND = {
-  github: "#181717",
-  linkedin: "#0A66C2",
-  email: "#EA4335",
+  github: "var(--color-social-github)",
+  linkedin: "var(--color-social-linkedin)",
+  email: "var(--color-social-email)",
 };
 
 type SocialLink = {
@@ -60,7 +60,7 @@ export function Footer() {
   const year = new Date().getFullYear();
 
   return (
-    <footer id="footer" className="mt-auto bg-white">
+    <footer id="footer" className="mt-auto bg-background">
       <div
         className="mx-auto max-w-[1280px] py-16"
         style={{ paddingLeft: "clamp(20px, 3.3vw, 66px)", paddingRight: "clamp(20px, 3.3vw, 66px)" }}
@@ -93,9 +93,9 @@ export function Footer() {
                     href={href}
                     {...(href.startsWith("mailto:") ? {} : { target: "_blank", rel: "noopener noreferrer" })}
                     className="group inline-flex items-center gap-3 text-base text-foreground transition-colors duration-200"
-                    style={{ ["--brand" as string]: color }}
+                    style={{ ["--social-color" as string]: color }}
                   >
-                    <Icon className="size-4 text-foreground transition-colors duration-200 group-hover:text-[var(--brand)]" />
+                    <Icon className="size-4 text-foreground transition-colors duration-200 group-hover:text-[var(--social-color)]" />
                     <span>{label}</span>
                   </a>
                 </li>

@@ -164,7 +164,7 @@ export function HowItWorks() {
   }, [reducedMotion]);
 
   return (
-    <section id="how-it-works" className="bg-white">
+    <section id="how-it-works" className="bg-background">
       {/* Section header — left-aligned, 80% width, typewriter with persistent
           blinking caret. Top/bottom spacing balanced (top 20% larger than the
           previous value, bottom matches it). */}
@@ -189,7 +189,7 @@ export function HowItWorks() {
           <Typewriter
             text="Your data, your answers, an AI platform that turns your documents into a single source of truth"
             persistentCaret
-            caretColor="var(--brand, #497bf9)"
+            caretColor="var(--sw-color-brand-hover)"
             reserveHeight
             startWhenVisible
             speed={37}
@@ -227,7 +227,7 @@ export function HowItWorks() {
             <div
               key={step.num}
               ref={(el) => { sectionsRef.current[i] = el; }}
-              className="sticky top-0 h-[100svh] w-full overflow-hidden bg-white"
+              className="sticky top-0 h-[100svh] w-full overflow-hidden bg-background"
               style={{ zIndex: i + 1 }}
             >
               <div

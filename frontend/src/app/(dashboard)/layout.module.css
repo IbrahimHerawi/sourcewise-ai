@@ -1,14 +1,14 @@
 .shell {
   display: flex;
   min-height: 100svh;
-  background: var(--color-dashboard-background);
+  background: var(--sw-color-background-canvas);
 }
 
 .content {
   min-width: 0;
   min-height: 100svh;
   flex: 1;
-  background: var(--color-dashboard-background);
+  background: var(--sw-color-background-canvas);
 }
 
 @media (max-width: 48rem) {
