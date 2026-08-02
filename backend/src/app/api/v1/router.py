@@ -6,9 +6,11 @@ from app.api.v1.endpoints.auth import router as auth_router
 from app.api.v1.endpoints.collections import router as collections_router
 from app.api.v1.endpoints.documents import router as documents_router
 from app.api.v1.endpoints.health import router as health_router
+from app.api.v1.endpoints.overview import router as overview_router
 from app.api.v1.endpoints.questions import router as questions_router
 
 router = APIRouter()
+auth_router.include_router(overview_router, prefix="/overview")
 router.include_router(auth_router, prefix="/auth", tags=["auth"])
 router.include_router(collections_router, prefix="/collections", tags=["collections"])
 router.include_router(documents_router, prefix="/documents", tags=["documents"])

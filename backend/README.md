@@ -144,6 +144,35 @@ stores only HMAC hashes. Reusing a consumed token is treated as replay and revok
 family. Password reset revokes every refresh-token family for that user; existing JWT access tokens
 remain usable only until their normal short expiration.
 
+### Authenticated user overview
+
+`GET /api/v1/auth/overview` returns current resource totals for the verified, active user represented
+by the access token. Supply `Authorization: Bearer <access_token>`; opaque refresh tokens cannot be
+used as bearer credentials.
+
+```bash
+curl "http://localhost:8000/api/v1/auth/overview" \
+  -H "Authorization: Bearer <access_token>"
+```
+
+Example response:
+
+```json
+{
+  "total_documents": 12,
+  "total_questions": 31,
+  "total_collections": 4
+}
+```
+
+All three values are scoped to the authenticated user. `total_documents` counts every current
+document row, including collected and uncollected documents in `PENDING`, `PROCESSING`, `READY`,
+and `FAILED` status. `total_questions` counts current grounded and deterministic-fallback history
+records, whether collected or uncollected; deleting a source document does not delete retained
+question history. `total_collections` counts current collection rows. Deleting a collection reduces
+only the collection total because its documents and questions become uncollected, while deleting a
+document reduces only the document total. Deleted rows are not counted.
+
 ## 10. Running with Docker
 Docker Compose remains at the repository root.
 
