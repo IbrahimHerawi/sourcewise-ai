@@ -46,6 +46,7 @@ class Settings(BaseSettings):
     secret_key_file: str | None = None
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = Field(default=30, gt=0)
+    refresh_token_expire_days: int = Field(default=30, gt=0)
     email_verification_token_expire_minutes: int = Field(default=1440, gt=0)
     password_reset_token_expire_minutes: int = Field(default=60, gt=0)
     app_base_url: str = "http://localhost:8000"
@@ -260,6 +261,12 @@ class Settings(BaseSettings):
             raise ValueError(
                 "LLM_RETRY_MAX_WAIT_S must be greater than or equal to "
                 "LLM_RETRY_MIN_WAIT_S."
+            )
+
+        if self.refresh_token_expire_days * 24 * 60 <= self.access_token_expire_minutes:
+            raise ValueError(
+                "REFRESH_TOKEN_EXPIRE_DAYS must represent a duration strictly greater than "
+                "ACCESS_TOKEN_EXPIRE_MINUTES."
             )
 
         return self

@@ -5,12 +5,12 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
-from app.db.models.auth import EmailVerificationToken, PasswordResetToken, User
+from app.db.models.auth import EmailVerificationToken, PasswordResetToken, RefreshToken, User
 
 
 class DuplicateUserEmailError(ValueError):
@@ -239,6 +239,88 @@ class UserRepository:
                 PasswordResetToken.used_at.is_(None),
             )
             .values(used_at=func.now())
+        )
+        result = await self._session.execute(stmt)
+        return result.rowcount
+
+    async def create_refresh_token(
+        self,
+        user_id: uuid.UUID,
+        family_id: uuid.UUID,
+        token_hash: str,
+        expires_at: datetime,
+    ) -> RefreshToken:
+        """Create and flush a hashed refresh-token row."""
+        token = RefreshToken(
+            user_id=user_id,
+            family_id=family_id,
+            token_hash=token_hash,
+            expires_at=expires_at,
+        )
+        self._session.add(token)
+        await self._session.flush()
+        await self._session.refresh(token)
+        return token
+
+    async def get_refresh_token_for_update(self, token_hash: str) -> RefreshToken | None:
+        """Lock and return a refresh token in any lifecycle state with its user."""
+        stmt = (
+            select(RefreshToken)
+            .options(joinedload(RefreshToken.user, innerjoin=True))
+            .where(RefreshToken.token_hash == token_hash)
+            .with_for_update(of=RefreshToken)
+        )
+        return await self._session.scalar(stmt)
+
+    async def mark_refresh_token_used(
+        self,
+        token_id: uuid.UUID,
+        replaced_by_id: uuid.UUID,
+    ) -> RefreshToken | None:
+        """Consume one active refresh token and link its replacement."""
+        stmt = (
+            update(RefreshToken)
+            .where(
+                RefreshToken.id == token_id,
+                RefreshToken.used_at.is_(None),
+                RefreshToken.revoked_at.is_(None),
+            )
+            .values(used_at=func.now(), replaced_by_id=replaced_by_id)
+            .returning(RefreshToken)
+        )
+        return await self._session.scalar(stmt)
+
+    async def revoke_refresh_token_family(self, family_id: uuid.UUID) -> int:
+        """Revoke every currently unrevoked token in one refresh-token family."""
+        stmt = (
+            update(RefreshToken)
+            .where(
+                RefreshToken.family_id == family_id,
+                RefreshToken.revoked_at.is_(None),
+            )
+            .values(revoked_at=func.now())
+        )
+        result = await self._session.execute(stmt)
+        return result.rowcount
+
+    async def revoke_all_refresh_tokens_for_user(self, user_id: uuid.UUID) -> int:
+        """Revoke every currently unrevoked refresh token owned by one user."""
+        stmt = (
+            update(RefreshToken)
+            .where(
+                RefreshToken.user_id == user_id,
+                RefreshToken.revoked_at.is_(None),
+            )
+            .values(revoked_at=func.now())
+        )
+        result = await self._session.execute(stmt)
+        return result.rowcount
+
+    async def delete_expired_refresh_tokens_for_user(self, user_id: uuid.UUID) -> int:
+        """Delete only refresh tokens whose absolute family lifetime has expired."""
+        stmt = delete(RefreshToken).where(
+            RefreshToken.user_id == user_id,
+            RefreshToken.expires_at <= func.now(),
         )
         result = await self._session.execute(stmt)
         return result.rowcount

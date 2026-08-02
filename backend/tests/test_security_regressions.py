@@ -62,6 +62,8 @@ PUBLIC_REQUESTS = [
     pytest.param("POST", "/api/v1/auth/verify-email", id="verify-email"),
     pytest.param("POST", "/api/v1/auth/resend-verification", id="resend-verification"),
     pytest.param("POST", "/api/v1/auth/login", id="login"),
+    pytest.param("POST", "/api/v1/auth/refresh", id="refresh"),
+    pytest.param("POST", "/api/v1/auth/logout", id="logout"),
     pytest.param("POST", "/api/v1/auth/forgot-password", id="forgot-password"),
     pytest.param("POST", "/api/v1/auth/reset-password", id="reset-password"),
 ]
@@ -99,6 +101,8 @@ SECRET_SENTINELS = {
     "SENTINEL_BEARER_TOKEN_27",
     "SENTINEL_VERIFICATION_TOKEN_27",
     "SENTINEL_RESET_TOKEN_27",
+    "SENTINEL_REFRESH_TOKEN_27",
+    "SENTINEL_TOKEN_HASH_27",
     "SENTINEL_PROVIDER_SECRET_TEXT_27",
 }
 

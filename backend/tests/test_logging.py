@@ -37,6 +37,8 @@ def test_sensitive_data_filter_redacts_every_secret_category() -> None:
         "authorization": "Bearer SENTINEL_BEARER_TOKEN_27",
         "verification_token": "SENTINEL_VERIFICATION_TOKEN_27",
         "reset_token": "SENTINEL_RESET_TOKEN_27",
+        "refresh_token": "SENTINEL_REFRESH_TOKEN_27",
+        "token_hash": "SENTINEL_TOKEN_HASH_27",
     }
     record = logging.LogRecord(
         name="test",
@@ -54,3 +56,24 @@ def test_sensitive_data_filter_redacts_every_secret_category() -> None:
     for sentinel in sentinels.values():
         assert sentinel not in rendered
     assert rendered.count("<redacted>") == len(sentinels)
+
+
+def test_sensitive_data_filter_redacts_refresh_assignments_in_strings() -> None:
+    refresh_token = "SENTINEL_REFRESH_TOKEN_STRING_27"
+    token_hash = "SENTINEL_TOKEN_HASH_STRING_27"
+    record = logging.LogRecord(
+        name="test",
+        level=logging.ERROR,
+        pathname=__file__,
+        lineno=60,
+        msg=f"refresh_token={refresh_token} token_hash={token_hash}",
+        args=(),
+        exc_info=None,
+    )
+
+    SensitiveDataFilter().filter(record)
+    rendered = logging.Formatter("%(message)s").format(record)
+
+    assert refresh_token not in rendered
+    assert token_hash not in rendered
+    assert rendered == "refresh_token=<redacted> token_hash=<redacted>"

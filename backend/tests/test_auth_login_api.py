@@ -1,16 +1,18 @@
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator, Generator
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+from uuid import uuid4
 
 import httpx
 import pytest
 import pytest_asyncio
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.security import decode_access_token, hash_password
+from app.core.security import SecurityError, decode_access_token, hash_password, hash_token
 from app.core.settings import get_settings
-from app.db.models.auth import User
+from app.db.models.auth import RefreshToken, User
 from app.db.session import get_db_session
 from app.main import app
 from app.repositories.user_repository import UserRepository
@@ -24,6 +26,7 @@ def login_settings(monkeypatch: pytest.MonkeyPatch) -> Generator[None]:
     monkeypatch.setenv("SECRET_KEY", "test-secret-key-with-enough-length")
     monkeypatch.setenv("JWT_ALGORITHM", "HS256")
     monkeypatch.setenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30")
+    monkeypatch.setenv("REFRESH_TOKEN_EXPIRE_DAYS", "30")
     get_settings.cache_clear()
 
     yield
@@ -57,7 +60,7 @@ async def _create_user(
     is_email_verified: bool = True,
     is_active: bool = True,
 ) -> User:
-    return await UserRepository(session).create_user(
+    user = await UserRepository(session).create_user(
         email=email,
         password_hash=hash_password(_PASSWORD),
         first_name="Ibrahim",
@@ -65,6 +68,8 @@ async def _create_user(
         is_email_verified=is_email_verified,
         is_active=is_active,
     )
+    await session.commit()
+    return user
 
 
 async def _login(
@@ -168,6 +173,7 @@ async def test_login_succeeds_after_verification_with_one_normalized_lookup(
         is_email_verified=False,
     )
     await UserRepository(db_session).mark_email_verified(user.id)
+    await db_session.commit()
 
     lookup_count = 0
     original_get_user_by_email = UserRepository.get_user_by_email
@@ -188,7 +194,10 @@ async def test_login_succeeds_after_verification_with_one_normalized_lookup(
     payload = response.json()
     assert payload == {
         "access_token": payload["access_token"],
+        "refresh_token": payload["refresh_token"],
         "token_type": "bearer",
+        "access_token_expires_in": 1800,
+        "refresh_token_expires_in": payload["refresh_token_expires_in"],
         "user": {
             "id": str(user.id),
             "first_name": "Ibrahim",
@@ -201,10 +210,118 @@ async def test_login_succeeds_after_verification_with_one_normalized_lookup(
     }
     assert lookup_count == 1
     assert "password_hash" not in response.text
+    assert response.headers["cache-control"] == "no-store"
+    assert response.headers["pragma"] == "no-cache"
+    assert 30 * 24 * 60 * 60 - 5 <= payload["refresh_token_expires_in"] <= 30 * 24 * 60 * 60
+
+    stored_refresh_token = await db_session.scalar(
+        select(RefreshToken).where(RefreshToken.user_id == user.id)
+    )
+    assert stored_refresh_token is not None
+    assert stored_refresh_token.token_hash == hash_token(payload["refresh_token"])
+    assert stored_refresh_token.token_hash != payload["refresh_token"]
 
     token_payload = decode_access_token(payload["access_token"])
     assert token_payload["sub"] == str(user.id)
     assert datetime.fromtimestamp(token_payload["exp"], tz=UTC) > datetime.now(UTC)
+
+
+@pytest.mark.asyncio
+async def test_multiple_logins_create_independent_refresh_families(
+    auth_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    user = await _create_user(db_session, email="multiple-logins@example.com")
+
+    first_response = await _login(auth_client, email=user.email)
+    second_response = await _login(auth_client, email=user.email)
+    tokens = list(
+        (
+            await db_session.scalars(
+                select(RefreshToken).where(RefreshToken.user_id == user.id)
+            )
+        ).all()
+    )
+
+    assert first_response.status_code == 200
+    assert second_response.status_code == 200
+    assert first_response.json()["refresh_token"] != second_response.json()["refresh_token"]
+    assert len(tokens) == 2
+    assert len({token.family_id for token in tokens}) == 2
+    assert all(token.revoked_at is None for token in tokens)
+
+
+@pytest.mark.asyncio
+async def test_successful_login_opportunistically_deletes_only_expired_refresh_rows(
+    auth_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    user = await _create_user(db_session, email="login-refresh-cleanup@example.com")
+    repository = UserRepository(db_session)
+    await repository.create_refresh_token(
+        user.id,
+        uuid4(),
+        "expired-login-cleanup-hash",
+        datetime.now(UTC) - timedelta(seconds=1),
+    )
+    await db_session.commit()
+
+    response = await _login(auth_client, email=user.email)
+    tokens = list(
+        (
+            await db_session.scalars(
+                select(RefreshToken).where(RefreshToken.user_id == user.id)
+            )
+        ).all()
+    )
+
+    assert response.status_code == 200
+    assert len(tokens) == 1
+    assert tokens[0].token_hash == hash_token(response.json()["refresh_token"])
+
+
+@pytest.mark.asyncio
+async def test_login_token_generation_failure_returns_no_token_or_row(
+    auth_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = await _create_user(db_session, email="login-generation-failure@example.com")
+
+    def fail_access_token(_: object) -> str:
+        raise SecurityError("sentinel signing failure")
+
+    monkeypatch.setattr("app.api.v1.endpoints.auth.create_access_token", fail_access_token)
+    response = await _login(auth_client, email=user.email)
+    token_count = await db_session.scalar(
+        select(func.count()).select_from(RefreshToken).where(RefreshToken.user_id == user.id)
+    )
+
+    assert response.status_code == 500
+    assert response.json()["error"]["message"] == "Login could not be completed."
+    assert "access_token" not in response.text
+    assert "refresh_token" not in response.text
+    assert token_count == 0
+
+
+@pytest.mark.asyncio
+async def test_login_persistence_failure_returns_no_plaintext_token(
+    auth_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = await _create_user(db_session, email="login-persistence-failure@example.com")
+
+    async def fail_create_refresh_token(*_: object, **__: object) -> RefreshToken:
+        raise RuntimeError("sentinel persistence failure")
+
+    monkeypatch.setattr(UserRepository, "create_refresh_token", fail_create_refresh_token)
+    response = await _login(auth_client, email=user.email)
+
+    assert response.status_code == 500
+    assert response.json()["error"]["message"] == "Login could not be completed."
+    assert "access_token" not in response.text
+    assert "refresh_token" not in response.text
 
 
 @pytest.mark.asyncio

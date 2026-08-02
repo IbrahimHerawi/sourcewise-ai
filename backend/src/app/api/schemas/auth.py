@@ -6,11 +6,22 @@ from datetime import datetime
 from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, EmailStr, StringConstraints, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    EmailStr,
+    PositiveInt,
+    StringConstraints,
+    field_validator,
+)
 
 NameText = Annotated[
     str,
     StringConstraints(strip_whitespace=True, min_length=1, max_length=100),
+]
+RefreshTokenText = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=32, max_length=512),
 ]
 
 
@@ -71,12 +82,40 @@ class RegisterResponse(BaseModel):
     verification_token: str | None = None
 
 
-class LoginResponse(BaseModel):
-    """Access token and API-safe authenticated user payload."""
+class TokenPairResponse(BaseModel):
+    """Short-lived access token and rotating opaque refresh token."""
 
     access_token: str
+    refresh_token: str
     token_type: Literal["bearer"] = "bearer"
+    access_token_expires_in: PositiveInt
+    refresh_token_expires_in: PositiveInt
+
+
+class LoginResponse(TokenPairResponse):
+    """Token pair and API-safe authenticated user payload."""
+
     user: UserResponse
+
+
+class RefreshTokenRequest(BaseModel):
+    """Opaque refresh token submitted for rotation."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    refresh_token: RefreshTokenText
+
+
+class RefreshTokenResponse(TokenPairResponse):
+    """Rotated access and refresh token pair."""
+
+
+class LogoutRequest(BaseModel):
+    """Opaque refresh token identifying the login family to revoke."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    refresh_token: RefreshTokenText
 
 
 class VerifyEmailRequest(BaseModel):

@@ -327,6 +327,7 @@ async def test_reset_password_changes_hash_updates_login_and_invalidates_other_t
     await db_session.refresh(user)
     await db_session.refresh(used_token)
     await db_session.refresh(other_token)
+    await db_session.commit()
     old_login = await auth_client.post(
         "/api/v1/auth/login",
         json={"email": user.email, "password": _OLD_PASSWORD},
