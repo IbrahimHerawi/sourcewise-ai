@@ -5,7 +5,7 @@ import {
   isDashboardNavigationItemActive,
   resolveDashboardBackHref,
   resolveDashboardRoute,
-} from "./navigation";
+} from "@/features/dashboard/navigation";
 
 describe("dashboard route metadata", () => {
   it("drives sidebar and top-level header labels from one source", () => {

@@ -45,7 +45,18 @@ const eslintConfig = [...nextCoreWebVitals, ...nextTypescript, {
     "no-useless-escape": "off",
   },
 }, {
-  ignores: ["node_modules/**", ".next/**", "out/**", "build/**", "next-env.d.ts", "examples/**", "skills"]
+  files: ["src/**/*.{ts,tsx}"],
+  ignores: ["src/**/__tests__/**"],
+  rules: {
+    "no-restricted-imports": ["error", {
+      patterns: [{
+        group: ["@test", "@test/*"],
+        message: "Production modules must not depend on test infrastructure.",
+      }],
+    }],
+  },
+}, {
+  ignores: ["node_modules/**", ".next/**", "coverage/**", "out/**", "build/**", "next-env.d.ts", "examples/**", "skills"]
 }];
 
 export default eslintConfig;

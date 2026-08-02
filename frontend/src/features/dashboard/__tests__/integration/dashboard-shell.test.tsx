@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { DashboardShell } from "./dashboard-shell";
+import { DashboardShell } from "@/features/dashboard/components/dashboard-shell";
 
 vi.mock("next/font/google", () => ({
   Inter: () => ({ variable: "font-inter" }),
@@ -11,7 +11,7 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(),
 }));
 
-vi.mock("./dashboard-sidebar", () => ({
+vi.mock("@/features/dashboard/components/dashboard-sidebar", () => ({
   DashboardSidebar: () => <aside aria-label="Dashboard sidebar" />,
 }));
 

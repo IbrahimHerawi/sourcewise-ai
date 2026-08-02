@@ -5,13 +5,20 @@ import {
   DUPLICATE_COLLECTION_NAME_ERROR,
   validateCollectionDraft,
 } from "@/features/collections/collection-validation";
-import { mockCollections } from "@/features/collections/mock-collections";
+import { buildCollection } from "@/features/collections/__tests__/factories/collection.factory";
+
+const existingCollections = [
+  buildCollection({
+    id: "quarterly-research",
+    name: "Quarterly Research",
+  }),
+];
 
 describe("validateCollectionDraft", () => {
   it("trims values and requires a non-empty name", () => {
     const empty = validateCollectionDraft(
       { name: "   ", description: "  Context  " },
-      { collections: mockCollections },
+      { collections: existingCollections },
     );
 
     expect(empty.isValid).toBe(false);
@@ -25,7 +32,7 @@ describe("validateCollectionDraft", () => {
         name: "n".repeat(COLLECTION_NAME_MAX_LENGTH + 1),
         description: "d".repeat(COLLECTION_DESCRIPTION_MAX_LENGTH + 1),
       },
-      { collections: mockCollections },
+      { collections: existingCollections },
     );
 
     expect(result.errors.name).toBe("Name must be 255 characters or fewer.");
@@ -37,7 +44,7 @@ describe("validateCollectionDraft", () => {
   it("treats names as case-insensitively unique after trimming", () => {
     const result = validateCollectionDraft(
       { name: "  quarterly research  ", description: "" },
-      { collections: mockCollections },
+      { collections: existingCollections },
     );
 
     expect(result.errors.name).toBe(DUPLICATE_COLLECTION_NAME_ERROR);
@@ -47,7 +54,7 @@ describe("validateCollectionDraft", () => {
     const result = validateCollectionDraft(
       { name: "quarterly research", description: "Updated" },
       {
-        collections: mockCollections,
+        collections: existingCollections,
         excludeCollectionId: "quarterly-research",
       },
     );

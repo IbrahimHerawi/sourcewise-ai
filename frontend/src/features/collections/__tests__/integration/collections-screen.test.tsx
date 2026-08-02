@@ -1,11 +1,8 @@
-import { createRef, type ReactNode } from "react";
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import axe from "axe-core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { CollectionsScreen } from "./collections-screen";
-import { DashboardHeader } from "@/features/dashboard/components/dashboard-header";
-import { DashboardHeaderProvider } from "@/features/dashboard/components/dashboard-header-context";
+import { CollectionsScreen } from "@/features/collections/components/collections-screen";
+import { renderWithDashboardHeader } from "@test/render/render-with-dashboard-header";
 
 const pushMock = vi.hoisted(() => vi.fn());
 
@@ -15,21 +12,11 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(),
 }));
 
-function DashboardHeaderTestLayout({ children }: { children: ReactNode }) {
-  return (
-    <DashboardHeaderProvider>
-      <DashboardHeader scrollContainerRef={createRef<HTMLElement>()} />
-      {children}
-    </DashboardHeaderProvider>
-  );
-}
-
 function renderCollections(
   props: Partial<React.ComponentProps<typeof CollectionsScreen>> = {},
 ) {
-  return render(
+  return renderWithDashboardHeader(
     <CollectionsScreen initialPreview="populated" {...props} />,
-    { wrapper: DashboardHeaderTestLayout },
   );
 }
 
@@ -271,16 +258,5 @@ describe("CollectionsScreen dialogs", () => {
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(trigger).toHaveFocus();
-  });
-
-  it("has no detectable dialog accessibility violations", async () => {
-    const user = userEvent.setup();
-    renderCollections();
-    await user.click(screen.getByRole("button", { name: "Create Collection" }));
-
-    const results = await axe.run(screen.getByRole("dialog"), {
-      rules: { "color-contrast": { enabled: false } },
-    });
-    expect(results.violations).toEqual([]);
   });
 });

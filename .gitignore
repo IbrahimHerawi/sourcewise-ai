@@ -27,6 +27,7 @@ node_modules/
 out/
 .pnpm-store/
 .eslintcache
+coverage/
 *.tsbuildinfo
 
 # Logs

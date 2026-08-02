@@ -1,11 +1,11 @@
 import { createRef, useMemo } from "react";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { DashboardHeader } from "./dashboard-header";
+import { DashboardHeader } from "@/features/dashboard/components/dashboard-header";
 import {
   DashboardHeaderProvider,
   useDashboardHeader,
-} from "./dashboard-header-context";
+} from "@/features/dashboard/components/dashboard-header-context";
 
 const navigationState = vi.hoisted(() => ({
   pathname: "/dashboard/collections",
