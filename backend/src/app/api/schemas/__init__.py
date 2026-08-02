@@ -26,6 +26,7 @@ from app.api.schemas.documents import (
     DocumentUploadResponse,
     PaginatedDocumentListResponse,
 )
+from app.api.schemas.overview import OverviewResponse
 from app.api.schemas.questions import (
     CitationResponse,
     PaginatedQuestionHistoryResponse,
@@ -51,6 +52,7 @@ __all__ = [
     "LoginRequest",
     "LoginResponse",
     "LogoutRequest",
+    "OverviewResponse",
     "PaginatedCollectionListResponse",
     "PaginatedDocumentListResponse",
     "PaginatedQuestionHistoryResponse",
