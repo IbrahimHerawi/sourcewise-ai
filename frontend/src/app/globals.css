@@ -175,6 +175,43 @@
   --font-weight-dashboard-profile-text: 400;
   --shadow-dashboard-sidebar: 0 0.25rem 1.25rem var(--sw-primitive-shadow-black-03);
   --shadow-dashboard-nav-active: 0 0.0625rem 0.125rem var(--sw-primitive-shadow-black-05);
+
+  /* Shared application-page tokens. */
+  --sw-spacing-4: 0.25rem;
+  --sw-spacing-8: 0.5rem;
+  --sw-spacing-12: 0.75rem;
+  --sw-spacing-16: 1rem;
+  --sw-spacing-20: 1.25rem;
+  --sw-spacing-24: 1.5rem;
+  --sw-spacing-32: 2rem;
+  --sw-spacing-48: 3rem;
+  --sw-radius-small: 0.5rem;
+  --sw-radius-medium: 0.75rem;
+  --sw-radius-large: 9999px;
+  --sw-component-height-button: 2rem;
+  --sw-component-height-navigation: 3rem;
+  --sw-content-wide-width: 58rem;
+  --sw-type-size-page-title: 1.5rem;
+  --sw-type-size-section-title: 1.5rem;
+  --sw-type-size-card-title: 1.25rem;
+  --sw-type-size-body: 1rem;
+  --sw-type-size-metadata: 0.875rem;
+  --sw-type-size-button: 0.875rem;
+  --sw-type-size-caption: 0.75rem;
+  --sw-type-line-height-page-title: 2rem;
+  --sw-type-line-height-section-title: 2rem;
+  --sw-type-line-height-card-title: 1.5rem;
+  --sw-type-line-height-body: 1.5rem;
+  --sw-type-line-height-metadata: 1.25rem;
+  --sw-type-line-height-button: 1rem;
+  --sw-type-line-height-caption: 1rem;
+  --sw-type-letter-spacing-page-title: -0.015rem;
+  --sw-type-letter-spacing-section-title: -0.015rem;
+  --sw-type-letter-spacing-button: 0.00875rem;
+  --spacing-dashboard-page-inline: var(--sw-spacing-48);
+  --spacing-dashboard-page-block-start: var(--sw-spacing-48);
+  --shadow-sw-card: 0 0.25rem 0.75rem var(--sw-primitive-shadow-black-02);
+  --shadow-sw-dialog: 0 0.25rem 1.25rem var(--sw-primitive-shadow-black-03);
 }
 
 @layer base {

@@ -47,6 +47,17 @@ function NavigationIcon({ icon }: Pick<DashboardNavigationItem, "icon">) {
     );
   }
 
+  if (icon === "collection") {
+    return (
+      <svg aria-hidden="true" className={styles.icon} viewBox="0 0 20 20">
+        <path
+          fill="currentColor"
+          d="M2 17.5C1.45 17.5.979 17.304.588 16.913.196 16.521 0 16.05 0 15.5v-11c0-.55.196-1.021.588-1.413C.979 2.696 1.45 2.5 2 2.5h5l2 2h9c.55 0 1.021.196 1.413.587.391.392.587.863.587 1.413v9c0 .55-.196 1.021-.587 1.413-.392.391-.863.587-1.413.587H2Z"
+        />
+      </svg>
+    );
+  }
+
   return (
     <svg aria-hidden="true" className={styles.icon} viewBox="52 232 20 20">
       <path
