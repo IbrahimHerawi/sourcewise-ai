@@ -1,25 +1,43 @@
 "use client";
 
 import { useRef } from "react";
+import { updateCollection } from "@/features/collections/collections-api";
+import type { CollectionApiRecord } from "@/features/collections/collections-api-types";
 import type { CollectionDraft } from "@/features/collections/collection-validation";
-import type { Collection } from "@/features/collections/collection-types";
+import {
+  getCollectionFieldErrors,
+  getCollectionSubmissionError,
+} from "@/features/collections/collection-error-utils";
+import { useApiMutation } from "@/hooks/use-api-request";
 import { CollectionDialog } from "./collection-dialog";
 import { CollectionForm } from "./collection-form";
 
 type EditCollectionDialogProps = {
-  collection: Collection;
-  collections: readonly Collection[];
+  collection: CollectionApiRecord;
   onClose: () => void;
-  onUpdate: (collectionId: string, draft: CollectionDraft) => void;
+  onUpdated: (collection: CollectionApiRecord) => void;
 };
 
 export function EditCollectionDialog({
   collection,
-  collections,
   onClose,
-  onUpdate,
+  onUpdated,
 }: EditCollectionDialogProps) {
   const nameInputRef = useRef<HTMLInputElement>(null);
+  const mutation = useApiMutation(
+    (draft: CollectionDraft, signal) => {
+      const changes: { name?: string; description?: string | null } = {};
+      if (draft.name !== collection.name) changes.name = draft.name;
+      if (draft.description !== (collection.description ?? "")) {
+        changes.description = draft.description || null;
+      }
+      if (!Object.keys(changes).length) return Promise.resolve(collection);
+      return updateCollection(collection.id, changes, signal);
+    },
+  );
+  const submit = (draft: CollectionDraft) => {
+    void mutation.mutate(draft).then(onUpdated).catch(() => undefined);
+  };
 
   return (
     <CollectionDialog
@@ -29,16 +47,18 @@ export function EditCollectionDialog({
       title="Edit collection"
     >
       <CollectionForm
-        collections={collections}
-        excludeCollectionId={collection.id}
         helperVariant="counts"
         idPrefix="edit"
         initialValues={{
           name: collection.name,
           description: collection.description ?? "",
         }}
+        isSubmitting={mutation.isPending}
         nameInputRef={nameInputRef}
-        onSubmit={(draft) => onUpdate(collection.id, draft)}
+        onChange={mutation.reset}
+        onSubmit={submit}
+        serverErrors={getCollectionFieldErrors(mutation.error)}
+        submissionError={getCollectionSubmissionError(mutation.error)}
         submitLabel="Save changes"
       />
     </CollectionDialog>

@@ -138,6 +138,13 @@
   color: var(--sw-color-validation-body);
 }
 
+.submissionError {
+  margin: calc(var(--sw-spacing-8) * -1) 0 0;
+  color: var(--sw-color-validation-body);
+  font-size: var(--sw-type-size-metadata);
+  line-height: var(--sw-type-line-height-metadata);
+}
+
 .footer {
   display: flex;
   width: 100%;

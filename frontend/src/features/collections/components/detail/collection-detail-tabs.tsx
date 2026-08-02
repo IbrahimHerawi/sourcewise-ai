@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type {
-  CollectionDetail,
   CollectionDetailTab,
 } from "@/features/collections/collection-detail-types";
 import styles from "./collection-detail.module.css";
@@ -9,15 +8,17 @@ import styles from "./collection-detail.module.css";
 type CollectionDetailTabsProps = {
   activeTab: CollectionDetailTab;
   children: ReactNode;
-  collection: CollectionDetail;
+  documentTotal: number;
   onTabChange: (tab: CollectionDetailTab) => void;
+  questionTotal: number;
 };
 
 export function CollectionDetailTabs({
   activeTab,
   children,
-  collection,
+  documentTotal,
   onTabChange,
+  questionTotal,
 }: CollectionDetailTabsProps) {
   return (
     <Tabs
@@ -27,20 +28,20 @@ export function CollectionDetailTabs({
     >
       <TabsList aria-label="Collection sections" className={styles.tabList}>
         <TabsTrigger
-          aria-label={`Documents ${collection.documentTotal}`}
+          aria-label={`Documents ${documentTotal}`}
           className={styles.tab}
           value="documents"
         >
           <span>Documents</span>
-          <span className={styles.tabCount}>{collection.documentTotal}</span>
+          <span className={styles.tabCount}>{documentTotal.toLocaleString()}</span>
         </TabsTrigger>
         <TabsTrigger
-          aria-label={`History ${collection.questionTotal}`}
+          aria-label={`History ${questionTotal}`}
           className={styles.tab}
           value="history"
         >
           <span>History</span>
-          <span className={styles.tabCount}>{collection.questionTotal}</span>
+          <span className={styles.tabCount}>{questionTotal.toLocaleString()}</span>
         </TabsTrigger>
       </TabsList>
       <TabsContent className={styles.tabContent} value="documents">

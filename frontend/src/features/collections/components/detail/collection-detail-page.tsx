@@ -1,96 +1,126 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useAuth } from "@/hooks/use-auth";
+import { ApiError, getApiErrorMessage } from "@/lib/api";
 import { useDashboardHeader } from "@/features/dashboard/components/dashboard-header-context";
 import { resolveDashboardBackHref } from "@/features/dashboard/navigation";
-import type { CollectionDraft } from "@/features/collections/collection-validation";
+import type { CollectionDetailTab } from "@/features/collections/collection-detail-types";
 import type {
-  CollectionDetail,
-  CollectionDetailTab,
-  CollectionDetailViewState,
-} from "@/features/collections/collection-detail-types";
-import type { Collection } from "@/features/collections/collection-types";
+  CollectionDocument,
+  QuestionHistoryItem,
+} from "@/features/collections/collections-api-types";
 import { useCollectionsDialog } from "@/features/collections/hooks/use-collections-dialog";
 import {
-  createCollectionDetailState,
-  createTabState,
-  type CollectionDetailPreview,
-} from "@/features/collections/mock-collection-detail";
-import { mockCollections } from "@/features/collections/mock-collections";
-import { CollectionsDialogs } from "../dialogs/collections-dialogs";
+  useCollectionDocuments,
+  useCollectionHistory,
+  useCollectionRecord,
+} from "@/features/collections/hooks/use-collections-api";
 import { CollectionButton } from "../collection-button";
+import { CollectionsDialogs } from "../dialogs/collections-dialogs";
 import { CollectionDetailContent } from "./collection-detail-content";
 import { CollectionDetailLayout } from "./collection-detail-layout";
 import {
   CollectionDetailErrorState,
   CollectionDetailSkeleton,
 } from "./collection-detail-states";
+import {
+  DeleteDocumentDialog,
+  DocumentDetailsDialog,
+} from "./document-dialogs";
+import {
+  DeleteHistoryDialog,
+  HistoryDetailsDialog,
+} from "./history-dialogs";
+import { UploadCollectionDialog } from "./upload-collection-dialog";
 
 type CollectionDetailPageProps = {
   collectionId: string;
-  initialPreview: CollectionDetailPreview;
+  initialTab?: CollectionDetailTab;
 };
 
-function stateCollection(state: CollectionDetailViewState) {
-  return "collection" in state ? state.collection : undefined;
-}
+type DocumentDialogState =
+  | { type: "details"; document: CollectionDocument }
+  | { type: "delete"; document: CollectionDocument }
+  | null;
 
-function updateStateCollection(
-  state: CollectionDetailViewState,
-  update: (collection: CollectionDetail) => CollectionDetail,
-): CollectionDetailViewState {
-  return "collection" in state
-    ? { ...state, collection: update(state.collection) }
-    : state;
-}
+type HistoryDialogState =
+  | { type: "details"; item: QuestionHistoryItem }
+  | { type: "delete"; item: QuestionHistoryItem }
+  | null;
+
+const PAGE_SIZE = 20;
+const PROCESSING_POLL_INTERVAL_MS = 2_500;
 
 export function CollectionDetailPage({
   collectionId,
-  initialPreview,
+  initialTab = "documents",
 }: CollectionDetailPageProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { logout } = useAuth();
   const fallbackFocusRef = useRef<HTMLButtonElement>(null);
-  const [viewState, setViewState] = useState<CollectionDetailViewState>(() =>
-    createCollectionDetailState(collectionId, initialPreview),
+  const [activeTab, setActiveTab] = useState<CollectionDetailTab>(initialTab);
+  const [documentPage, setDocumentPage] = useState(1);
+  const [historyPage, setHistoryPage] = useState(1);
+  const [documentDialog, setDocumentDialog] = useState<DocumentDialogState>(null);
+  const [historyDialog, setHistoryDialog] = useState<HistoryDialogState>(null);
+  const [showUpload, setShowUpload] = useState(false);
+  const collectionRequest = useCollectionRecord(collectionId);
+  const documentsRequest = useCollectionDocuments(
+    collectionId,
+    PAGE_SIZE,
+    (documentPage - 1) * PAGE_SIZE,
+  );
+  const historyRequest = useCollectionHistory(
+    collectionId,
+    PAGE_SIZE,
+    (historyPage - 1) * PAGE_SIZE,
   );
   const { closeDialog, dialog, openDialog } = useCollectionsDialog({
     fallbackFocusRef,
     initialDialog: null,
   });
-  const collection = stateCollection(viewState);
+
+  const requests = [collectionRequest, documentsRequest, historyRequest] as const;
+  const firstError = requests.find((request) => request.status === "error");
+
+  useEffect(() => {
+    if (firstError?.status === "error" && firstError.error instanceof ApiError) {
+      if (firstError.error.status === 401) logout();
+    }
+  }, [firstError, logout]);
+
+  useEffect(() => {
+    if (
+      documentsRequest.status !== "success" ||
+      !documentsRequest.data.items.some((document) =>
+        document.status === "PENDING" || document.status === "PROCESSING"
+      )
+    ) {
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      void documentsRequest.refetch({ silent: true }).catch(() => undefined);
+    }, PROCESSING_POLL_INTERVAL_MS);
+    return () => window.clearTimeout(timer);
+  }, [documentsRequest]);
+
   const backHref = resolveDashboardBackHref(
     searchParams?.get("returnTo"),
     "/dashboard/collections",
   );
-  const validationCollections: readonly Collection[] = collection
-    ? [collection, ...mockCollections.filter((item) => item.id !== collection.id)]
-    : mockCollections;
-
-  const handleTabChange = (tab: CollectionDetailTab) => {
-    if (!collection) return;
-    setViewState(createTabState(collection, tab));
-    const nextSearchParams = new URLSearchParams(searchParams?.toString());
-    nextSearchParams.set("tab", tab);
-    router.replace(`/dashboard/collections/${collection.id}?${nextSearchParams}`, {
-      scroll: false,
-    });
-  };
-
-  const handleUpload = useCallback(() => {
-    if (!collection) return;
-    router.push(`/dashboard/documents?collectionId=${collection.id}`);
-  }, [collection, router]);
+  const collection = collectionRequest.status === "success" ? collectionRequest.data : undefined;
 
   const headerActions = useMemo(
     () =>
       collection ? (
-        <CollectionButton onClick={handleUpload} shape="pill">
+        <CollectionButton onClick={() => setShowUpload(true)} shape="pill">
           Upload to collection
         </CollectionButton>
       ) : undefined,
-    [collection, handleUpload],
+    [collection],
   );
   const headerConfiguration = useMemo(
     () => ({ actions: headerActions, title: collection?.name ?? "Collection" }),
@@ -98,32 +128,24 @@ export function CollectionDetailPage({
   );
   useDashboardHeader(headerConfiguration);
 
-  const handleUpdate = (id: string, draft: CollectionDraft) => {
-    setViewState((current) =>
-      updateStateCollection(current, (item) =>
-        item.id === id
-          ? {
-              ...item,
-              name: draft.name,
-              description: draft.description || undefined,
-              updated: "Updated just now",
-            }
-          : item,
-      ),
-    );
-    closeDialog();
+  const refetchAll = useCallback(() => {
+    void Promise.allSettled([
+      collectionRequest.refetch(),
+      documentsRequest.refetch(),
+      historyRequest.refetch(),
+    ]);
+  }, [collectionRequest, documentsRequest, historyRequest]);
+
+  const handleTabChange = (tab: CollectionDetailTab) => {
+    setActiveTab(tab);
+    const nextSearchParams = new URLSearchParams(searchParams?.toString());
+    nextSearchParams.set("tab", tab);
+    router.replace(`/dashboard/collections/${collectionId}?${nextSearchParams}`, {
+      scroll: false,
+    });
   };
 
-  const handleDelete = () => {
-    setViewState({ status: "not-found" });
-    closeDialog();
-  };
-
-  const handleRetry = () => {
-    setViewState(createCollectionDetailState(collectionId, "documents"));
-  };
-
-  if (viewState.status === "loading") {
+  if (requests.some((request) => request.status === "loading")) {
     return (
       <CollectionDetailLayout>
         <CollectionDetailSkeleton />
@@ -131,47 +153,103 @@ export function CollectionDetailPage({
     );
   }
 
-  if (viewState.status === "not-found" || viewState.status === "server-error") {
+  if (firstError?.status === "error") {
+    const status = firstError.error instanceof ApiError ? firstError.error.status : 0;
+    const kind = status === 404 ? "not-found" : status === 403 ? "forbidden" : "server-error";
     return (
       <CollectionDetailLayout>
         <CollectionDetailErrorState
-          kind={viewState.status}
-          onAction={
-            viewState.status === "not-found"
-              ? () => router.push(backHref)
-              : handleRetry
+          description={
+            kind === "server-error"
+              ? getApiErrorMessage(firstError.error, "The collection could not be loaded. Try again.")
+              : undefined
           }
+          kind={kind}
+          onAction={kind === "server-error" ? refetchAll : () => router.push(backHref)}
         />
       </CollectionDetailLayout>
     );
   }
 
-  const resolvedCollection = viewState.collection;
-  const handleAsk = () =>
-    router.push(`/dashboard/ask-question?collectionId=${resolvedCollection.id}`);
+  if (
+    collectionRequest.status !== "success" ||
+    documentsRequest.status !== "success" ||
+    historyRequest.status !== "success"
+  ) {
+    return null;
+  }
+
+  const resolvedCollection = collectionRequest.data;
+  const closeDocumentDialog = () => setDocumentDialog(null);
+  const closeHistoryDialog = () => setHistoryDialog(null);
 
   return (
     <CollectionDetailLayout>
       <CollectionDetailContent
-        onAsk={handleAsk}
-        onDelete={(opener) =>
-          openDialog({ type: "delete", collection: resolvedCollection }, opener)
-        }
-        onEdit={(opener) =>
-          openDialog({ type: "edit", collection: resolvedCollection }, opener)
-        }
+        activeTab={activeTab}
+        documentPage={documentPage}
+        documents={documentsRequest.data}
+        history={historyRequest.data}
+        historyPage={historyPage}
+        onAsk={() => router.push(`/dashboard/ask-question?collectionId=${resolvedCollection.id}`)}
+        onDelete={(opener) => openDialog({ type: "delete", collection: resolvedCollection }, opener)}
+        onDeleteDocument={(document) => setDocumentDialog({ type: "delete", document })}
+        onDeleteHistory={(item) => setHistoryDialog({ type: "delete", item })}
+        onDocumentPageChange={setDocumentPage}
+        onEdit={(opener) => openDialog({ type: "edit", collection: resolvedCollection }, opener)}
+        onHistoryPageChange={setHistoryPage}
         onTabChange={handleTabChange}
-        onUpload={handleUpload}
-        state={viewState}
+        onUpload={() => setShowUpload(true)}
+        onViewDocument={(document) => setDocumentDialog({ type: "details", document })}
+        onViewHistory={(item) => setHistoryDialog({ type: "details", item })}
       />
       <CollectionsDialogs
-        collections={validationCollections}
         dialog={dialog}
         onClose={closeDialog}
-        onCreate={() => undefined}
-        onDelete={handleDelete}
-        onUpdate={handleUpdate}
+        onCreated={() => undefined}
+        onDeleted={() => router.push("/dashboard/collections")}
+        onUpdated={() => {
+          closeDialog();
+          void collectionRequest.refetch().catch(() => undefined);
+        }}
       />
+      {showUpload ? (
+        <UploadCollectionDialog
+          collectionId={collectionId}
+          onClose={() => setShowUpload(false)}
+          onUploaded={() => {
+            setShowUpload(false);
+            setDocumentPage(1);
+            void documentsRequest.refetch().catch(() => undefined);
+          }}
+        />
+      ) : null}
+      {documentDialog?.type === "details" ? (
+        <DocumentDetailsDialog documentId={documentDialog.document.id} onClose={closeDocumentDialog} />
+      ) : null}
+      {documentDialog?.type === "delete" ? (
+        <DeleteDocumentDialog
+          document={documentDialog.document}
+          onClose={closeDocumentDialog}
+          onDeleted={() => {
+            closeDocumentDialog();
+            void documentsRequest.refetch().catch(() => undefined);
+          }}
+        />
+      ) : null}
+      {historyDialog?.type === "details" ? (
+        <HistoryDetailsDialog questionId={historyDialog.item.question_id} onClose={closeHistoryDialog} />
+      ) : null}
+      {historyDialog?.type === "delete" ? (
+        <DeleteHistoryDialog
+          item={historyDialog.item}
+          onClose={closeHistoryDialog}
+          onDeleted={() => {
+            closeHistoryDialog();
+            void historyRequest.refetch().catch(() => undefined);
+          }}
+        />
+      ) : null}
     </CollectionDetailLayout>
   );
 }

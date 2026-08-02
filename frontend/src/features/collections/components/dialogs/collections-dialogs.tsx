@@ -1,28 +1,25 @@
 "use client";
 
-import type { CollectionDraft } from "@/features/collections/collection-validation";
 import type { CollectionsDialogState } from "@/features/collections/collection-dialog-state";
-import type { Collection } from "@/features/collections/collection-types";
+import type { CollectionApiRecord } from "@/features/collections/collections-api-types";
 import { CreateCollectionDialog } from "./create-collection-dialog";
 import { DeleteCollectionDialog } from "./delete-collection-dialog";
 import { EditCollectionDialog } from "./edit-collection-dialog";
 
 type CollectionsDialogsProps = {
-  collections: readonly Collection[];
   dialog: CollectionsDialogState | null;
   onClose: () => void;
-  onCreate: (draft: CollectionDraft) => void;
-  onDelete: (collectionId: string) => void;
-  onUpdate: (collectionId: string, draft: CollectionDraft) => void;
+  onCreated: (collection: CollectionApiRecord) => void;
+  onDeleted: (collectionId: string) => void;
+  onUpdated: (collection: CollectionApiRecord) => void;
 };
 
 export function CollectionsDialogs({
-  collections,
   dialog,
   onClose,
-  onCreate,
-  onDelete,
-  onUpdate,
+  onCreated,
+  onDeleted,
+  onUpdated,
 }: CollectionsDialogsProps) {
   if (!dialog) {
     return null;
@@ -31,12 +28,8 @@ export function CollectionsDialogs({
   if (dialog.type === "create") {
     return (
       <CreateCollectionDialog
-        collections={collections}
-        initialDescription={dialog.initialDescription}
-        initialName={dialog.initialName}
-        initialNameError={dialog.initialNameError}
         onClose={onClose}
-        onCreate={onCreate}
+        onCreated={onCreated}
       />
     );
   }
@@ -45,10 +38,9 @@ export function CollectionsDialogs({
     return (
       <EditCollectionDialog
         collection={dialog.collection}
-        collections={collections}
         key={dialog.collection.id}
         onClose={onClose}
-        onUpdate={onUpdate}
+        onUpdated={onUpdated}
       />
     );
   }
@@ -57,7 +49,7 @@ export function CollectionsDialogs({
     <DeleteCollectionDialog
       collection={dialog.collection}
       onClose={onClose}
-      onDelete={onDelete}
+      onDeleted={onDeleted}
     />
   );
 }

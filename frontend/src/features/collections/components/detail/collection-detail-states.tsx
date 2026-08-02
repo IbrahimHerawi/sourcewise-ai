@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { CircleAlert, FileUp, MessageCircleQuestion, TriangleAlert, X } from "lucide-react";
+import { CircleAlert, FileUp, MessageCircleQuestion } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { CollectionButton } from "../collection-button";
@@ -49,16 +49,14 @@ export function CollectionDetailEmptyState({ onUpload }: { onUpload: () => void 
 }
 
 export function NoQuestionHistoryState({
-  canAsk,
   onAsk,
 }: {
-  canAsk: boolean;
   onAsk: () => void;
 }) {
   return (
     <CollectionDetailStateCard
       action={
-        <CollectionButton disabled={!canAsk} onClick={onAsk}>
+        <CollectionButton onClick={onAsk}>
           Ask this collection
         </CollectionButton>
       }
@@ -70,51 +68,35 @@ export function NoQuestionHistoryState({
   );
 }
 
-export function NoReadyDocumentsWarning({
-  onDismiss,
-}: {
-  onDismiss: () => void;
-}) {
-  return (
-    <aside className={styles.warning} role="status">
-      <TriangleAlert aria-hidden="true" />
-      <p>No ready documents. Processing must finish before you can ask this collection.</p>
-      <button
-        aria-label="Dismiss processing warning"
-        className={styles.warningDismiss}
-        onClick={onDismiss}
-        type="button"
-      >
-        <X aria-hidden="true" />
-      </button>
-    </aside>
-  );
-}
-
 export function CollectionDetailErrorState({
+  description,
   kind,
   onAction,
 }: {
-  kind: "not-found" | "server-error";
+  description?: string;
+  kind: "not-found" | "forbidden" | "server-error";
   onAction: () => void;
 }) {
   const notFound = kind === "not-found";
+  const forbidden = kind === "forbidden";
   return (
     <div className={styles.errorStatePosition}>
       <CollectionDetailStateCard
         action={
           <CollectionButton onClick={onAction} tone="solid-danger">
-            {notFound ? "Back to Collections" : "Try again"}
+            {notFound || forbidden ? "Back to Collections" : "Try again"}
           </CollectionButton>
         }
         description={
-          notFound
+          description ?? (notFound
             ? "The collection may have been deleted or the link may be outdated."
-            : "A server error prevented this collection from loading. Try again."
+            : forbidden
+              ? "Your account cannot access Collections."
+              : "A server error prevented this collection from loading. Try again.")
         }
         icon={<CircleAlert aria-hidden="true" />}
         id={`collection-${kind}-title`}
-        title={notFound ? "Collection not found" : "Collection couldn’t load"}
+        title={notFound ? "Collection not found" : forbidden ? "Access unavailable" : "Collection couldn’t load"}
         tone="error"
       />
     </div>

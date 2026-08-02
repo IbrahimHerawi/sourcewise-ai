@@ -1,17 +1,20 @@
 import Link from "next/link";
 import { Skeleton } from "@/components/ui/skeleton";
 import { appendDashboardReturnTo } from "@/features/dashboard/navigation";
-import type { Collection } from "@/features/collections/collection-types";
+import type { CollectionApiRecord } from "@/features/collections/collections-api-types";
+import { formatDateTime } from "@/features/collections/collection-formatters";
 import { CollectionButton } from "./collection-button";
 import styles from "./collection-list.module.css";
 
 type CollectionAction = (
-  collection: Collection,
+  collection: CollectionApiRecord,
   opener: HTMLButtonElement,
 ) => void;
 
 type CollectionListProps = {
-  collections: readonly Collection[];
+  collections: readonly CollectionApiRecord[];
+  currentPage: number;
+  onPageChange: (page: number) => void;
   onDelete: CollectionAction;
   onEdit: CollectionAction;
   returnTo: string;
@@ -23,7 +26,7 @@ function CollectionRow({
   onEdit,
   returnTo,
 }: {
-  collection: Collection;
+  collection: CollectionApiRecord;
   onDelete: CollectionAction;
   onEdit: CollectionAction;
   returnTo: string;
@@ -63,9 +66,9 @@ function CollectionRow({
           </div>
         </div>
         <div className={styles.metadata}>
-          <span>{collection.created}</span>
+          <span>Created {formatDateTime(collection.created_at)}</span>
           <span aria-hidden="true">•</span>
-          <span>{collection.updated}</span>
+          <span>Updated {formatDateTime(collection.updated_at)}</span>
         </div>
       </article>
     </li>
@@ -74,10 +77,13 @@ function CollectionRow({
 
 export function CollectionsList({
   collections,
+  currentPage,
   onDelete,
   onEdit,
+  onPageChange,
+  pageCount,
   returnTo,
-}: CollectionListProps) {
+}: CollectionListProps & { pageCount: number }) {
   return (
     <>
       <ul className={styles.collectionList}>
@@ -92,10 +98,23 @@ export function CollectionsList({
         ))}
       </ul>
       <nav aria-label="Collections pagination" className={styles.pagination}>
-        <p>Showing 1–20 of 47</p>
+        <p>
+          Page {currentPage.toLocaleString()} of {pageCount.toLocaleString()}
+        </p>
         <div className={styles.paginationControls}>
-          <CollectionButton tone="secondary">Previous</CollectionButton>
-          <CollectionButton>Next</CollectionButton>
+          <CollectionButton
+            disabled={currentPage <= 1}
+            onClick={() => onPageChange(currentPage - 1)}
+            tone="secondary"
+          >
+            Previous
+          </CollectionButton>
+          <CollectionButton
+            disabled={currentPage >= pageCount}
+            onClick={() => onPageChange(currentPage + 1)}
+          >
+            Next
+          </CollectionButton>
         </div>
       </nav>
     </>

@@ -1,37 +1,42 @@
-import { FileText, MoreHorizontal, Trash2 } from "lucide-react";
+import { FileText, Info, MoreHorizontal, Trash2 } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import type {
-  CollectionDocument,
-  DocumentStatus,
-} from "@/features/collections/collection-detail-types";
+import type { CollectionDocument, DocumentStatus } from "@/features/collections/collections-api-types";
+import { formatFileSize, formatRelativeDate } from "@/features/collections/collection-formatters";
+import {
+  DOCUMENT_STATUS_PRESENTATION,
+  safeDocumentFailureMessage,
+} from "@/features/collections/document-status";
 import { cn } from "@/lib/utils";
 import styles from "./collection-detail.module.css";
 
-const statusLabels = {
-  ready: "Ready",
-  processing: "Processing",
-  pending: "Pending",
-} as const satisfies Record<DocumentStatus, string>;
-
 export function DocumentStatusBadge({ status }: { status: DocumentStatus }) {
+  const presentation = DOCUMENT_STATUS_PRESENTATION[status];
   return (
-    <span className={cn(styles.statusBadge, styles[`status-${status}`])}>
-      {statusLabels[status]}
+    <span className={cn(styles.statusBadge, styles[`status-${presentation.tone}`])}>
+      {presentation.label}
     </span>
   );
 }
 
-function DocumentOverflow({ documentName }: { documentName: string }) {
+function DocumentOverflow({
+  document,
+  onDelete,
+  onViewDetails,
+}: {
+  document: CollectionDocument;
+  onDelete: (document: CollectionDocument) => void;
+  onViewDetails: (document: CollectionDocument) => void;
+}) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button
-          aria-label={`Actions for ${documentName}`}
+          aria-label={`Actions for ${document.filename}`}
           className={styles.iconButton}
           type="button"
         >
@@ -39,10 +44,16 @@ function DocumentOverflow({ documentName }: { documentName: string }) {
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className={styles.documentMenu}>
-        <DropdownMenuItem>View details</DropdownMenuItem>
-        <DropdownMenuItem variant="destructive">
+        <DropdownMenuItem onSelect={() => onViewDetails(document)}>
+          <Info aria-hidden="true" />
+          View details
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onSelect={() => onDelete(document)}
+          variant="destructive"
+        >
           <Trash2 aria-hidden="true" />
-          Remove from collection
+          Delete document
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
@@ -51,35 +62,35 @@ function DocumentOverflow({ documentName }: { documentName: string }) {
 
 export function CollectionDocumentRow({
   document,
+  onDelete,
+  onViewDetails,
 }: {
   document: CollectionDocument;
+  onDelete: (document: CollectionDocument) => void;
+  onViewDetails: (document: CollectionDocument) => void;
 }) {
-  const isQueued = document.status !== "ready";
-
   return (
     <li>
-      <article className={cn(styles.documentRow, isQueued && styles.queuedRow)}>
+      <article className={styles.documentRow}>
         <FileText aria-hidden="true" className={styles.documentIcon} />
         <div className={styles.documentInformation}>
-          <h3 className={cn(isQueued && styles.queuedDocumentName)}>
-            {document.name}
-          </h3>
-          <p>{document.metadata}</p>
-          {document.status === "processing" && document.progress !== undefined ? (
-            <div
-              aria-label={`${document.progress}% processed`}
-              aria-valuemax={100}
-              aria-valuemin={0}
-              aria-valuenow={document.progress}
-              className={styles.progressTrack}
-              role="progressbar"
-            >
-              <span style={{ width: `${document.progress}%` }} />
-            </div>
+          <h3>{document.filename}</h3>
+          <p>
+            {document.original_extension.replace(/^\./, "").toUpperCase()} ·{" "}
+            {formatFileSize(document.size_bytes)} · Updated {formatRelativeDate(document.updated_at)}
+          </p>
+          {document.status === "FAILED" ? (
+            <p className={styles.documentFailure}>
+              {safeDocumentFailureMessage(document.error_message)}
+            </p>
           ) : null}
         </div>
         <DocumentStatusBadge status={document.status} />
-        <DocumentOverflow documentName={document.name} />
+        <DocumentOverflow
+          document={document}
+          onDelete={onDelete}
+          onViewDetails={onViewDetails}
+        />
       </article>
     </li>
   );
@@ -87,13 +98,22 @@ export function CollectionDocumentRow({
 
 export function CollectionDocumentList({
   documents,
+  onDelete,
+  onViewDetails,
 }: {
   documents: readonly CollectionDocument[];
+  onDelete: (document: CollectionDocument) => void;
+  onViewDetails: (document: CollectionDocument) => void;
 }) {
   return (
     <ul className={styles.documentList}>
       {documents.map((document) => (
-        <CollectionDocumentRow document={document} key={document.id} />
+        <CollectionDocumentRow
+          document={document}
+          key={document.id}
+          onDelete={onDelete}
+          onViewDetails={onViewDetails}
+        />
       ))}
     </ul>
   );

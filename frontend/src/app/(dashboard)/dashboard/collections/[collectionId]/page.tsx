@@ -1,8 +1,5 @@
 import { CollectionDetailPage } from "@/features/collections/components/detail/collection-detail-page";
-import {
-  parseCollectionDetailPreview,
-  parseCollectionDetailTab,
-} from "@/features/collections/mock-collection-detail";
+import { parseCollectionDetailTab } from "@/features/collections/collection-detail-types";
 
 type CollectionDetailRouteProps = {
   params: Promise<{ collectionId: string }>;
@@ -19,13 +16,10 @@ export default async function CollectionDetailRoute({
 }: CollectionDetailRouteProps) {
   const [{ collectionId }, query] = await Promise.all([params, searchParams]);
   const tab = parseCollectionDetailTab(firstValue(query.tab));
-  const previewValue =
-    process.env.NODE_ENV === "production" ? undefined : firstValue(query.state);
-
   return (
     <CollectionDetailPage
       collectionId={collectionId}
-      initialPreview={parseCollectionDetailPreview(previewValue, tab)}
+      initialTab={tab}
     />
   );
 }

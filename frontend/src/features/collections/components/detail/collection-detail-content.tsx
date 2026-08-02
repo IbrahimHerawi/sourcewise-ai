@@ -1,8 +1,11 @@
-import { useState } from "react";
 import type {
   CollectionDetailTab,
-  ResolvedCollectionDetailState,
 } from "@/features/collections/collection-detail-types";
+import type {
+  CollectionDocument,
+  PaginatedResponse,
+  QuestionHistoryItem,
+} from "@/features/collections/collections-api-types";
 import { formatResultRange } from "@/features/collections/collection-detail-utils";
 import { CollectionDetailTabs } from "./collection-detail-tabs";
 import { CollectionDocumentList } from "./collection-document-list";
@@ -13,99 +16,107 @@ import { CollectionSummary } from "./collection-summary";
 import {
   CollectionDetailEmptyState,
   NoQuestionHistoryState,
-  NoReadyDocumentsWarning,
 } from "./collection-detail-states";
 import styles from "./collection-detail.module.css";
 
 type CollectionDetailContentProps = {
   onAsk: () => void;
+  documents: PaginatedResponse<CollectionDocument>;
+  documentPage: number;
+  history: PaginatedResponse<QuestionHistoryItem>;
+  historyPage: number;
   onDelete: (opener: HTMLButtonElement) => void;
+  onDeleteDocument: (document: CollectionDocument) => void;
+  onDeleteHistory: (item: QuestionHistoryItem) => void;
   onEdit: (opener: HTMLButtonElement) => void;
+  onDocumentPageChange: (page: number) => void;
+  onHistoryPageChange: (page: number) => void;
   onTabChange: (tab: CollectionDetailTab) => void;
   onUpload: () => void;
-  state: ResolvedCollectionDetailState;
+  onViewDocument: (document: CollectionDocument) => void;
+  onViewHistory: (item: QuestionHistoryItem) => void;
+  activeTab: CollectionDetailTab;
 };
 
 const PAGE_SIZE = 20;
 
 export function CollectionDetailContent({
+  activeTab,
+  documents,
+  documentPage,
+  history,
+  historyPage,
   onAsk,
   onDelete,
+  onDeleteDocument,
+  onDeleteHistory,
   onEdit,
+  onDocumentPageChange,
+  onHistoryPageChange,
   onTabChange,
   onUpload,
-  state,
+  onViewDocument,
+  onViewHistory,
 }: CollectionDetailContentProps) {
-  const [documentPage, setDocumentPage] = useState(2);
-  const [historyPage, setHistoryPage] = useState(2);
-  const [showWarning, setShowWarning] = useState(true);
-  const { collection } = state;
-  const activeTab: CollectionDetailTab =
-    state.status === "history" || state.status === "no-question-history"
-      ? "history"
-      : "documents";
-
   let content;
-  if (state.status === "history") {
-    const pageCount = Math.ceil(collection.questionTotal / PAGE_SIZE);
-    content = (
-      <>
-        <CollectionSectionHeader
-          countLabel={`Showing ${formatResultRange(historyPage, PAGE_SIZE, collection.questionTotal)} of ${collection.questionTotal}`}
-          title="Question history"
-        />
-        <CollectionHistoryList items={collection.history} />
-        <CollectionPagination
-          currentPage={historyPage}
-          onPageChange={setHistoryPage}
-          pageCount={pageCount}
-        />
-      </>
-    );
-  } else if (state.status === "no-question-history") {
-    content = (
-      <>
-        <CollectionSectionHeader countLabel="0 questions" title="Question history" />
-        <NoQuestionHistoryState
-          canAsk={collection.readyDocumentCount > 0}
-          onAsk={onAsk}
-        />
-      </>
-    );
-  } else if (state.status === "empty") {
+  if (activeTab === "history") {
+    const pageCount = Math.max(1, Math.ceil(history.total / history.limit));
+    if (history.items.length === 0) {
+      content = (
+        <>
+          <CollectionSectionHeader countLabel="0 questions" title="Question history" />
+          <NoQuestionHistoryState onAsk={onAsk} />
+        </>
+      );
+    } else {
+      content = (
+        <>
+          <CollectionSectionHeader
+            countLabel={`Showing ${formatResultRange(historyPage, PAGE_SIZE, history.total)} of ${history.total}`}
+            title="Question history"
+          />
+          <CollectionHistoryList
+            items={history.items}
+            onDelete={onDeleteHistory}
+            onViewDetails={onViewHistory}
+          />
+          {pageCount > 1 ? (
+            <CollectionPagination
+              currentPage={historyPage}
+              onPageChange={onHistoryPageChange}
+              pageCount={pageCount}
+            />
+          ) : null}
+        </>
+      );
+    }
+  } else if (documents.items.length === 0) {
     content = (
       <>
         <CollectionSectionHeader countLabel="0 documents" title="Documents" />
         <CollectionDetailEmptyState onUpload={onUpload} />
       </>
     );
-  } else if (state.status === "no-ready-documents") {
-    content = (
-      <>
-        <CollectionSectionHeader
-          countLabel={`${collection.documentTotal} documents · ${collection.readyDocumentCount} ready`}
-          title="Documents"
-        />
-        {showWarning ? (
-          <NoReadyDocumentsWarning onDismiss={() => setShowWarning(false)} />
-        ) : null}
-        <CollectionDocumentList documents={collection.documents} />
-      </>
-    );
   } else {
-    const pageCount = Math.ceil(collection.documentTotal / PAGE_SIZE);
+    const pageCount = Math.max(1, Math.ceil(documents.total / documents.limit));
     content = (
       <>
         <CollectionSectionHeader
-          countLabel={`Showing ${formatResultRange(documentPage, PAGE_SIZE, collection.documentTotal)} of ${collection.documentTotal}`}
+          countLabel={`Showing ${formatResultRange(documentPage, PAGE_SIZE, documents.total)} of ${documents.total}`}
           title="Documents"
         />
-        <CollectionDocumentList documents={collection.documents} />
-        <CollectionPagination
-          currentPage={documentPage}
-          onPageChange={setDocumentPage}
-          pageCount={pageCount}
+        <CollectionDocumentList
+          documents={documents.items}
+          onDelete={onDeleteDocument}
+          onViewDetails={onViewDocument}
         />
+        {pageCount > 1 ? (
+          <CollectionPagination
+            currentPage={documentPage}
+            onPageChange={onDocumentPageChange}
+            pageCount={pageCount}
+          />
+        ) : null}
       </>
     );
   }
@@ -113,15 +124,17 @@ export function CollectionDetailContent({
   return (
     <>
       <CollectionSummary
-        collection={collection}
+        documentTotal={documents.total}
         onAsk={onAsk}
         onDelete={onDelete}
         onEdit={onEdit}
+        questionTotal={history.total}
       />
       <CollectionDetailTabs
         activeTab={activeTab}
-        collection={collection}
+        documentTotal={documents.total}
         onTabChange={onTabChange}
+        questionTotal={history.total}
       >
         <div className={styles.tabPanel}>{content}</div>
       </CollectionDetailTabs>

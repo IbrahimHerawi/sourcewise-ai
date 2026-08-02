@@ -1,31 +1,30 @@
-import type { CollectionDetail } from "@/features/collections/collection-detail-types";
 import { CollectionButton } from "../collection-button";
 import styles from "./collection-detail.module.css";
 
 type CollectionSummaryProps = {
-  collection: CollectionDetail;
+  documentTotal: number;
+  questionTotal: number;
   onAsk: () => void;
   onDelete: (opener: HTMLButtonElement) => void;
   onEdit: (opener: HTMLButtonElement) => void;
 };
 
 export function CollectionSummary({
-  collection,
+  documentTotal,
   onAsk,
   onDelete,
   onEdit,
+  questionTotal,
 }: CollectionSummaryProps) {
-  const canAsk = collection.readyDocumentCount > 0;
-
   return (
     <section aria-label="Collection summary" className={styles.summary}>
       <dl className={styles.metrics}>
         <div className={styles.metric}>
-          <dd>{collection.documentTotal}</dd>
+          <dd>{documentTotal.toLocaleString()}</dd>
           <dt>Documents</dt>
         </div>
         <div className={styles.metric}>
-          <dd>{collection.questionTotal}</dd>
+          <dd>{questionTotal.toLocaleString()}</dd>
           <dt>Questions</dt>
         </div>
       </dl>
@@ -44,7 +43,7 @@ export function CollectionSummary({
         >
           Edit
         </CollectionButton>
-        <CollectionButton disabled={!canAsk} onClick={onAsk} shape="pill">
+        <CollectionButton onClick={onAsk} shape="pill">
           Ask this collection
         </CollectionButton>
       </div>

@@ -8,7 +8,6 @@ import {
   type CollectionDraft,
   type CollectionFieldErrors,
 } from "@/features/collections/collection-validation";
-import type { Collection } from "@/features/collections/collection-types";
 import { CollectionButton } from "../collection-button";
 import styles from "../collection-dialogs.module.css";
 import {
@@ -18,26 +17,30 @@ import {
 import { CollectionFormField } from "./collection-form-field";
 
 type CollectionFormProps = {
-  collections: readonly Collection[];
-  excludeCollectionId?: string;
   helperVariant: "limits" | "counts";
   idPrefix: "create" | "edit";
   initialErrors?: CollectionFieldErrors;
   initialValues: CollectionDraft;
+  isSubmitting?: boolean;
   nameInputRef: RefObject<HTMLInputElement | null>;
+  onChange?: () => void;
   onSubmit: (draft: CollectionDraft) => void;
+  serverErrors?: CollectionFieldErrors;
+  submissionError?: string;
   submitLabel: string;
 };
 
 export function CollectionForm({
-  collections,
-  excludeCollectionId,
   helperVariant,
   idPrefix,
   initialErrors = {},
   initialValues,
+  isSubmitting = false,
   nameInputRef,
+  onChange,
   onSubmit,
+  serverErrors = {},
+  submissionError,
   submitLabel,
 }: CollectionFormProps) {
   const [draft, setDraft] = useState<CollectionDraft>(initialValues);
@@ -48,14 +51,12 @@ export function CollectionForm({
     (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
       setDraft((current) => ({ ...current, [field]: event.target.value }));
       setErrors((current) => ({ ...current, [field]: undefined }));
+      onChange?.();
     };
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const result = validateCollectionDraft(draft, {
-      collections,
-      excludeCollectionId,
-    });
+    const result = validateCollectionDraft(draft);
 
     if (!result.isValid) {
       setErrors(result.errors);
@@ -78,7 +79,8 @@ export function CollectionForm({
       <div className={styles.body}>
         <CollectionFormField
           controlRef={nameInputRef}
-          error={errors.name}
+          disabled={isSubmitting}
+          error={errors.name ?? serverErrors.name}
           helper={nameHelper}
           id={`${idPrefix}-collection-name`}
           label="Name"
@@ -88,7 +90,8 @@ export function CollectionForm({
           value={draft.name}
         />
         <CollectionFormField
-          error={errors.description}
+          disabled={isSubmitting}
+          error={errors.description ?? serverErrors.description}
           helper={descriptionHelper}
           id={`${idPrefix}-collection-description`}
           label="Description (optional)"
@@ -98,9 +101,16 @@ export function CollectionForm({
           value={draft.description}
         />
       </div>
+      {submissionError ? (
+        <p className={styles.submissionError} role="alert">
+          {submissionError}
+        </p>
+      ) : null}
       <CollectionDialogFooter>
-        <CollectionDialogCancel />
-        <CollectionButton type="submit">{submitLabel}</CollectionButton>
+        <CollectionDialogCancel disabled={isSubmitting} />
+        <CollectionButton disabled={isSubmitting} type="submit">
+          {isSubmitting ? "Saving…" : submitLabel}
+        </CollectionButton>
       </CollectionDialogFooter>
     </form>
   );

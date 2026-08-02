@@ -8,6 +8,7 @@ import styles from "../collection-dialogs.module.css";
 
 type CollectionFormFieldProps = {
   controlRef?: RefObject<HTMLInputElement | null>;
+  disabled?: boolean;
   error?: string;
   helper: string;
   id: string;
@@ -21,6 +22,7 @@ type CollectionFormFieldProps = {
 
 export function CollectionFormField({
   controlRef,
+  disabled = false,
   error,
   helper,
   id,
@@ -36,6 +38,7 @@ export function CollectionFormField({
     "aria-describedby": helperId,
     "aria-invalid": Boolean(error),
     id,
+    disabled,
     maxLength,
     onChange,
     required,

@@ -50,11 +50,17 @@ export function CollectionsLoadingState() {
   return <CollectionsListLoading />;
 }
 
-export function CollectionsErrorState({ onRetry }: { onRetry: () => void }) {
+export function CollectionsErrorState({
+  message = "A server error prevented collections from loading. Try again.",
+  onRetry,
+}: {
+  message?: string;
+  onRetry: () => void;
+}) {
   return (
     <CollectionsMessageState
       action={<CollectionButton onClick={onRetry}>Retry</CollectionButton>}
-      description="A server error prevented collections from loading. Try again."
+      description={message}
       icon={<CircleAlert aria-hidden="true" className={styles.stateIcon} />}
       id="collections-error-title"
       title="Collections couldn’t load"

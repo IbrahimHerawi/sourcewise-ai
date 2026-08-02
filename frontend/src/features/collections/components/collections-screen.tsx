@@ -2,70 +2,91 @@
 
 import {
   useCallback,
+  useEffect,
   useMemo,
   useRef,
+  useState,
   type MouseEvent,
 } from "react";
 import { Plus } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { useAuth } from "@/hooks/use-auth";
+import { ApiError } from "@/lib/api";
 import { DashboardPage } from "@/features/dashboard/components/dashboard-page";
 import { useDashboardHeader } from "@/features/dashboard/components/dashboard-header-context";
-import type { CollectionDraft } from "@/features/collections/collection-validation";
-import { createPreviewDialog } from "@/features/collections/collection-dialog-state";
 import { useCollectionsDialog } from "@/features/collections/hooks/use-collections-dialog";
-import { useMockCollections } from "@/features/collections/hooks/use-mock-collections";
-import {
-  mockCollections,
-  type CollectionsModalPreview,
-  type CollectionsPreview,
-} from "@/features/collections/mock-collections";
+import { useCollectionsPage } from "@/features/collections/hooks/use-collections-api";
 import { CollectionButton } from "./collection-button";
 import { CollectionsContent } from "./collections-content";
 import { CollectionsDialogs } from "./dialogs/collections-dialogs";
 import styles from "./collections-screen.module.css";
 
 type CollectionsScreenProps = {
-  initialModal?: CollectionsModalPreview;
-  initialPreview: CollectionsPreview;
-  returnTo?: string;
+  initialPage?: number;
 };
 
-export function CollectionsScreen({
-  initialModal,
-  initialPreview,
-  returnTo = "/dashboard/collections",
-}: CollectionsScreenProps) {
+const PAGE_SIZE = 20;
+
+export function CollectionsScreen({ initialPage = 1 }: CollectionsScreenProps) {
   const router = useRouter();
+  const { logout } = useAuth();
+  const [currentPage, setCurrentPage] = useState(initialPage);
   const headerActionRef = useRef<HTMLButtonElement>(null);
-  const {
-    createCollection,
-    deleteCollection,
-    restoreMockCollections,
-    updateCollection,
-    viewState,
-  } = useMockCollections(initialPreview);
-  const initialCollections =
-    viewState.status === "success" ? viewState.collections : mockCollections;
+  const requestState = useCollectionsPage(
+    PAGE_SIZE,
+    (currentPage - 1) * PAGE_SIZE,
+  );
   const { closeDialog, dialog, openDialog } = useCollectionsDialog({
     fallbackFocusRef: headerActionRef,
-    initialDialog: createPreviewDialog(initialModal, initialCollections),
+    initialDialog: null,
   });
-  const collections =
-    viewState.status === "success" ? viewState.collections : [];
 
-  const handleCreate = (draft: CollectionDraft) => {
-    createCollection(draft);
+  useEffect(() => {
+    if (requestState.status === "error" && requestState.error instanceof ApiError) {
+      if (requestState.error.status === 401) logout();
+    }
+  }, [logout, requestState.error, requestState.status]);
+
+  const changePage = useCallback(
+    (page: number) => {
+      const safePage = Math.max(1, page);
+      setCurrentPage(safePage);
+      router.replace(
+        safePage === 1 ? "/dashboard/collections" : `/dashboard/collections?page=${safePage}`,
+        { scroll: false },
+      );
+    },
+    [router],
+  );
+
+  useEffect(() => {
+    if (requestState.status !== "success" || requestState.data.total === 0) return;
+    const lastPage = Math.ceil(requestState.data.total / requestState.data.limit);
+    if (currentPage > lastPage) changePage(lastPage);
+  }, [changePage, currentPage, requestState.data, requestState.status]);
+
+  const refreshAndClose = () => {
     closeDialog();
+    void requestState.refetch().catch(() => undefined);
   };
 
-  const handleUpdate = (collectionId: string, draft: CollectionDraft) => {
-    updateCollection(collectionId, draft);
+  const handleCreated = () => {
     closeDialog();
+    if (currentPage === 1) void requestState.refetch().catch(() => undefined);
+    else changePage(1);
   };
 
-  const handleDelete = (collectionId: string) => {
-    deleteCollection(collectionId);
+  const handleDeleted = () => {
     closeDialog();
+    if (
+      currentPage > 1 &&
+      requestState.status === "success" &&
+      requestState.data.items.length === 1
+    ) {
+      changePage(currentPage - 1);
+    } else {
+      void requestState.refetch().catch(() => undefined);
+    }
   };
 
   const handleOpenCreate = useCallback(
@@ -92,20 +113,19 @@ export function CollectionsScreen({
     <DashboardPage>
       <div className={styles.content}>
         <CollectionsContent
-          onBack={() => router.push("/dashboard/collections")}
+          currentPage={currentPage}
+          onPageChange={changePage}
           onOpenDialog={openDialog}
-          onRetry={restoreMockCollections}
-          returnTo={returnTo}
-          viewState={viewState}
+          onRetry={() => void requestState.refetch().catch(() => undefined)}
+          requestState={requestState}
         />
       </div>
       <CollectionsDialogs
-        collections={collections}
         dialog={dialog}
         onClose={closeDialog}
-        onCreate={handleCreate}
-        onDelete={handleDelete}
-        onUpdate={handleUpdate}
+        onCreated={handleCreated}
+        onDeleted={handleDeleted}
+        onUpdated={refreshAndClose}
       />
     </DashboardPage>
   );

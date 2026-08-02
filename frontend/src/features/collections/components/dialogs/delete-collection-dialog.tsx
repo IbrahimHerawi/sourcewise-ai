@@ -1,7 +1,10 @@
 "use client";
 
 import { useRef } from "react";
-import type { Collection } from "@/features/collections/collection-types";
+import { deleteCollection } from "@/features/collections/collections-api";
+import type { CollectionApiRecord } from "@/features/collections/collections-api-types";
+import { getApiErrorMessage } from "@/lib/api";
+import { useApiMutation } from "@/hooks/use-api-request";
 import { CollectionButton } from "../collection-button";
 import {
   CollectionDialog,
@@ -10,17 +13,26 @@ import {
 } from "./collection-dialog";
 
 type DeleteCollectionDialogProps = {
-  collection: Collection;
+  collection: CollectionApiRecord;
   onClose: () => void;
-  onDelete: (collectionId: string) => void;
+  onDeleted: (collectionId: string) => void;
 };
 
 export function DeleteCollectionDialog({
   collection,
   onClose,
-  onDelete,
+  onDeleted,
 }: DeleteCollectionDialogProps) {
   const cancelButtonRef = useRef<HTMLButtonElement>(null);
+  const mutation = useApiMutation((collectionId: string, signal) =>
+    deleteCollection(collectionId, signal),
+  );
+  const submit = () => {
+    void mutation
+      .mutate(collection.id)
+      .then(() => onDeleted(collection.id))
+      .catch(() => undefined);
+  };
 
   return (
     <CollectionDialog
@@ -32,15 +44,24 @@ export function DeleteCollectionDialog({
       title="Delete collection?"
     >
       <CollectionDialogFooter>
-        <CollectionDialogCancel ref={cancelButtonRef} />
+        <CollectionDialogCancel disabled={mutation.isPending} ref={cancelButtonRef} />
         <CollectionButton
-          onClick={() => onDelete(collection.id)}
+          disabled={mutation.isPending}
+          onClick={submit}
           tone="danger"
           type="button"
         >
-          Delete collection
+          {mutation.isPending ? "Deleting…" : "Delete collection"}
         </CollectionButton>
       </CollectionDialogFooter>
+      {mutation.error ? (
+        <p className="text-sm text-destructive" role="alert">
+          {getApiErrorMessage(
+            mutation.error,
+            "The collection could not be deleted. Try again.",
+          )}
+        </p>
+      ) : null}
     </CollectionDialog>
   );
 }
