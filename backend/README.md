@@ -105,7 +105,46 @@ EMAIL_FROM=Sourcewise <no-reply@notifications.ibrahimherawi.com>
 
 Do not use `APP_ENV=docker` for a publicly deployed container. That value is only for local Docker Compose development.
 
-## 9. Running with Docker
+## 9. Authentication and Refresh Tokens
+
+Verified, active users sign in with `POST /api/v1/auth/login`. A successful response contains a
+short-lived JWT access token and a longer-lived opaque refresh token. Access-token lifetime is
+configured with `ACCESS_TOKEN_EXPIRE_MINUTES` (default `30`); the refresh-token family lifetime is
+configured with `REFRESH_TOKEN_EXPIRE_DAYS` (default `30`) and must be strictly longer.
+
+```bash
+curl -X POST "http://localhost:8000/api/v1/auth/login" \
+  -H "Content-Type: application/json" \
+  -d '{"email":"verified@example.com","password":"<PASSWORD>"}'
+```
+
+Exchange the returned refresh token exactly once. Each successful exchange returns a new access
+token and refresh token while retaining the login family's original absolute expiration:
+
+```bash
+curl -X POST "http://localhost:8000/api/v1/auth/refresh" \
+  -H "Content-Type: application/json" \
+  -d '{"refresh_token":"<REFRESH_TOKEN>"}'
+```
+
+Logout revokes only the family identified by the supplied refresh token and intentionally returns
+the same `204` response whether that token exists or has already been revoked:
+
+```bash
+curl -X POST "http://localhost:8000/api/v1/auth/logout" \
+  -H "Content-Type: application/json" \
+  -d '{"refresh_token":"<REFRESH_TOKEN>"}'
+```
+
+Store access tokens only in short-lived application memory. Treat refresh tokens as credentials:
+use platform-protected secure storage (or a backend-managed `Secure`, `HttpOnly`, `SameSite`
+cookie in a browser architecture), never put them in URLs, logs, analytics, or ordinary local
+storage, and replace the stored value immediately after every successful refresh. The database
+stores only HMAC hashes. Reusing a consumed token is treated as replay and revokes its complete
+family. Password reset revokes every refresh-token family for that user; existing JWT access tokens
+remain usable only until their normal short expiration.
+
+## 10. Running with Docker
 Docker Compose remains at the repository root.
 
 1. Copy environment template:
@@ -135,12 +174,13 @@ Service URLs:
 - Swagger UI: `http://localhost:8000/docs`
 - Mailpit UI: `http://localhost:8025`
 
-## 10. API Usage Examples
+## 11. API Usage Examples
 Set base URL:
 
 ```bash
 API_BASE=http://localhost:8000/api/v1
 ACCESS_TOKEN=<VERIFIED_USER_ACCESS_TOKEN>
+REFRESH_TOKEN=<OPAQUE_REFRESH_TOKEN>
 COLLECTION_ID=<COLLECTION_UUID_OPTIONAL>
 ```
 
@@ -182,7 +222,7 @@ curl "$API_BASE/questions/history?limit=20&offset=0"
 - Demonstrates the full flow: upload -> ingestion -> ask -> history
 - `demo/` contains the sample `.txt`, `.md`, and `.pdf` files used by the script
 
-## 11. Testing
+## 12. Testing
 Run all tests from the backend directory:
 
 ```bash
@@ -195,7 +235,7 @@ Testing approach:
 - API tests with mocks for deterministic embeddings/LLM behavior where appropriate
 - Integration smoke test for the primary flow (upload -> ingest -> ask -> history)
 
-## 12. Design Decisions Beyond The Evaluation Brief
+## 13. Design Decisions Beyond The Evaluation Brief
 The evaluation brief requires embeddings/vector-search based retrieval and a README, but it does not explicitly define several implementation details. The following were deliberate choices made to complete the solution reliably:
 
 - Supported file extensions are explicitly constrained to `.txt`, `.md`, `.pdf`

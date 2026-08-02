@@ -4,8 +4,12 @@ from app.api.schemas.auth import (
     AuthUserResponse,
     LoginRequest,
     LoginResponse,
+    LogoutRequest,
+    RefreshTokenRequest,
+    RefreshTokenResponse,
     RegisterRequest,
     RegisterResponse,
+    TokenPairResponse,
     UserResponse,
 )
 from app.api.schemas.collections import (
@@ -46,6 +50,7 @@ __all__ = [
     "DocumentUploadResponse",
     "LoginRequest",
     "LoginResponse",
+    "LogoutRequest",
     "PaginatedCollectionListResponse",
     "PaginatedDocumentListResponse",
     "PaginatedQuestionHistoryResponse",
@@ -57,5 +62,8 @@ __all__ = [
     "QuestionSourceResponse",
     "RegisterRequest",
     "RegisterResponse",
+    "RefreshTokenRequest",
+    "RefreshTokenResponse",
+    "TokenPairResponse",
     "UserResponse",
 ]

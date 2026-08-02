@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from uuid import uuid4
 
 import pytest
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.db.models import RefreshToken
 from app.repositories.user_repository import DuplicateUserEmailError, UserRepository
 
 
@@ -198,3 +201,111 @@ async def test_user_repository_atomically_consumes_password_reset_token(
     assert consumed.id == token.id
     assert consumed.used_at is not None
     assert consumed_again is None
+
+
+@pytest.mark.asyncio
+async def test_user_repository_creates_locks_and_links_refresh_replacement(
+    db_session: AsyncSession,
+) -> None:
+    repository = UserRepository(db_session)
+    user = await repository.create_user("refresh-repository@example.com", "hash")
+    family_id = uuid4()
+    expires_at = datetime.now(UTC) + timedelta(days=30)
+    original = await repository.create_refresh_token(
+        user.id,
+        family_id,
+        "original-refresh-hash",
+        expires_at,
+    )
+
+    locked = await repository.get_refresh_token_for_update("original-refresh-hash")
+    replacement = await repository.create_refresh_token(
+        user.id,
+        family_id,
+        "replacement-refresh-hash",
+        expires_at,
+    )
+    consumed = await repository.mark_refresh_token_used(original.id, replacement.id)
+    consumed_again = await repository.mark_refresh_token_used(original.id, replacement.id)
+
+    assert locked is not None
+    assert locked.id == original.id
+    assert locked.user.id == user.id
+    assert consumed is not None
+    assert consumed.used_at is not None
+    assert consumed.replaced_by_id == replacement.id
+    assert consumed_again is None
+
+
+@pytest.mark.asyncio
+async def test_user_repository_refresh_revocation_is_scoped_by_family_and_user(
+    db_session: AsyncSession,
+) -> None:
+    repository = UserRepository(db_session)
+    first_user = await repository.create_user("refresh-family-a@example.com", "hash")
+    second_user = await repository.create_user("refresh-family-b@example.com", "hash")
+    first_family = uuid4()
+    second_family = uuid4()
+    other_user_family = uuid4()
+    expires_at = datetime.now(UTC) + timedelta(days=30)
+    first_token = await repository.create_refresh_token(
+        first_user.id, first_family, "first-family-hash", expires_at
+    )
+    second_token = await repository.create_refresh_token(
+        first_user.id, second_family, "second-family-hash", expires_at
+    )
+    other_user_token = await repository.create_refresh_token(
+        second_user.id, other_user_family, "other-user-family-hash", expires_at
+    )
+
+    assert await repository.revoke_refresh_token_family(first_family) == 1
+    await db_session.refresh(first_token)
+    await db_session.refresh(second_token)
+    await db_session.refresh(other_user_token)
+    assert first_token.revoked_at is not None
+    assert second_token.revoked_at is None
+    assert other_user_token.revoked_at is None
+
+    assert await repository.revoke_all_refresh_tokens_for_user(first_user.id) == 1
+    await db_session.refresh(second_token)
+    await db_session.refresh(other_user_token)
+    assert second_token.revoked_at is not None
+    assert other_user_token.revoked_at is None
+
+
+@pytest.mark.asyncio
+async def test_user_repository_refresh_cleanup_deletes_only_expired_rows(
+    db_session: AsyncSession,
+) -> None:
+    repository = UserRepository(db_session)
+    user = await repository.create_user("refresh-cleanup@example.com", "hash")
+    family_id = uuid4()
+    expired = await repository.create_refresh_token(
+        user.id,
+        family_id,
+        "expired-refresh-hash",
+        datetime.now(UTC) - timedelta(seconds=1),
+    )
+    unexpired_used = await repository.create_refresh_token(
+        user.id,
+        family_id,
+        "unexpired-used-refresh-hash",
+        datetime.now(UTC) + timedelta(days=1),
+    )
+    replacement = await repository.create_refresh_token(
+        user.id,
+        family_id,
+        "unexpired-replacement-hash",
+        datetime.now(UTC) + timedelta(days=1),
+    )
+    await repository.mark_refresh_token_used(unexpired_used.id, replacement.id)
+
+    deleted = await repository.delete_expired_refresh_tokens_for_user(user.id)
+    remaining_count = await db_session.scalar(
+        select(func.count()).select_from(RefreshToken).where(RefreshToken.user_id == user.id)
+    )
+
+    assert deleted == 1
+    assert await db_session.get(RefreshToken, expired.id) is None
+    assert remaining_count == 2
+    assert await repository.get_refresh_token_for_update(unexpired_used.token_hash) is not None

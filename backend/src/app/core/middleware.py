@@ -14,6 +14,12 @@ from app.core.logging import reset_request_id, set_request_id
 
 logger = logging.getLogger("app.request")
 
+_TOKEN_RESPONSE_PATHS = {
+    "/api/v1/auth/login",
+    "/api/v1/auth/logout",
+    "/api/v1/auth/refresh",
+}
+
 
 class RequestLoggingMiddleware(BaseHTTPMiddleware):
     """Attach a request id to context/response and log request timing metadata."""
@@ -26,6 +32,10 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
 
         try:
             response = await call_next(request)
+            if request.url.path in _TOKEN_RESPONSE_PATHS:
+                response.headers["Cache-Control"] = "no-store"
+                if request.url.path != "/api/v1/auth/logout":
+                    response.headers["Pragma"] = "no-cache"
             return response
         finally:
             duration_ms = round((time.perf_counter() - started) * 1000, 2)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
@@ -61,6 +62,11 @@ def test_jwt_rejects_invalid_token() -> None:
         decode_access_token("not-a-valid-jwt")
 
 
+def test_opaque_refresh_token_is_never_accepted_as_an_access_token() -> None:
+    with pytest.raises(InvalidAccessTokenError, match="invalid or expired"):
+        decode_access_token(generate_secure_token())
+
+
 def test_jwt_rejects_expired_token() -> None:
     settings = get_settings()
     assert settings.secret_key is not None
@@ -81,6 +87,13 @@ def test_token_hashing_is_deterministic() -> None:
     token = generate_secure_token()
 
     assert hash_token(token) == hash_token(token)
+
+
+def test_secure_token_contains_at_least_256_bits_of_random_data() -> None:
+    token = generate_secure_token()
+    padding = "=" * (-len(token) % 4)
+
+    assert len(base64.urlsafe_b64decode(token + padding)) >= 32
 
 
 def test_raw_token_and_hash_are_different() -> None:

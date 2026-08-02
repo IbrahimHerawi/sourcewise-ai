@@ -244,6 +244,37 @@ def test_ingest_shutdown_timeout_defaults_to_thirty_seconds() -> None:
     assert settings.ingest_shutdown_timeout_s == 30.0
 
 
+def test_refresh_token_lifetime_defaults_to_thirty_days() -> None:
+    settings = Settings(_env_file=None)
+
+    assert settings.refresh_token_expire_days == 30
+
+
+@pytest.mark.parametrize("days", [0, -1])
+def test_refresh_token_lifetime_must_be_positive(days: int) -> None:
+    with pytest.raises(ValueError, match="refresh_token_expire_days"):
+        Settings(refresh_token_expire_days=days, _env_file=None)
+
+
+def test_refresh_token_lifetime_must_exceed_access_token_lifetime() -> None:
+    with pytest.raises(ValueError, match="REFRESH_TOKEN_EXPIRE_DAYS"):
+        Settings(
+            access_token_expire_minutes=1440,
+            refresh_token_expire_days=1,
+            _env_file=None,
+        )
+
+
+def test_refresh_token_lifetime_accepts_strictly_longer_duration() -> None:
+    settings = Settings(
+        access_token_expire_minutes=1439,
+        refresh_token_expire_days=1,
+        _env_file=None,
+    )
+
+    assert settings.refresh_token_expire_days == 1
+
+
 def test_ingest_shutdown_timeout_must_be_positive() -> None:
     with pytest.raises(ValueError, match="ingest_shutdown_timeout_s"):
         Settings(ingest_shutdown_timeout_s=0, _env_file=None)
