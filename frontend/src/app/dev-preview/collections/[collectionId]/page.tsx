@@ -1,7 +1,6 @@
 import { notFound } from "next/navigation";
-import dashboardStyles from "@/app/(dashboard)/layout.module.css";
 import { CollectionDetailPage } from "@/features/collections/components/detail/collection-detail-page";
-import { DashboardSidebar } from "@/features/dashboard/components/dashboard-sidebar";
+import { DashboardShell } from "@/features/dashboard/components/dashboard-shell";
 import {
   parseCollectionDetailPreview,
   parseCollectionDetailTab,
@@ -26,14 +25,11 @@ export default async function CollectionDetailPreviewRoute({
   const tab = parseCollectionDetailTab(firstValue(query.tab));
 
   return (
-    <div className={dashboardStyles.shell}>
-      <DashboardSidebar />
-      <main className={dashboardStyles.content}>
-        <CollectionDetailPage
-          collectionId={collectionId}
-          initialPreview={parseCollectionDetailPreview(firstValue(query.state), tab)}
-        />
-      </main>
-    </div>
+    <DashboardShell>
+      <CollectionDetailPage
+        collectionId={collectionId}
+        initialPreview={parseCollectionDetailPreview(firstValue(query.state), tab)}
+      />
+    </DashboardShell>
   );
 }

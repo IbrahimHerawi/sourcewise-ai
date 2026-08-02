@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type RefObject } from "react";
+import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import type { CollectionsDialogState } from "@/features/collections/collection-dialog-state";
 
 type UseCollectionsDialogOptions = {
@@ -30,15 +30,15 @@ export function useCollectionsDialog({
     previousDialogRef.current = dialog;
   }, [dialog, fallbackFocusRef]);
 
-  const openDialog = (
-    nextDialog: CollectionsDialogState,
-    opener: HTMLElement,
-  ) => {
-    openerRef.current = opener;
-    setDialog(nextDialog);
-  };
+  const openDialog = useCallback(
+    (nextDialog: CollectionsDialogState, opener: HTMLElement) => {
+      openerRef.current = opener;
+      setDialog(nextDialog);
+    },
+    [],
+  );
 
-  const closeDialog = () => setDialog(null);
+  const closeDialog = useCallback(() => setDialog(null), []);
 
   return { closeDialog, dialog, openDialog };
 }

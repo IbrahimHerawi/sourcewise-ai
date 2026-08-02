@@ -1,6 +1,9 @@
 .sidebar {
   flex: 0 0 var(--size-dashboard-sidebar-width);
-  min-height: 100svh;
+  width: var(--size-dashboard-sidebar-width);
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
   background: var(--sw-color-background-surface);
   box-shadow: var(--shadow-dashboard-sidebar);
   font-family: var(--font-dashboard);
@@ -10,6 +13,7 @@
 
 .logo {
   display: block;
+  flex: none;
   margin-top: var(--spacing-dashboard-sidebar-logo-block-start);
   margin-left: var(--spacing-dashboard-sidebar-content-inline);
   color: var(--sw-color-brand-default);
@@ -21,15 +25,25 @@
 
 .navigation {
   display: flex;
+  min-height: 0;
   flex-direction: column;
+  flex: 1 1 auto;
   gap: var(--spacing-dashboard-nav-items);
   margin-top: var(--spacing-dashboard-nav-block-start);
+  overflow-x: clip;
+  overflow-y: visible;
   padding-inline: var(--spacing-dashboard-sidebar-content-inline);
-  flex: 1;
+}
+
+.navigation[data-overflowing="true"] {
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
 }
 
 .item {
   display: flex;
+  flex: none;
   align-items: center;
   gap: var(--spacing-dashboard-nav-item-gap);
   height: var(--size-dashboard-nav-item-height);
@@ -73,6 +87,7 @@
 }
 
 .footer {
+  flex: none;
   padding: var(--spacing-dashboard-profile-footer);
   border-top: 1px solid var(--sw-color-border-divider);
   margin-top: auto;
@@ -178,7 +193,10 @@
 
 @media (max-width: 48rem) {
   .sidebar {
+    width: 100%;
+    height: auto;
     min-height: auto;
+    overflow: visible;
     flex-basis: auto;
   }
 
@@ -190,8 +208,11 @@
 
   .navigation {
     flex-direction: row;
+    min-height: auto;
     margin-top: 0;
     overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-y: auto;
     padding-block-end: var(--spacing-dashboard-sidebar-content-inline);
     flex: none;
   }

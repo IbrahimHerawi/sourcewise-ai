@@ -7,54 +7,12 @@
     calc((100% - var(--sw-content-wide-width)) / 2)
   );
   font-family: var(--font-dashboard);
-}
-
-.header {
-  display: flex;
-  min-height: var(--sw-type-line-height-page-title);
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--sw-spacing-16);
-}
-
-.titleGroup {
-  min-width: 0;
-}
-
-.title {
-  margin: 0;
-  color: var(--sw-color-text-primary);
-  font-size: var(--sw-type-size-page-title);
-  font-weight: 600;
-  line-height: var(--sw-type-line-height-page-title);
-  letter-spacing: var(--sw-type-letter-spacing-page-title);
-}
-
-.description {
-  margin: var(--sw-spacing-4) 0 0;
-  color: var(--sw-color-text-secondary);
-  font-size: var(--sw-type-size-body);
-  line-height: var(--sw-type-line-height-body);
-}
-
-.action {
-  flex: none;
+  padding-block-end: var(--sw-spacing-48);
 }
 
 @media (max-width: 48rem) {
   .page {
     padding-block-start: var(--sw-spacing-24);
     padding-inline: var(--sw-spacing-16);
-  }
-}
-
-@media (max-width: 30rem) {
-  .header {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .action > * {
-    width: 100%;
   }
 }

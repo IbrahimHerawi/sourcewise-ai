@@ -1,7 +1,9 @@
 "use client";
 
-import { useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useCallback, useMemo, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useDashboardHeader } from "@/features/dashboard/components/dashboard-header-context";
+import { resolveDashboardBackHref } from "@/features/dashboard/navigation";
 import type { CollectionDraft } from "@/features/collections/collection-validation";
 import type {
   CollectionDetail,
@@ -17,6 +19,7 @@ import {
 } from "@/features/collections/mock-collection-detail";
 import { mockCollections } from "@/features/collections/mock-collections";
 import { CollectionsDialogs } from "../dialogs/collections-dialogs";
+import { CollectionButton } from "../collection-button";
 import { CollectionDetailContent } from "./collection-detail-content";
 import { CollectionDetailLayout } from "./collection-detail-layout";
 import {
@@ -47,6 +50,7 @@ export function CollectionDetailPage({
   initialPreview,
 }: CollectionDetailPageProps) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const fallbackFocusRef = useRef<HTMLButtonElement>(null);
   const [viewState, setViewState] = useState<CollectionDetailViewState>(() =>
     createCollectionDetailState(collectionId, initialPreview),
@@ -56,6 +60,10 @@ export function CollectionDetailPage({
     initialDialog: null,
   });
   const collection = stateCollection(viewState);
+  const backHref = resolveDashboardBackHref(
+    searchParams?.get("returnTo"),
+    "/dashboard/collections",
+  );
   const validationCollections: readonly Collection[] = collection
     ? [collection, ...mockCollections.filter((item) => item.id !== collection.id)]
     : mockCollections;
@@ -63,10 +71,32 @@ export function CollectionDetailPage({
   const handleTabChange = (tab: CollectionDetailTab) => {
     if (!collection) return;
     setViewState(createTabState(collection, tab));
-    router.replace(`/dashboard/collections/${collection.id}?tab=${tab}`, {
+    const nextSearchParams = new URLSearchParams(searchParams?.toString());
+    nextSearchParams.set("tab", tab);
+    router.replace(`/dashboard/collections/${collection.id}?${nextSearchParams}`, {
       scroll: false,
     });
   };
+
+  const handleUpload = useCallback(() => {
+    if (!collection) return;
+    router.push(`/dashboard/documents?collectionId=${collection.id}`);
+  }, [collection, router]);
+
+  const headerActions = useMemo(
+    () =>
+      collection ? (
+        <CollectionButton onClick={handleUpload} shape="pill">
+          Upload to collection
+        </CollectionButton>
+      ) : undefined,
+    [collection, handleUpload],
+  );
+  const headerConfiguration = useMemo(
+    () => ({ actions: headerActions, title: collection?.name ?? "Collection" }),
+    [collection?.name, headerActions],
+  );
+  useDashboardHeader(headerConfiguration);
 
   const handleUpdate = (id: string, draft: CollectionDraft) => {
     setViewState((current) =>
@@ -95,7 +125,7 @@ export function CollectionDetailPage({
 
   if (viewState.status === "loading") {
     return (
-      <CollectionDetailLayout isLoading>
+      <CollectionDetailLayout>
         <CollectionDetailSkeleton />
       </CollectionDetailLayout>
     );
@@ -103,12 +133,12 @@ export function CollectionDetailPage({
 
   if (viewState.status === "not-found" || viewState.status === "server-error") {
     return (
-      <CollectionDetailLayout title="Collection">
+      <CollectionDetailLayout>
         <CollectionDetailErrorState
           kind={viewState.status}
           onAction={
             viewState.status === "not-found"
-              ? () => router.push("/dashboard/collections")
+              ? () => router.push(backHref)
               : handleRetry
           }
         />
@@ -119,14 +149,9 @@ export function CollectionDetailPage({
   const resolvedCollection = viewState.collection;
   const handleAsk = () =>
     router.push(`/dashboard/ask-question?collectionId=${resolvedCollection.id}`);
-  const handleUpload = () =>
-    router.push(`/dashboard/documents?collectionId=${resolvedCollection.id}`);
 
   return (
-    <CollectionDetailLayout
-      onUpload={handleUpload}
-      title={resolvedCollection.name}
-    >
+    <CollectionDetailLayout>
       <CollectionDetailContent
         onAsk={handleAsk}
         onDelete={(opener) =>

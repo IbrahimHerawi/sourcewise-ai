@@ -175,6 +175,10 @@
   --font-weight-dashboard-profile-text: 400;
   --shadow-dashboard-sidebar: 0 0.25rem 1.25rem var(--sw-primitive-shadow-black-03);
   --shadow-dashboard-nav-active: 0 0.0625rem 0.125rem var(--sw-primitive-shadow-black-05);
+  --shadow-dashboard-header-scrolled: 0 0.25rem 0.75rem var(--sw-primitive-shadow-black-05);
+  --size-dashboard-header-height: 5rem;
+  --duration-dashboard-header-shadow: 160ms;
+  --easing-dashboard-header-shadow: cubic-bezier(0.22, 1, 0.36, 1);
 
   /* Shared application-page tokens. */
   --sw-spacing-4: 0.25rem;
@@ -209,7 +213,7 @@
   --sw-type-letter-spacing-section-title: -0.015rem;
   --sw-type-letter-spacing-button: 0.00875rem;
   --spacing-dashboard-page-inline: var(--sw-spacing-48);
-  --spacing-dashboard-page-block-start: var(--sw-spacing-48);
+  --spacing-dashboard-page-block-start: var(--sw-spacing-32);
   --shadow-sw-card: 0 0.25rem 0.75rem var(--sw-primitive-shadow-black-02);
   --shadow-sw-dialog: 0 0.25rem 1.25rem var(--sw-primitive-shadow-black-03);
 }

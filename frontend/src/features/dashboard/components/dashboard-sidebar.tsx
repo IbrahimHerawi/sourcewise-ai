@@ -1,10 +1,12 @@
 "use client";
 
+import { useRef } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { LogOut } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
+import { useOverflowState } from "@/features/dashboard/hooks/use-overflow-state";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   DropdownMenu,
@@ -71,14 +73,21 @@ function NavigationIcon({ icon }: Pick<DashboardNavigationItem, "icon">) {
 export function DashboardSidebar() {
   const pathname = usePathname();
   const { user, logout } = useAuth();
+  const navigationRef = useRef<HTMLElement>(null);
+  const isNavigationOverflowing = useOverflowState(navigationRef);
   const displayName = user ? formatDashboardUserName(user) : "";
   const initials = user ? getDashboardUserInitials(user) : "";
 
   return (
     <aside aria-label="Dashboard sidebar" className={styles.sidebar}>
       <span className={styles.logo}>DocQ&amp;A</span>
-      <nav aria-label="Dashboard navigation" className={styles.navigation}>
-        {dashboardNavigationItems.map(({ href, icon, label }) => {
+      <nav
+        aria-label="Dashboard navigation"
+        className={styles.navigation}
+        data-overflowing={isNavigationOverflowing ? "true" : "false"}
+        ref={navigationRef}
+      >
+        {dashboardNavigationItems.map(({ href, icon, navigationLabel }) => {
           const isActive = isDashboardNavigationItemActive(pathname, href);
 
           return (
@@ -89,7 +98,7 @@ export function DashboardSidebar() {
               key={href}
             >
               <NavigationIcon icon={icon} />
-              <span>{label}</span>
+              <span>{navigationLabel}</span>
             </Link>
           );
         })}

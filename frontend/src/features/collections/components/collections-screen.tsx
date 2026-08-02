@@ -1,12 +1,15 @@
 "use client";
 
-import { useRef } from "react";
+import {
+  useCallback,
+  useMemo,
+  useRef,
+  type MouseEvent,
+} from "react";
 import { Plus } from "lucide-react";
 import { useRouter } from "next/navigation";
-import {
-  DashboardPage,
-  DashboardPageHeader,
-} from "@/features/dashboard/components/dashboard-page";
+import { DashboardPage } from "@/features/dashboard/components/dashboard-page";
+import { useDashboardHeader } from "@/features/dashboard/components/dashboard-header-context";
 import type { CollectionDraft } from "@/features/collections/collection-validation";
 import { createPreviewDialog } from "@/features/collections/collection-dialog-state";
 import { useCollectionsDialog } from "@/features/collections/hooks/use-collections-dialog";
@@ -24,11 +27,13 @@ import styles from "./collections-screen.module.css";
 type CollectionsScreenProps = {
   initialModal?: CollectionsModalPreview;
   initialPreview: CollectionsPreview;
+  returnTo?: string;
 };
 
 export function CollectionsScreen({
   initialModal,
   initialPreview,
+  returnTo = "/dashboard/collections",
 }: CollectionsScreenProps) {
   const router = useRouter();
   const headerActionRef = useRef<HTMLButtonElement>(null);
@@ -63,24 +68,34 @@ export function CollectionsScreen({
     closeDialog();
   };
 
-  const headerAction = (
-    <CollectionButton
-      onClick={(event) => openDialog({ type: "create" }, event.currentTarget)}
-      ref={headerActionRef}
-    >
-      <Plus aria-hidden="true" />
-      Create Collection
-    </CollectionButton>
+  const handleOpenCreate = useCallback(
+    (event: MouseEvent<HTMLButtonElement>) =>
+      openDialog({ type: "create" }, event.currentTarget),
+    [openDialog],
   );
+  const headerAction = useMemo(
+    () => (
+      <CollectionButton onClick={handleOpenCreate} ref={headerActionRef}>
+        <Plus aria-hidden="true" />
+        Create Collection
+      </CollectionButton>
+    ),
+    [handleOpenCreate],
+  );
+  const headerConfiguration = useMemo(
+    () => ({ actions: headerAction }),
+    [headerAction],
+  );
+  useDashboardHeader(headerConfiguration);
 
   return (
     <DashboardPage>
       <div className={styles.content}>
-        <DashboardPageHeader action={headerAction} title="Collections" />
         <CollectionsContent
           onBack={() => router.push("/dashboard/collections")}
           onOpenDialog={openDialog}
           onRetry={restoreMockCollections}
+          returnTo={returnTo}
           viewState={viewState}
         />
       </div>

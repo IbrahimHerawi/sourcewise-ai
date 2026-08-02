@@ -18,6 +18,7 @@ type CollectionsContentProps = {
     opener: HTMLElement,
   ) => void;
   onRetry: () => void;
+  returnTo: string;
   viewState: CollectionsViewState;
 };
 
@@ -25,6 +26,7 @@ export function CollectionsContent({
   onBack,
   onOpenDialog,
   onRetry,
+  returnTo,
   viewState,
 }: CollectionsContentProps) {
   if (viewState.status === "loading") {
@@ -58,6 +60,7 @@ export function CollectionsContent({
       collections={viewState.collections}
       onDelete={openCollectionDialog("delete")}
       onEdit={openCollectionDialog("edit")}
+      returnTo={returnTo}
     />
   );
 }

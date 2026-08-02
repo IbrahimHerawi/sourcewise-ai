@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Skeleton } from "@/components/ui/skeleton";
+import { appendDashboardReturnTo } from "@/features/dashboard/navigation";
 import type { Collection } from "@/features/collections/collection-types";
 import { CollectionButton } from "./collection-button";
 import styles from "./collection-list.module.css";
@@ -13,16 +14,19 @@ type CollectionListProps = {
   collections: readonly Collection[];
   onDelete: CollectionAction;
   onEdit: CollectionAction;
+  returnTo: string;
 };
 
 function CollectionRow({
   collection,
   onDelete,
   onEdit,
+  returnTo,
 }: {
   collection: Collection;
   onDelete: CollectionAction;
   onEdit: CollectionAction;
+  returnTo: string;
 }) {
   return (
     <li>
@@ -30,7 +34,12 @@ function CollectionRow({
         <div className={styles.cardHeader}>
           <div className={styles.collectionInformation}>
             <h2 className={styles.collectionName}>
-              <Link href={`/dashboard/collections/${collection.id}`}>
+              <Link
+                href={appendDashboardReturnTo(
+                  `/dashboard/collections/${collection.id}`,
+                  returnTo,
+                )}
+              >
                 {collection.name}
               </Link>
             </h2>
@@ -67,6 +76,7 @@ export function CollectionsList({
   collections,
   onDelete,
   onEdit,
+  returnTo,
 }: CollectionListProps) {
   return (
     <>
@@ -77,6 +87,7 @@ export function CollectionsList({
             key={collection.id}
             onDelete={onDelete}
             onEdit={onEdit}
+            returnTo={returnTo}
           />
         ))}
       </ul>

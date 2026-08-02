@@ -1,20 +1,35 @@
+import { createRef, type ReactNode } from "react";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import axe from "axe-core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { CollectionsScreen } from "./collections-screen";
+import { DashboardHeader } from "@/features/dashboard/components/dashboard-header";
+import { DashboardHeaderProvider } from "@/features/dashboard/components/dashboard-header-context";
 
 const pushMock = vi.hoisted(() => vi.fn());
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: pushMock }),
+  usePathname: () => "/dashboard/collections",
+  useSearchParams: () => new URLSearchParams(),
 }));
+
+function DashboardHeaderTestLayout({ children }: { children: ReactNode }) {
+  return (
+    <DashboardHeaderProvider>
+      <DashboardHeader scrollContainerRef={createRef<HTMLElement>()} />
+      {children}
+    </DashboardHeaderProvider>
+  );
+}
 
 function renderCollections(
   props: Partial<React.ComponentProps<typeof CollectionsScreen>> = {},
 ) {
   return render(
     <CollectionsScreen initialPreview="populated" {...props} />,
+    { wrapper: DashboardHeaderTestLayout },
   );
 }
 
@@ -32,6 +47,18 @@ function collectionArticle(name: string): HTMLElement {
 describe("CollectionsScreen dialogs", () => {
   beforeEach(() => {
     pushMock.mockReset();
+  });
+
+  it("renders its route title and primary action in the shared header", () => {
+    renderCollections();
+
+    const header = screen.getByRole("banner");
+    expect(within(header).getByRole("heading", { level: 1 })).toHaveTextContent(
+      "Collections",
+    );
+    expect(
+      within(header).getByRole("button", { name: "Create Collection" }),
+    ).toBeVisible();
   });
 
   it("opens and closes create, edit, and delete dialogs", async () => {

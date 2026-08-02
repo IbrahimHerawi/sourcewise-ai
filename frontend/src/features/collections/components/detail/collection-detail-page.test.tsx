@@ -1,17 +1,32 @@
+import { createRef, type ReactNode } from "react";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import axe from "axe-core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { CollectionDetailPage } from "./collection-detail-page";
+import { DashboardHeader } from "@/features/dashboard/components/dashboard-header";
+import { DashboardHeaderProvider } from "@/features/dashboard/components/dashboard-header-context";
 
 const { pushMock, replaceMock } = vi.hoisted(() => ({
   pushMock: vi.fn(),
   replaceMock: vi.fn(),
 }));
+const routerMock = { push: pushMock, replace: replaceMock };
 
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: pushMock, replace: replaceMock }),
+  useRouter: () => routerMock,
+  usePathname: () => "/dashboard/collections/quarterly-research",
+  useSearchParams: () => new URLSearchParams(),
 }));
+
+function DashboardHeaderTestLayout({ children }: { children: ReactNode }) {
+  return (
+    <DashboardHeaderProvider>
+      <DashboardHeader scrollContainerRef={createRef<HTMLElement>()} />
+      {children}
+    </DashboardHeaderProvider>
+  );
+}
 
 function renderDetail(
   initialPreview: React.ComponentProps<typeof CollectionDetailPage>["initialPreview"] = "documents",
@@ -22,6 +37,7 @@ function renderDetail(
       collectionId={collectionId}
       initialPreview={initialPreview}
     />,
+    { wrapper: DashboardHeaderTestLayout },
   );
 }
 
@@ -36,6 +52,10 @@ describe("CollectionDetailPage", () => {
     renderDetail();
 
     expect(screen.getByRole("heading", { name: "Quarterly Research" })).toBeVisible();
+    expect(screen.getByRole("link", { name: "Back to Collections" })).toHaveAttribute(
+      "href",
+      "/dashboard/collections",
+    );
     const summary = screen.getByRole("region", { name: "Collection summary" });
     expect(within(summary).getByText("223")).toBeVisible();
     expect(within(summary).getByText("47")).toBeVisible();
