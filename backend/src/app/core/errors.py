@@ -187,6 +187,15 @@ def _status_code_to_error_code(status_code: int) -> str:
     return _STATUS_CODE_TO_ERROR_CODE.get(status_code, "request_error")
 
 
+def _safe_validation_errors(errors: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Keep public validation diagnostics without echoing submitted values."""
+    safe_fields = ("type", "loc", "msg")
+    return [
+        {field: _sanitize_value(error[field]) for field in safe_fields if field in error}
+        for error in errors
+    ]
+
+
 def _normalize_http_exception_detail(
     detail: Any,
     *,
@@ -234,7 +243,7 @@ async def _request_validation_error_handler(
         status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
         code="validation_error",
         message="Request validation failed.",
-        details={"errors": exc.errors()},
+        details={"errors": _safe_validation_errors(exc.errors())},
     )
 
 
@@ -246,7 +255,7 @@ async def _pydantic_validation_error_handler(
         status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
         code="validation_error",
         message="Validation failed.",
-        details={"errors": exc.errors()},
+        details={"errors": _safe_validation_errors(exc.errors())},
     )
 
 

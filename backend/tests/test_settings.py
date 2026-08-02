@@ -106,6 +106,22 @@ def test_secret_key_is_redacted_from_settings_repr() -> None:
     assert secret_value not in repr(settings)
 
 
+def test_all_secret_configuration_sentinels_are_redacted_from_serialization() -> None:
+    sentinels = {
+        "openai_api_key": "SENTINEL_OPENAI_API_KEY_27",
+        "resend_api_key": "SENTINEL_RESEND_KEY_27",
+        "smtp_password": "SENTINEL_SMTP_PASSWORD_27",
+        "secret_key": "SENTINEL_JWT_SIGNING_KEY_27_LONG_ENOUGH",
+        "postgres_password": "SENTINEL_POSTGRES_PASSWORD_27",
+    }
+    settings = Settings(**sentinels, _env_file=None)
+
+    rendered = f"{settings!r}\n{settings.model_dump_json()}"
+
+    for sentinel in sentinels.values():
+        assert sentinel not in rendered
+
+
 def test_postgres_password_file_takes_precedence_and_db_url_is_assembled(tmp_path: Path) -> None:
     password_file = _write_secret_file(tmp_path / "postgres_password.txt", "  postgres-secret \n")
     settings = Settings(

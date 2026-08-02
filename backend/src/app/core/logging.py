@@ -99,7 +99,7 @@ class SensitiveDataFilter(logging.Filter):
             return True
 
         if isinstance(args, Mapping):
-            record.args = {key: _sanitize_value(value) for key, value in args.items()}
+            record.args = _sanitize_value(args)
             return True
 
         if isinstance(args, tuple):

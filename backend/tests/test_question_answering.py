@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Generator
 from dataclasses import FrozenInstanceError
 
 import pytest
@@ -26,6 +27,7 @@ from app.services.llm import (
     LLMRejectedError,
     LLMTransientError,
 )
+from app.utils.chunking import chunk_text
 
 
 def _embedding(first_dim: float, second_dim: float) -> list[float]:
@@ -133,6 +135,91 @@ def _retrieval_result(
         ),
         chunks=chunks,
     )
+
+
+@pytest.fixture
+def production_retrieval_defaults(monkeypatch: pytest.MonkeyPatch) -> Generator[None]:
+    monkeypatch.setenv("CHUNK_SIZE_CHARS", "2000")
+    monkeypatch.setenv("CHUNK_OVERLAP_CHARS", "100")
+    monkeypatch.setenv("RETRIEVAL_MAX_COSINE_DISTANCE", "0.75")
+    monkeypatch.setenv("TOP_K", "5")
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
+
+
+@pytest.mark.asyncio
+async def test_representative_supported_content_is_retrievable_with_production_chunk_defaults(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    production_retrieval_defaults: None,
+) -> None:
+    del production_retrieval_defaults
+    settings = get_settings()
+    assert settings.chunk_size_chars == 2000
+    assert settings.chunk_overlap_chars == 100
+    assert settings.retrieval_max_cosine_distance == 0.75
+
+    target_sentence = "The launch authorization code for the Meridian deployment is MERIDIAN-42."
+    source_text = (
+        target_sentence
+        + "\n\n"
+        + (
+            "Routine operational guidance covers review ownership, audit trails, rollback "
+            "planning, and deployment communications. " * 45
+        )
+    )
+    chunks = chunk_text(source_text)
+    assert len(chunks) >= 2
+    assert max(map(len, chunks)) <= 2000
+    assert any(target_sentence in chunk for chunk in chunks)
+
+    owner = await _create_user(db_session, "production-defaults")
+    document = await _create_document(
+        db_session,
+        user_id=owner.id,
+        filename="representative-handbook.txt",
+    )
+    document.extracted_text = source_text
+    target_embedding = _embedding(1.0, 0.0)
+    unrelated_embedding = _embedding(0.0, 1.0)
+    await ChunkRepository(db_session).bulk_insert_chunks(
+        document.id,
+        [
+            ChunkWithEmbedding(
+                chunk_index=index,
+                content=content,
+                embedding=(
+                    target_embedding
+                    if "launch authorization code" in content
+                    else unrelated_embedding
+                ),
+            )
+            for index, content in enumerate(chunks)
+        ],
+    )
+    await db_session.commit()
+
+    async def deterministic_query_embedding(question: str) -> list[float]:
+        assert question == "What is the launch authorization code?"
+        return target_embedding
+
+    monkeypatch.setattr(
+        question_answering_service.embeddings_service,
+        "embed_query",
+        deterministic_query_embedding,
+    )
+
+    result = await question_answering_service.retrieve_question_context(
+        db_session,
+        user_id=owner.id,
+        question_text="What is the launch authorization code?",
+    )
+
+    assert len(result.chunks) == 1
+    assert result.chunks[0].document_id == document.id
+    assert target_sentence in result.chunks[0].content
+    assert result.chunks[0].distance == pytest.approx(0.0)
 
 
 @pytest.mark.asyncio
@@ -1020,9 +1107,7 @@ async def test_answer_question_document_deleted_after_retrieval_keeps_snapshot(
 
     assert [citation.rank for citation in response.citations] == [1]
     snapshot = await db_session.scalar(
-        select(QuestionContextChunk).where(
-            QuestionContextChunk.question_id == response.question_id
-        )
+        select(QuestionContextChunk).where(QuestionContextChunk.question_id == response.question_id)
     )
     assert snapshot is not None
     assert snapshot.document_id == document_id

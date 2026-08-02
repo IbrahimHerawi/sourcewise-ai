@@ -121,6 +121,16 @@ async def test_collection_endpoints_require_authentication(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
+    ("method", "path", "json_body"),
+    [
+        ("POST", COLLECTIONS_PATH, {"name": "Private"}),
+        ("GET", COLLECTIONS_PATH, None),
+        ("GET", f"{COLLECTIONS_PATH}/{uuid.uuid4()}", None),
+        ("PATCH", f"{COLLECTIONS_PATH}/{uuid.uuid4()}", {"name": "Private"}),
+        ("DELETE", f"{COLLECTIONS_PATH}/{uuid.uuid4()}", None),
+    ],
+)
+@pytest.mark.parametrize(
     ("is_active", "is_email_verified", "expected_message"),
     [
         (False, True, "User account is inactive."),
@@ -130,6 +140,9 @@ async def test_collection_endpoints_require_authentication(
 async def test_collection_endpoints_require_active_verified_users(
     api_client: httpx.AsyncClient,
     db_session: AsyncSession,
+    method: str,
+    path: str,
+    json_body: dict[str, str] | None,
     is_active: bool,
     is_email_verified: bool,
     expected_message: str,
@@ -141,7 +154,13 @@ async def test_collection_endpoints_require_active_verified_users(
         is_email_verified=is_email_verified,
     )
 
-    response = await api_client.get(COLLECTIONS_PATH, headers=_auth_headers(user))
+    kwargs = {"json": json_body} if json_body is not None else {}
+    response = await api_client.request(
+        method,
+        path,
+        headers=_auth_headers(user),
+        **kwargs,
+    )
 
     assert response.status_code == 403
     assert response.json() == {

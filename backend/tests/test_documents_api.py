@@ -585,6 +585,7 @@ async def test_document_endpoints_require_authentication(
     responses = (
         await api_context.client.get("/api/v1/documents"),
         await api_context.client.get(f"/api/v1/documents/{uuid4()}"),
+        await api_context.client.delete(f"/api/v1/documents/{uuid4()}"),
         await api_context.client.post(
             "/api/v1/documents/upload",
             files={"files": ("unauthenticated.txt", b"private", "text/plain")},
@@ -605,20 +606,30 @@ async def test_document_endpoints_require_authentication(
 
 
 @pytest.mark.asyncio
-async def test_document_endpoints_require_verified_user(
+@pytest.mark.parametrize(
+    ("is_active", "is_email_verified", "expected_message"),
+    [
+        (False, True, "User account is inactive."),
+        (True, False, "User email is not verified."),
+    ],
+)
+async def test_document_endpoints_require_active_verified_user(
     api_context: ApiTestContext,
     db_session: AsyncSession,
+    is_active: bool,
+    is_email_verified: bool,
+    expected_message: str,
 ) -> None:
-    unverified_user = await UserRepository(db_session).create_user(
-        email=f"unverified-documents-{uuid4()}@example.com",
+    ineligible_user = await UserRepository(db_session).create_user(
+        email=f"ineligible-documents-{uuid4()}@example.com",
         password_hash="test-password-hash",
-        first_name="Unverified",
+        first_name="Ineligible",
         last_name="Tester",
-        is_active=True,
-        is_email_verified=False,
+        is_active=is_active,
+        is_email_verified=is_email_verified,
     )
     headers = {
-        "Authorization": f"Bearer {create_access_token(unverified_user.id)}",
+        "Authorization": f"Bearer {create_access_token(ineligible_user.id)}",
     }
     responses = (
         await api_context.client.get("/api/v1/documents", headers=headers),
@@ -642,7 +653,7 @@ async def test_document_endpoints_require_verified_user(
         assert response.json() == {
             "error": {
                 "code": "forbidden",
-                "message": "User email is not verified.",
+                "message": expected_message,
             }
         }
 

@@ -396,25 +396,35 @@ async def test_document_summary_logs_are_safe_and_retry_log_is_conditional(
     attempts = 0
     job_id = uuid4()
     document_id = uuid4()
+    chunk_text = "SENTINEL_EMBEDDING_CHUNK_TEXT_27"
+    raw_body = "SENTINEL_OLLAMA_RAW_BODY_27"
+    vector = [9127.125, 9128.25, 9129.5]
+    request_payloads: list[dict[str, Any]] = []
 
-    async def handler(_: httpx.Request) -> httpx.Response:
+    async def handler(request: httpx.Request) -> httpx.Response:
         nonlocal attempts
         attempts += 1
+        request_payloads.append(json.loads(request.content))
         if attempts == 1:
-            return httpx.Response(500, text="secret raw body")
-        return httpx.Response(200, json={"embeddings": [_vector(0)]})
+            return httpx.Response(500, text=raw_body)
+        return httpx.Response(
+            200,
+            json={"embeddings": [vector], "provider_detail": raw_body},
+        )
 
     http_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
     client = OllamaEmbeddingClient(settings=_settings(), http_client=http_client)
 
     with caplog.at_level(logging.INFO, logger=embeddings_service.__name__):
         await client.embed_documents(
-            ["secret chunk text"],
+            [chunk_text],
             job_id=job_id,
             document_id=document_id,
         )
 
-    summaries = [record.message for record in caplog.records if "Embedding summary" in record.message]
+    summaries = [
+        record.message for record in caplog.records if "Embedding summary" in record.message
+    ]
     retries = [
         record.message for record in caplog.records if "Embedding retry summary" in record.message
     ]
@@ -426,7 +436,70 @@ async def test_document_summary_logs_are_safe_and_retry_log_is_conditional(
     assert "http_batch_count=1" in summaries[0]
     assert "retry_count=1" in summaries[0]
     assert "status=success" in summaries[0]
-    assert "secret" not in caplog.text
+    assert request_payloads == [
+        {
+            "model": "nomic-embed-text",
+            "input": [f"search_document: {chunk_text}"],
+            "truncate": False,
+        },
+        {
+            "model": "nomic-embed-text",
+            "input": [f"search_document: {chunk_text}"],
+            "truncate": False,
+        },
+    ]
+    summary_fields = {
+        item.split("=", maxsplit=1)[0]
+        for item in summaries[0].removeprefix("Embedding summary ").split()
+    }
+    assert summary_fields == {
+        "job_id",
+        "document_id",
+        "input_count",
+        "batch_size",
+        "http_batch_count",
+        "retry_count",
+        "duration_s",
+        "embeddings_per_s",
+        "status",
+    }
+    for sentinel in [chunk_text, raw_body, *(str(value) for value in vector)]:
+        assert sentinel not in caplog.text
+    await http_client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_query_text_raw_response_and_embedding_vector_are_never_logged(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    query_text = "SENTINEL_EMBEDDING_QUERY_TEXT_27"
+    raw_body = "SENTINEL_QUERY_OLLAMA_RAW_BODY_27"
+    vector = [8117.125, 8118.25, 8119.5]
+    request_payloads: list[dict[str, Any]] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        request_payloads.append(json.loads(request.content))
+        return httpx.Response(
+            200,
+            json={"embeddings": [vector], "provider_detail": raw_body},
+        )
+
+    http_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    client = OllamaEmbeddingClient(settings=_settings(), http_client=http_client)
+
+    with caplog.at_level(logging.INFO):
+        result = await client.embed_query(query_text)
+
+    assert result == vector
+    assert request_payloads == [
+        {
+            "model": "nomic-embed-text",
+            "input": [f"search_query: {query_text}"],
+            "truncate": False,
+        }
+    ]
+    for sentinel in [query_text, raw_body, *(str(value) for value in vector)]:
+        assert sentinel not in caplog.text
     await http_client.aclose()
 
 
