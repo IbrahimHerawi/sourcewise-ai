@@ -1,0 +1,167 @@
+.collectionList {
+  display: flex;
+  margin: 0;
+  padding: 0;
+  flex-direction: column;
+  gap: var(--sw-spacing-12);
+  list-style: none;
+}
+
+.collectionCard,
+.loadingCard {
+  border: 1px solid var(--sw-color-border-default);
+  border-radius: var(--sw-radius-medium);
+  background: var(--sw-color-background-surface);
+  padding: var(--sw-spacing-24);
+  box-shadow: var(--shadow-sw-card);
+}
+
+.collectionCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sw-spacing-16);
+}
+
+.cardHeader {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: var(--sw-spacing-16);
+}
+
+.collectionInformation {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--sw-spacing-12);
+}
+
+.collectionName {
+  margin: 0;
+  color: var(--sw-color-text-primary);
+  font-size: var(--sw-type-size-card-title);
+  font-weight: 500;
+  line-height: var(--sw-type-line-height-card-title);
+}
+
+.collectionName a {
+  border-radius: var(--sw-radius-small);
+  color: inherit;
+  text-decoration: none;
+}
+
+.collectionName a:hover {
+  color: var(--sw-color-brand-default);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+.collectionName a:focus-visible {
+  outline: 0.125rem solid var(--sw-color-focus-ring);
+  outline-offset: 0.125rem;
+}
+
+.collectionDescription {
+  margin: 0;
+  color: var(--sw-color-text-secondary);
+  font-size: var(--sw-type-size-body);
+  font-weight: 400;
+  line-height: var(--sw-type-line-height-body);
+}
+
+.cardActions {
+  display: flex;
+  flex: none;
+  gap: var(--sw-spacing-12);
+}
+
+.metadata,
+.pagination {
+  color: var(--sw-color-text-secondary);
+  font-size: var(--sw-type-size-metadata);
+  font-weight: 400;
+  line-height: var(--sw-type-line-height-metadata);
+}
+
+.metadata {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sw-spacing-12);
+}
+
+.loadingCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sw-spacing-12);
+}
+
+.skeleton {
+  border-radius: var(--sw-radius-small);
+  background: var(--sw-color-background-surface-subtle);
+}
+
+.skeletonName {
+  width: min(15rem, 100%);
+  height: 1.25rem;
+}
+
+.skeletonDescription {
+  width: min(35rem, 100%);
+  height: 1rem;
+}
+
+.skeletonMetadata {
+  width: min(20rem, 100%);
+  height: 0.875rem;
+}
+
+.pagination {
+  display: flex;
+  min-height: 3.5rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sw-spacing-12);
+}
+
+.pagination p {
+  margin: 0;
+}
+
+.paginationControls {
+  display: flex;
+  gap: var(--sw-spacing-12);
+}
+
+@media (max-width: 40rem) {
+  .cardHeader {
+    flex-direction: column;
+  }
+
+  .cardActions {
+    width: 100%;
+  }
+
+  .cardActions > button {
+    flex: 1;
+  }
+
+  .pagination {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .paginationControls {
+    width: 100%;
+  }
+
+  .paginationControls > button {
+    flex: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton {
+    animation: none;
+  }
+}

@@ -135,7 +135,7 @@ function asMessage(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value : undefined;
 }
 
-async function request<T>(
+export async function apiRequest<T>(
   path: string,
   options: RequestInit = {}
 ): Promise<T> {
@@ -195,35 +195,35 @@ async function request<T>(
 
 export const api = {
   async register(payload: RegisterRequest): Promise<RegisterResponse> {
-    return request<RegisterResponse>("/auth/register", {
+    return apiRequest<RegisterResponse>("/auth/register", {
       method: "POST",
       body: JSON.stringify(payload),
     });
   },
 
   async login(payload: LoginRequest): Promise<LoginResponse> {
-    return request<LoginResponse>("/auth/login", {
+    return apiRequest<LoginResponse>("/auth/login", {
       method: "POST",
       body: JSON.stringify(payload),
     });
   },
 
   async verifyEmail(token: string): Promise<MessageResponse> {
-    return request<MessageResponse>("/auth/verify-email", {
+    return apiRequest<MessageResponse>("/auth/verify-email", {
       method: "POST",
       body: JSON.stringify({ token }),
     });
   },
 
   async resendVerification(email: string): Promise<ResendVerificationResponse> {
-    return request<ResendVerificationResponse>("/auth/resend-verification", {
+    return apiRequest<ResendVerificationResponse>("/auth/resend-verification", {
       method: "POST",
       body: JSON.stringify({ email }),
     });
   },
 
   async getMe(): Promise<User> {
-    return request<User>("/auth/me", {
+    return apiRequest<User>("/auth/me", {
       method: "GET",
     });
   },

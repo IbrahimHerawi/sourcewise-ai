@@ -1,7 +1,10 @@
 .sidebar {
   flex: 0 0 var(--size-dashboard-sidebar-width);
-  min-height: 100svh;
-  background: var(--color-dashboard-sidebar-background);
+  width: var(--size-dashboard-sidebar-width);
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--sw-color-background-surface);
   box-shadow: var(--shadow-dashboard-sidebar);
   font-family: var(--font-dashboard);
   display: flex;
@@ -10,9 +13,10 @@
 
 .logo {
   display: block;
+  flex: none;
   margin-top: var(--spacing-dashboard-sidebar-logo-block-start);
   margin-left: var(--spacing-dashboard-sidebar-content-inline);
-  color: var(--color-dashboard-logo);
+  color: var(--sw-color-brand-default);
   font-size: var(--font-size-dashboard-logo);
   font-weight: var(--font-weight-dashboard-logo);
   line-height: var(--line-height-dashboard-logo);
@@ -21,22 +25,32 @@
 
 .navigation {
   display: flex;
+  min-height: 0;
   flex-direction: column;
+  flex: 1 1 auto;
   gap: var(--spacing-dashboard-nav-items);
   margin-top: var(--spacing-dashboard-nav-block-start);
+  overflow-x: clip;
+  overflow-y: visible;
   padding-inline: var(--spacing-dashboard-sidebar-content-inline);
-  flex: 1;
+}
+
+.navigation[data-overflowing="true"] {
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
 }
 
 .item {
   display: flex;
+  flex: none;
   align-items: center;
   gap: var(--spacing-dashboard-nav-item-gap);
   height: var(--size-dashboard-nav-item-height);
   padding-inline-start: var(--spacing-dashboard-nav-item-inline);
   padding-inline-end: var(--spacing-dashboard-nav-item-inline-end);
   border-radius: var(--radius-dashboard-nav-item);
-  color: var(--color-dashboard-nav-inactive-foreground);
+  color: var(--sw-color-text-muted-navigation);
   font-size: var(--font-size-dashboard-nav);
   font-weight: var(--font-weight-dashboard-nav-inactive);
   line-height: var(--line-height-dashboard-nav);
@@ -45,25 +59,25 @@
 }
 
 .item:hover {
-  background: var(--color-dashboard-nav-hover);
-  color: var(--foreground);
+  background: var(--sw-color-background-surface-subtle);
+  color: var(--sw-color-text-primary);
 }
 
 .item:focus-visible {
-  outline: 0.125rem solid var(--ring);
+  outline: 0.125rem solid var(--sw-color-focus-ring);
   outline-offset: 0.125rem;
 }
 
 .itemActive {
-  background: var(--color-dashboard-nav-active);
+  background: var(--sw-color-background-selected);
   box-shadow: var(--shadow-dashboard-nav-active);
-  color: var(--color-dashboard-nav-active-foreground);
+  color: var(--sw-color-status-processing-foreground);
   font-weight: var(--font-weight-dashboard-nav-active);
 }
 
 .itemActive:hover {
   background: var(--color-dashboard-nav-active-hover);
-  color: var(--color-dashboard-nav-active-foreground);
+  color: var(--sw-color-status-processing-foreground);
 }
 
 .icon {
@@ -73,8 +87,9 @@
 }
 
 .footer {
+  flex: none;
   padding: var(--spacing-dashboard-profile-footer);
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--sw-color-border-divider);
   margin-top: auto;
 }
 
@@ -88,17 +103,17 @@
   border: 0;
   border-radius: var(--radius-dashboard-profile-trigger);
   background: transparent;
-  color: var(--foreground);
+  color: var(--sw-color-text-primary);
   cursor: pointer;
   text-align: left;
 }
 
 .profileTrigger:hover {
-  background: var(--accent);
+  background: var(--sw-color-background-surface-subtle);
 }
 
 .profileTrigger:focus-visible {
-  outline: 0.125rem solid var(--ring);
+  outline: 0.125rem solid var(--sw-color-focus-ring);
   outline-offset: 0.125rem;
 }
 
@@ -108,8 +123,8 @@
 }
 
 .profileAvatarFallback {
-  background: var(--brand);
-  color: var(--primary-foreground);
+  background: var(--sw-color-brand-default);
+  color: var(--sw-color-background-surface);
   font-family: var(--font-dashboard);
   font-size: var(--font-size-dashboard-profile-avatar);
   font-weight: var(--font-weight-dashboard-profile-text);
@@ -118,7 +133,7 @@
 .profileName {
   min-width: 0;
   overflow: hidden;
-  color: var(--foreground);
+  color: var(--sw-color-text-primary);
   font-size: var(--font-size-dashboard-profile-text);
   font-weight: var(--font-weight-dashboard-profile-text);
   white-space: nowrap;
@@ -147,7 +162,7 @@
 .profileMenuName {
   min-width: 0;
   overflow: hidden;
-  color: var(--popover-foreground);
+  color: var(--sw-color-text-primary);
   font-size: var(--font-size-dashboard-profile-text);
   font-weight: var(--font-weight-dashboard-profile-text);
   white-space: nowrap;
@@ -155,12 +170,12 @@
 }
 
 .profileMenuSeparator {
-  background: var(--border);
+  background: var(--sw-color-border-divider);
 }
 
 .profileMenuLogout {
   height: var(--size-dashboard-profile-menu-item-height);
-  color: var(--destructive);
+  color: var(--sw-color-status-destructive-foreground);
   font-size: var(--font-size-dashboard-profile-text);
   font-weight: var(--font-weight-dashboard-profile-text);
   cursor: pointer;
@@ -168,7 +183,7 @@
 
 .profileMenuLogout:focus {
   background: var(--color-dashboard-profile-logout-hover);
-  color: var(--destructive);
+  color: var(--sw-color-status-destructive-foreground);
 }
 
 .profileMenuLogoutIcon {
@@ -178,7 +193,10 @@
 
 @media (max-width: 48rem) {
   .sidebar {
+    width: 100%;
+    height: auto;
     min-height: auto;
+    overflow: visible;
     flex-basis: auto;
   }
 
@@ -190,8 +208,11 @@
 
   .navigation {
     flex-direction: row;
+    min-height: auto;
     margin-top: 0;
     overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-y: auto;
     padding-block-end: var(--spacing-dashboard-sidebar-content-inline);
     flex: none;
   }

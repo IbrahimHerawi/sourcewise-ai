@@ -2,18 +2,10 @@
 
 import type { ReactNode } from "react";
 import { useEffect } from "react";
-import { Inter } from "next/font/google";
 import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
-import { DashboardSidebar } from "@/features/dashboard/components/dashboard-sidebar";
-import styles from "./layout.module.css";
-
-const inter = Inter({
-  variable: "--font-inter",
-  subsets: ["latin"],
-  display: "swap",
-});
+import { DashboardShell } from "@/features/dashboard/components/dashboard-shell";
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   const { isAuthenticated, isLoading } = useAuth();
@@ -40,10 +32,5 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     return null;
   }
 
-  return (
-    <div className={`${styles.shell} ${inter.variable}`}>
-      <DashboardSidebar />
-      <main className={styles.content}>{children}</main>
-    </div>
-  );
+  return <DashboardShell>{children}</DashboardShell>;
 }

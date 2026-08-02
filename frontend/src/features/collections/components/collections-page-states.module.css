@@ -1,0 +1,81 @@
+.messagePanel {
+  display: flex;
+  width: 100%;
+  height: 20rem;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  flex-direction: column;
+  gap: var(--sw-spacing-16);
+  border: 1px solid var(--sw-color-border-default);
+  border-radius: var(--sw-radius-medium);
+  background: var(--sw-color-background-surface);
+  padding: var(--sw-spacing-48);
+  box-shadow: var(--shadow-sw-card);
+  text-align: center;
+}
+
+.errorPanel {
+  border-color: var(--sw-color-validation-border);
+}
+
+.iconHalo {
+  display: flex;
+  width: 4rem;
+  height: 4rem;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--sw-radius-large);
+}
+
+.emptyHalo {
+  background: var(--sw-color-background-upload-halo);
+  color: var(--sw-color-brand-default);
+}
+
+.errorHalo {
+  background: var(--sw-color-status-destructive-background);
+  color: var(--sw-color-status-destructive-foreground);
+}
+
+.stateIcon {
+  width: 1.75rem;
+  height: 1.75rem;
+  stroke-width: 2;
+}
+
+.messageTitle,
+.errorTitle {
+  margin: 0;
+  font-size: var(--sw-type-size-section-title);
+  font-weight: 600;
+  line-height: var(--sw-type-line-height-section-title);
+  letter-spacing: var(--sw-type-letter-spacing-section-title);
+}
+
+.messageTitle {
+  color: var(--sw-color-text-primary);
+}
+
+.errorTitle {
+  color: var(--sw-color-status-destructive-foreground);
+}
+
+.messageBody {
+  width: min(35rem, 100%);
+  min-height: 3rem;
+  margin: 0;
+  color: var(--sw-color-text-secondary);
+  font-size: var(--sw-type-size-body);
+  font-weight: 400;
+  line-height: var(--sw-type-line-height-body);
+}
+
+@media (max-width: 40rem) {
+  .messagePanel {
+    height: auto;
+    min-height: 20rem;
+    padding: var(--sw-spacing-24);
+  }
+}

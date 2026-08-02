@@ -67,7 +67,7 @@ export function Hero({ onOpenAuth }: { onOpenAuth: (tab: "signin" | "signup") =>
               size="lg"
               variant="outline"
               onClick={() => onOpenAuth("signin")}
-              className="h-12 rounded-xl border-border bg-white px-7 text-sm font-medium hover:bg-muted"
+              className="h-12 rounded-xl border-border bg-background px-7 text-sm font-medium hover:bg-muted"
             >
               Sign In
             </Button>

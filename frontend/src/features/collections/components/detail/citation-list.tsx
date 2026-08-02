@@ -1,0 +1,27 @@
+import { FileText } from "lucide-react";
+import type { Citation } from "@/features/collections/collections-api-types";
+import styles from "./collection-detail.module.css";
+
+export function CitationList({ citations }: { citations: readonly Citation[] }) {
+  if (!citations.length) {
+    return <p className={styles.noCitations}>No citations were returned for this answer.</p>;
+  }
+
+  return (
+    <ol className={styles.citationList}>
+      {citations.map((citation) => (
+        <li className={styles.citationItem} key={`${citation.chunk_id}-${citation.rank}`}>
+          <span className={styles.citationRank}>{citation.rank}</span>
+          <div className={styles.citationBody}>
+            <div className={styles.citationHeader}>
+              <FileText aria-hidden="true" />
+              <strong>{citation.document_filename}</strong>
+              <span>Chunk {citation.chunk_index.toLocaleString()}</span>
+            </div>
+            <blockquote>{citation.excerpt}</blockquote>
+          </div>
+        </li>
+      ))}
+    </ol>
+  );
+}

@@ -36,7 +36,7 @@ export function Features({ onOpenAuth }: { onOpenAuth: (tab: "signin" | "signup"
   return (
     <section
       id="features"
-      className="relative bg-white"
+      className="relative bg-background"
       style={{ paddingTop: "clamp(96px, 13vw, 168px)", paddingBottom: "clamp(96px, 13vw, 168px)" }}
     >
       <div
@@ -88,7 +88,7 @@ export function Features({ onOpenAuth }: { onOpenAuth: (tab: "signin" | "signup"
                 {/* Black top segment — fixed height, crisp, solid. */}
                 <span
                   className="block w-full shrink-0"
-                  style={{ height: "28px", backgroundColor: "#121317" }}
+                  style={{ height: "28px", backgroundColor: "var(--sw-color-text-primary)" }}
                 />
                 {/* Small visible gap between the two segments. */}
                 <span className="block w-full shrink-0" style={{ height: "10px" }} />
@@ -96,7 +96,7 @@ export function Features({ onOpenAuth }: { onOpenAuth: (tab: "signin" | "signup"
                     dynamically, matching this feature's content. */}
                 <span
                   className="block w-full flex-1"
-                  style={{ backgroundColor: "#E6E6E6" }}
+                  style={{ backgroundColor: "var(--sw-color-border-divider)" }}
                 />
               </span>
 

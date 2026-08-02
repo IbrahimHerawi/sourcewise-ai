@@ -1,0 +1,126 @@
+.header {
+  position: relative;
+  z-index: 10;
+  width: 100%;
+  flex: none;
+  background: var(--sw-color-background-canvas);
+  box-shadow: none;
+  font-family: var(--font-dashboard);
+  transition: box-shadow var(--duration-dashboard-header-shadow)
+    var(--easing-dashboard-header-shadow);
+}
+
+.headerScrolled {
+  box-shadow: var(--shadow-dashboard-header-scrolled);
+}
+
+.inner {
+  display: flex;
+  width: 100%;
+  height: var(--size-dashboard-header-height);
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sw-spacing-16);
+  padding-inline: max(
+    var(--spacing-dashboard-page-inline),
+    calc((100% - var(--sw-content-wide-width)) / 2)
+  );
+}
+
+.identity {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--sw-spacing-4);
+}
+
+.backLink {
+  display: inline-flex;
+  width: fit-content;
+  max-width: 100%;
+  align-items: center;
+  gap: var(--sw-spacing-4);
+  border-radius: var(--sw-radius-small);
+  color: var(--sw-color-text-secondary);
+  font-size: var(--sw-type-size-metadata);
+  font-weight: 500;
+  line-height: var(--sw-type-line-height-metadata);
+  text-decoration: none;
+}
+
+.backLink:hover {
+  color: var(--sw-color-brand-default);
+}
+
+.backLink:focus-visible {
+  outline: 0.125rem solid var(--sw-color-focus-ring);
+  outline-offset: 0.125rem;
+}
+
+.backLink svg {
+  width: 1rem;
+  height: 1rem;
+  flex: none;
+}
+
+.backLink span,
+.contextualLabel,
+.title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.contextualLabel {
+  color: var(--sw-color-text-secondary);
+  font-size: var(--sw-type-size-metadata);
+  line-height: var(--sw-type-line-height-metadata);
+}
+
+.title {
+  min-width: 0;
+  margin: 0;
+  color: var(--sw-color-text-primary);
+  font-size: var(--sw-type-size-page-title);
+  font-weight: 600;
+  line-height: var(--sw-type-line-height-page-title);
+  letter-spacing: var(--sw-type-letter-spacing-page-title);
+}
+
+.actions {
+  display: flex;
+  min-width: 0;
+  max-width: 50%;
+  flex: none;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--sw-spacing-8);
+}
+
+@media (max-width: 48rem) {
+  .inner {
+    padding-inline: var(--sw-spacing-16);
+  }
+}
+
+@media (max-width: 30rem) {
+  .actions {
+    max-width: 46%;
+  }
+
+  .actions > * {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .header {
+    transition: none;
+  }
+}

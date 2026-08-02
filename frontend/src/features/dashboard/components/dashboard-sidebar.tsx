@@ -1,10 +1,12 @@
 "use client";
 
+import { useRef } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { LogOut } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
+import { useOverflowState } from "@/features/dashboard/hooks/use-overflow-state";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   DropdownMenu,
@@ -47,6 +49,17 @@ function NavigationIcon({ icon }: Pick<DashboardNavigationItem, "icon">) {
     );
   }
 
+  if (icon === "collection") {
+    return (
+      <svg aria-hidden="true" className={styles.icon} viewBox="0 0 20 20">
+        <path
+          fill="currentColor"
+          d="M2 17.5C1.45 17.5.979 17.304.588 16.913.196 16.521 0 16.05 0 15.5v-11c0-.55.196-1.021.588-1.413C.979 2.696 1.45 2.5 2 2.5h5l2 2h9c.55 0 1.021.196 1.413.587.391.392.587.863.587 1.413v9c0 .55-.196 1.021-.587 1.413-.392.391-.863.587-1.413.587H2Z"
+        />
+      </svg>
+    );
+  }
+
   return (
     <svg aria-hidden="true" className={styles.icon} viewBox="52 232 20 20">
       <path
@@ -60,14 +73,21 @@ function NavigationIcon({ icon }: Pick<DashboardNavigationItem, "icon">) {
 export function DashboardSidebar() {
   const pathname = usePathname();
   const { user, logout } = useAuth();
+  const navigationRef = useRef<HTMLElement>(null);
+  const isNavigationOverflowing = useOverflowState(navigationRef);
   const displayName = user ? formatDashboardUserName(user) : "";
   const initials = user ? getDashboardUserInitials(user) : "";
 
   return (
     <aside aria-label="Dashboard sidebar" className={styles.sidebar}>
       <span className={styles.logo}>DocQ&amp;A</span>
-      <nav aria-label="Dashboard navigation" className={styles.navigation}>
-        {dashboardNavigationItems.map(({ href, icon, label }) => {
+      <nav
+        aria-label="Dashboard navigation"
+        className={styles.navigation}
+        data-overflowing={isNavigationOverflowing ? "true" : "false"}
+        ref={navigationRef}
+      >
+        {dashboardNavigationItems.map(({ href, icon, navigationLabel }) => {
           const isActive = isDashboardNavigationItemActive(pathname, href);
 
           return (
@@ -78,7 +98,7 @@ export function DashboardSidebar() {
               key={href}
             >
               <NavigationIcon icon={icon} />
-              <span>{label}</span>
+              <span>{navigationLabel}</span>
             </Link>
           );
         })}

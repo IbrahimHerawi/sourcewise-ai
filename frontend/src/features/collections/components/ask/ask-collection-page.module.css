@@ -1,0 +1,201 @@
+.askLayout {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--sw-spacing-24);
+}
+
+.questionPanel,
+.answerPanel {
+  border-radius: var(--sw-radius-medium);
+  background: var(--sw-color-background-surface);
+  padding: var(--sw-spacing-24);
+}
+
+.questionPanel {
+  border: 1px solid var(--sw-color-border-default);
+}
+
+.intro {
+  max-width: 44rem;
+  margin-bottom: var(--sw-spacing-24);
+}
+
+.intro h2,
+.answerHeader h2,
+.citationsSection h3,
+.chooseState h2,
+.requestError h2 {
+  margin: 0;
+  color: var(--sw-color-text-primary);
+}
+
+.intro h2,
+.answerHeader h2,
+.chooseState h2,
+.requestError h2 {
+  font-size: var(--sw-type-size-section-title);
+  line-height: var(--sw-type-line-height-section-title);
+}
+
+.intro p,
+.chooseState p,
+.requestError p,
+.answerLoading p {
+  margin: var(--sw-spacing-8) 0 0;
+  color: var(--sw-color-text-secondary);
+  font-size: var(--sw-type-size-body);
+  line-height: var(--sw-type-line-height-body);
+}
+
+.questionPanel form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sw-spacing-8);
+}
+
+.questionPanel label {
+  font-size: var(--sw-type-size-button);
+  font-weight: 600;
+}
+
+.questionPanel textarea {
+  min-height: 9rem;
+  resize: vertical;
+  font-family: var(--font-dashboard);
+}
+
+.formFooter,
+.answerHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sw-spacing-16);
+}
+
+.formFooter p,
+.answerHeader time {
+  margin: 0;
+  color: var(--sw-color-text-secondary);
+  font-size: var(--sw-type-size-metadata);
+}
+
+.formFooter .inputError {
+  color: var(--sw-color-validation-body);
+}
+
+.inlineError,
+.contextNote,
+.answerLoading {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sw-spacing-12);
+  border-radius: var(--sw-radius-small);
+  padding: var(--sw-spacing-16);
+}
+
+.inlineError {
+  background: var(--sw-color-status-destructive-background);
+  color: var(--sw-color-status-destructive-foreground);
+}
+
+.inlineError p,
+.contextNote {
+  margin: 0;
+  font-size: var(--sw-type-size-metadata);
+  line-height: var(--sw-type-line-height-metadata);
+}
+
+.inlineError svg,
+.answerLoading svg {
+  width: 1.25rem;
+  height: 1.25rem;
+  flex: none;
+}
+
+.answerLoading {
+  align-items: center;
+  background: var(--sw-color-background-selected);
+  color: var(--sw-color-brand-default);
+}
+
+.answerLoading svg {
+  animation: spin 1s linear infinite;
+}
+
+.answerLoading strong {
+  color: var(--sw-color-text-primary);
+}
+
+.answerLoading p {
+  font-size: var(--sw-type-size-metadata);
+  line-height: var(--sw-type-line-height-metadata);
+}
+
+.answerPanel {
+  box-shadow: var(--shadow-sw-card);
+}
+
+.answerText {
+  max-width: 72ch;
+  margin: var(--sw-spacing-24) 0 0;
+  color: var(--sw-color-text-primary);
+  font-size: var(--sw-type-size-body);
+  line-height: 1.75;
+  white-space: pre-wrap;
+}
+
+.contextNote {
+  margin-top: var(--sw-spacing-16);
+  background: var(--sw-color-status-pending-background);
+  color: var(--sw-color-status-pending-foreground);
+}
+
+.citationsSection {
+  margin-top: var(--sw-spacing-32);
+}
+
+.citationsSection h3 {
+  margin-bottom: var(--sw-spacing-12);
+  font-size: var(--sw-type-size-card-title);
+}
+
+.chooseState,
+.requestError {
+  display: flex;
+  min-height: 24rem;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  text-align: center;
+}
+
+.chooseState > svg,
+.requestError > svg {
+  width: 2rem;
+  height: 2rem;
+  margin-bottom: var(--sw-spacing-16);
+  color: var(--sw-color-brand-default);
+}
+
+.chooseState a,
+.requestError button {
+  margin-top: var(--sw-spacing-24);
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (max-width: 40rem) {
+  .questionPanel,
+  .answerPanel { padding: var(--sw-spacing-16); }
+  .formFooter,
+  .answerHeader { align-items: stretch; flex-direction: column; }
+  .formFooter button { width: 100%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .answerLoading svg { animation: none; }
+}

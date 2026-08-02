@@ -2,6 +2,8 @@
 
 import { useEffect, useRef } from "react";
 
+import { colorWithAlpha, resolveSemanticColor } from "@/lib/colors";
+
 type Particle = {
   x: number;
   y: number;
@@ -76,6 +78,7 @@ export function ParticleField({ className }: { className?: string }) {
     let particles: Particle[] = [];
     let rafId = 0;
     let running = true;
+    const brandColor = resolveSemanticColor(canvas, "--sw-color-brand-hover");
 
     // Pre-rendered glow sprite: solid brand-blue core with a soft halo.
     // Normal source-over blending so it stays visible on a white background.
@@ -88,10 +91,10 @@ export function ParticleField({ className }: { className?: string }) {
       const half = SPRITE_SIZE / 2;
       const grad = sctx.createRadialGradient(half, half, 0, half, half, half);
       // Slightly denser sprite so particles read as more solid/visible.
-      grad.addColorStop(0, "rgba(73, 123, 249, 1)");
-      grad.addColorStop(0.18, "rgba(73, 123, 249, 0.85)");
-      grad.addColorStop(0.5, "rgba(73, 123, 249, 0.28)");
-      grad.addColorStop(1, "rgba(73, 123, 249, 0)");
+      grad.addColorStop(0, brandColor);
+      grad.addColorStop(0.18, colorWithAlpha(brandColor, 0.85));
+      grad.addColorStop(0.5, colorWithAlpha(brandColor, 0.28));
+      grad.addColorStop(1, colorWithAlpha(brandColor, 0));
       sctx.fillStyle = grad;
       sctx.fillRect(0, 0, SPRITE_SIZE, SPRITE_SIZE);
     }
@@ -248,7 +251,7 @@ export function ParticleField({ className }: { className?: string }) {
             ctx.beginPath();
             ctx.moveTo(a.x, a.y);
             ctx.lineTo(b.x, b.y);
-            ctx.strokeStyle = `rgba(73, 123, 249, ${alpha})`;
+            ctx.strokeStyle = colorWithAlpha(brandColor, alpha);
             ctx.lineWidth = 0.7;
             ctx.stroke();
           }

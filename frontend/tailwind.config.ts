@@ -11,45 +11,45 @@ const config: Config = {
   theme: {
   	extend: {
   		colors: {
-  			background: 'hsl(var(--background))',
-  			foreground: 'hsl(var(--foreground))',
-  			card: {
-  				DEFAULT: 'hsl(var(--card))',
-  				foreground: 'hsl(var(--card-foreground))'
-  			},
-  			popover: {
-  				DEFAULT: 'hsl(var(--popover))',
-  				foreground: 'hsl(var(--popover-foreground))'
-  			},
-  			primary: {
-  				DEFAULT: 'hsl(var(--primary))',
-  				foreground: 'hsl(var(--primary-foreground))'
-  			},
-  			secondary: {
-  				DEFAULT: 'hsl(var(--secondary))',
-  				foreground: 'hsl(var(--secondary-foreground))'
-  			},
-  			muted: {
-  				DEFAULT: 'hsl(var(--muted))',
-  				foreground: 'hsl(var(--muted-foreground))'
-  			},
-  			accent: {
-  				DEFAULT: 'hsl(var(--accent))',
-  				foreground: 'hsl(var(--accent-foreground))'
-  			},
-  			destructive: {
-  				DEFAULT: 'hsl(var(--destructive))',
-  				foreground: 'hsl(var(--destructive-foreground))'
-  			},
-  			border: 'hsl(var(--border))',
-  			input: 'hsl(var(--input))',
-  			ring: 'hsl(var(--ring))',
-  			chart: {
-  				'1': 'hsl(var(--chart-1))',
-  				'2': 'hsl(var(--chart-2))',
-  				'3': 'hsl(var(--chart-3))',
-  				'4': 'hsl(var(--chart-4))',
-  				'5': 'hsl(var(--chart-5))'
+			background: 'var(--sw-color-background-surface)',
+			foreground: 'var(--sw-color-text-primary)',
+			card: {
+				DEFAULT: 'var(--sw-color-background-surface)',
+				foreground: 'var(--sw-color-text-primary)'
+			},
+			popover: {
+				DEFAULT: 'var(--sw-color-background-surface)',
+				foreground: 'var(--sw-color-text-primary)'
+			},
+			primary: {
+				DEFAULT: 'var(--sw-color-brand-default)',
+				foreground: 'var(--sw-color-background-surface)'
+			},
+			secondary: {
+				DEFAULT: 'var(--sw-color-background-surface-subtle)',
+				foreground: 'var(--sw-color-text-primary)'
+			},
+			muted: {
+				DEFAULT: 'var(--sw-color-background-surface-subtle)',
+				foreground: 'var(--sw-color-text-secondary)'
+			},
+			accent: {
+				DEFAULT: 'var(--sw-color-background-surface-subtle)',
+				foreground: 'var(--sw-color-text-primary)'
+			},
+			destructive: {
+				DEFAULT: 'var(--sw-color-status-destructive-foreground)',
+				foreground: 'var(--sw-color-background-surface)'
+			},
+			border: 'var(--sw-color-border-default)',
+			input: 'var(--sw-color-border-default)',
+			ring: 'var(--sw-color-focus-ring)',
+			chart: {
+				'1': 'var(--color-chart-1)',
+				'2': 'var(--color-chart-2)',
+				'3': 'var(--color-chart-3)',
+				'4': 'var(--color-chart-4)',
+				'5': 'var(--color-chart-5)'
   			}
   		},
   		borderRadius: {
