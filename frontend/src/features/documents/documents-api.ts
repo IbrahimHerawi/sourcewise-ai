@@ -104,7 +104,11 @@ export async function listDocumentsApi(
   });
   if (input.collectionId) query.set("collection_id", input.collectionId);
   const response = await apiRequest<unknown>(`/documents?${query}`, { signal });
-  return parseDocumentList(response);
+  const page = parseDocumentList(response);
+  if (page.limit !== input.limit || page.offset !== input.offset) {
+    return invalidApiResponse(DOCUMENT_CONTRACT);
+  }
+  return page;
 }
 
 export async function getDocumentApi(

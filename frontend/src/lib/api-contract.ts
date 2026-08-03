@@ -57,10 +57,14 @@ export function readApiInteger(
   minimum = 0,
 ): number {
   const value = object[key];
-  if (!Number.isInteger(value) || (value as number) < minimum) {
+  if (
+    typeof value !== "number" ||
+    !Number.isInteger(value) ||
+    value < minimum
+  ) {
     return invalidApiResponse(contract);
   }
-  return value as number;
+  return value;
 }
 
 export function readApiUuid(

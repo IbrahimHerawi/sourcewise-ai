@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, type RefObject } from "react";
+import { useEffect, useRef } from "react";
 import {
   Sheet,
   SheetContent,
@@ -33,11 +33,9 @@ import styles from "./documents-page.module.css";
 export function DocumentDetailsPanel({
   document,
   onClose,
-  restoreFocusRef,
 }: {
   document: DocumentRecord;
   onClose: () => void;
-  restoreFocusRef: RefObject<HTMLElement | null>;
 }) {
   const status = DOCUMENT_STATUS_PRESENTATION[document.status];
   const rows = [
@@ -53,14 +51,7 @@ export function DocumentDetailsPanel({
 
   return (
     <Sheet open onOpenChange={(open) => !open && onClose()}>
-      <SheetContent
-        className={styles.detailsPanel}
-        onCloseAutoFocus={(event) => {
-          event.preventDefault();
-          restoreFocusRef.current?.focus();
-        }}
-        side="right"
-      >
+      <SheetContent className={styles.detailsPanel} side="right">
         <SheetHeader className={styles.detailsHeader}>
           <SheetTitle>Document metadata</SheetTitle>
           <SheetDescription>

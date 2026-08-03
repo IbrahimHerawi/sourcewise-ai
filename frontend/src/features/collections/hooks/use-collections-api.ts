@@ -3,10 +3,10 @@
 import { useCallback } from "react";
 import {
   getCollection,
-  getCollectionDocuments,
   getCollectionHistory,
   getCollections,
 } from "@/features/collections/collections-api";
+import { useDocumentsList } from "@/features/documents/hooks/use-documents-api";
 import { useApiRequest } from "@/hooks/use-api-request";
 
 export function useCollectionsPage(limit: number, offset: number) {
@@ -30,12 +30,7 @@ export function useCollectionDocuments(
   limit: number,
   offset: number,
 ) {
-  const request = useCallback(
-    (signal: AbortSignal) =>
-      getCollectionDocuments(collectionId, limit, offset, signal),
-    [collectionId, limit, offset],
-  );
-  return useApiRequest(request);
+  return useDocumentsList({ collectionId, limit, offset });
 }
 
 export function useCollectionHistory(

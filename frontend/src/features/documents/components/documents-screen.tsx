@@ -394,7 +394,6 @@ export function DocumentsScreen() {
         <DocumentDetailsPanel
           document={dialog.document}
           onClose={closeDialog}
-          restoreFocusRef={dialogTriggerRef}
         />
       ) : null}
       {dialog?.type === "delete" ? (

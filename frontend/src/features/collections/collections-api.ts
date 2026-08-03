@@ -9,17 +9,6 @@ import {
   readApiString,
   readApiUuid,
 } from "@/lib/api-contract";
-import {
-  deleteDocumentApi,
-  getDocumentApi,
-  listDocumentsApi,
-  uploadDocumentsApi,
-} from "@/features/documents/documents-api";
-import {
-  mapDocumentRecord,
-  mapDocumentUploadResult,
-  mapPaginatedDocuments,
-} from "@/features/documents/document-mappers";
 import type {
   CollectionApiRecord,
   CollectionCreateInput,
@@ -121,36 +110,6 @@ export function deleteCollection(collectionId: string, signal?: AbortSignal) {
     method: "DELETE",
     signal,
   });
-}
-
-export function getCollectionDocuments(
-  collectionId: string,
-  limit: number,
-  offset: number,
-  signal?: AbortSignal,
-) {
-  return listDocumentsApi(
-    { collectionId, limit, offset },
-    signal,
-  ).then(mapPaginatedDocuments);
-}
-
-export async function getDocument(documentId: string, signal?: AbortSignal) {
-  return mapDocumentRecord(await getDocumentApi(documentId, signal));
-}
-
-export function deleteDocument(documentId: string, signal?: AbortSignal) {
-  return deleteDocumentApi(documentId, signal);
-}
-
-export function uploadCollectionDocuments(
-  collectionId: string,
-  files: readonly File[],
-  signal?: AbortSignal,
-) {
-  return uploadDocumentsApi({ collectionId, files }, signal).then(
-    mapDocumentUploadResult,
-  );
 }
 
 export function askCollection(

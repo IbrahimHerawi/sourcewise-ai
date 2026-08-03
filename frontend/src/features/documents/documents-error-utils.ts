@@ -60,6 +60,30 @@ export function getDocumentsRefreshError(error: unknown): string {
   return "Documents could not be refreshed. Existing results are still shown.";
 }
 
+export function getDocumentDetailsErrorMessage(error: unknown): string {
+  if (error instanceof ApiError) {
+    if (error.code === "invalid_response") {
+      return "The server returned document details in an unexpected format.";
+    }
+    if (error.status === 401) {
+      return "Your session has ended. Sign in and try again.";
+    }
+    if (error.status === 403) {
+      return "Your account does not currently have permission to view this document.";
+    }
+    if (error.status === 404) {
+      return "This document is no longer available.";
+    }
+    if (error.status >= 500) {
+      return "The document service could not load these details. Try again later.";
+    }
+  }
+  if (error instanceof TypeError) {
+    return "The details request could not reach the server. Check your connection and try again.";
+  }
+  return "Document details could not be loaded.";
+}
+
 export function getUploadErrorMessage(error: unknown): string {
   if (error instanceof ApiError) {
     if (error.code === "invalid_response") {

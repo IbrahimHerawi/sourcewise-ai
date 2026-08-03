@@ -18,6 +18,7 @@ import {
 import { CollectionButton } from "@/features/collections/components/collection-button";
 import { formatFileSize } from "@/features/collections/collection-formatters";
 import {
+  DOCUMENT_UPLOAD_LIMITS,
   getUploadValidationMessage,
   hasBlockingUploadError,
 } from "../file-validation";
@@ -44,7 +45,9 @@ const QUEUE_STATUS_LABELS = {
   valid: "Ready to upload",
   "empty-file": "Empty file",
   "invalid-type": "Unsupported type",
-  "too-large": "Over 10 MB",
+  "too-large": `Over ${
+    DOCUMENT_UPLOAD_LIMITS.maxFileBytes / (1024 * 1024)
+  } MB`,
   "too-many-files": "Over batch limit",
 } as const;
 
@@ -135,7 +138,11 @@ export function DocumentUploadCard({
     queue.length === 0
       ? "No files selected"
       : queue.some((item) => item.status === "too-many-files")
-        ? `${queue.length} files selected · remove ${queue.length - 3 === 1 ? "one file" : `${queue.length - 3} files`} to continue`
+        ? `${queue.length} files selected · remove ${
+            queue.length - DOCUMENT_UPLOAD_LIMITS.maxFiles === 1
+              ? "one file"
+              : `${queue.length - DOCUMENT_UPLOAD_LIMITS.maxFiles} files`
+          } to continue`
         : invalidCount > 0
           ? `${queue.length} ${queue.length === 1 ? "file" : "files"} selected · ${invalidCount} ${invalidCount === 1 ? "file needs" : "files need"} attention`
           : `${queue.length} ${queue.length === 1 ? "file" : "files"} selected · ${formatFileSize(totalBytes)} total`;
@@ -145,7 +152,10 @@ export function DocumentUploadCard({
       <div className={styles.uploadHeader}>
         <div>
           <h2 id="document-upload-title">Upload documents</h2>
-          <p id="upload-constraints">Add 1–3 PDF, TXT, or MD files · 10 MB max each</p>
+          <p id="upload-constraints">
+            Add 1–{DOCUMENT_UPLOAD_LIMITS.maxFiles} PDF, TXT, or MD files ·{" "}
+            {DOCUMENT_UPLOAD_LIMITS.maxFileBytes / (1024 * 1024)} MB max each
+          </p>
         </div>
         <CollectionButton disabled={uploadDisabled} onClick={onUpload} type="button">
           {isUploading

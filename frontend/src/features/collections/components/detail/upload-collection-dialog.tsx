@@ -8,14 +8,17 @@ import {
   type DragEvent,
 } from "react";
 import { FileText, UploadCloud, X } from "lucide-react";
-import { uploadCollectionDocuments } from "@/features/collections/collections-api";
 import type { DocumentUploadResponse } from "@/features/collections/collections-api-types";
 import { formatFileSize } from "@/features/collections/collection-formatters";
-import { useApiMutation } from "@/hooks/use-api-request";
 import { useAuth } from "@/hooks/use-auth";
 import { ApiError } from "@/lib/api";
 import { getUploadErrorMessage } from "@/features/documents/documents-error-utils";
-import { DOCUMENT_UPLOAD_LIMITS } from "@/features/documents/file-validation";
+import {
+  createUploadQueue,
+  DOCUMENT_UPLOAD_LIMITS,
+  getUploadValidationMessage,
+} from "@/features/documents/file-validation";
+import { useUploadDocumentsMutation } from "@/features/documents/hooks/use-documents-api";
 import { CollectionButton } from "../collection-button";
 import {
   CollectionDialog,
@@ -26,24 +29,11 @@ import styles from "./collection-detail.module.css";
 
 function validateFiles(files: readonly File[]): string | undefined {
   if (!files.length) return "Choose at least one document.";
-  if (files.length > DOCUMENT_UPLOAD_LIMITS.maxFiles) {
-    return "Choose no more than three documents.";
-  }
-  const unsupported = files.find(
-    (file) =>
-      !DOCUMENT_UPLOAD_LIMITS.acceptedExtensions.some((extension) =>
-        file.name.toLowerCase().endsWith(extension),
-      ),
-  );
-  if (unsupported) return `${unsupported.name} is not a supported file type.`;
-  const empty = files.find((file) => file.size === 0);
-  if (empty) return `${empty.name} is empty.`;
-  const oversized = files.find(
-    (file) => file.size > DOCUMENT_UPLOAD_LIMITS.maxFileBytes,
-  );
-  if (oversized) return `${oversized.name} is larger than the 10 MB limit.`;
-  return undefined;
+  return getUploadValidationMessage(createUploadQueue(files));
 }
+
+const MAX_UPLOAD_MB =
+  DOCUMENT_UPLOAD_LIMITS.maxFileBytes / (1024 * 1024);
 
 export function UploadCollectionDialog({
   collectionId,
@@ -61,18 +51,14 @@ export function UploadCollectionDialog({
   const chooseFilesRef = useRef<HTMLButtonElement>(null);
   const [files, setFiles] = useState<File[]>([]);
   const [validationError, setValidationError] = useState<string>();
-  const mutation = useApiMutation((selectedFiles: readonly File[], signal) =>
-    uploadCollectionDocuments(collectionId, selectedFiles, signal),
-  );
+  const mutation = useUploadDocumentsMutation();
 
   const addFiles = (nextFiles: readonly File[]) => {
     if (mutation.isPending) return;
     const combined = [...files, ...nextFiles];
     const error = validateFiles(combined);
     setValidationError(error);
-    if (combined.length <= DOCUMENT_UPLOAD_LIMITS.maxFiles) {
-      setFiles(combined);
-    }
+    setFiles(combined);
     mutation.reset();
   };
 
@@ -91,7 +77,7 @@ export function UploadCollectionDialog({
     setValidationError(error);
     if (error) return;
     void mutation
-      .mutate(files)
+      .mutate({ collectionId, files })
       .then(onUploaded)
       .catch((uploadError: unknown) => {
         if (
@@ -114,9 +100,9 @@ export function UploadCollectionDialog({
 
   return (
     <CollectionDialog
-      description="Upload one to three TXT, Markdown, or PDF documents directly to this collection."
+      description={`Upload one to ${DOCUMENT_UPLOAD_LIMITS.maxFiles} TXT, Markdown, or PDF documents directly to this collection.`}
       initialFocusRef={chooseFilesRef}
-      onClose={onClose}
+      onClose={mutation.isPending ? () => undefined : onClose}
       title="Upload to collection"
     >
       <div className={styles.uploadBody}>
@@ -128,7 +114,10 @@ export function UploadCollectionDialog({
           <UploadCloud aria-hidden="true" />
           <div>
             <strong>Drop documents here</strong>
-            <p>TXT, MD, or PDF · up to 3 files · 10 MB each</p>
+            <p>
+              TXT, MD, or PDF · up to {DOCUMENT_UPLOAD_LIMITS.maxFiles} files ·{" "}
+              {MAX_UPLOAD_MB} MB each
+            </p>
           </div>
           <CollectionButton
             disabled={
@@ -166,7 +155,9 @@ export function UploadCollectionDialog({
                   aria-label={`Remove ${file.name}`}
                   disabled={mutation.isPending}
                   onClick={() => {
-                    const next = files.filter((candidate) => candidate !== file);
+                    const next = files.filter(
+                      (_candidate, candidateIndex) => candidateIndex !== index,
+                    );
                     setFiles(next);
                     setValidationError(next.length ? validateFiles(next) : undefined);
                     mutation.reset();
@@ -191,6 +182,7 @@ export function UploadCollectionDialog({
           disabled={
             mutation.isPending ||
             confirmationUnknown ||
+            Boolean(validationError) ||
             files.length === 0
           }
           onClick={submit}

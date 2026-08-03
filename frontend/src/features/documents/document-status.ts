@@ -5,7 +5,7 @@ type DocumentStatusPresentation = {
   label: string;
   pollingRequired: boolean;
   processingMessage: string | null;
-  tone: "pending" | "processing" | "ready" | "failed";
+  tone: "pending" | "processing" | "ready" | "failed" | "unknown";
 };
 
 export const DOCUMENT_STATUS_PRESENTATION = {
@@ -42,7 +42,7 @@ export const DOCUMENT_STATUS_PRESENTATION = {
     label: "Unknown",
     pollingRequired: false,
     processingMessage: "The current processing status is unavailable.",
-    tone: "failed",
+    tone: "unknown",
   },
 } as const satisfies Record<DocumentStatus, DocumentStatusPresentation>;
 

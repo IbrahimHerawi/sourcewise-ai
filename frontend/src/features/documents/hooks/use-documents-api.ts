@@ -6,10 +6,12 @@ import { useApiMutation, useApiRequest } from "@/hooks/use-api-request";
 import { invalidApiResponse } from "@/lib/api-contract";
 import {
   deleteDocumentApi,
+  getDocumentApi,
   listDocumentsApi,
   uploadDocumentsApi,
 } from "../documents-api";
 import {
+  mapDocumentRecord,
   mapDocumentUploadResult,
   mapPaginatedDocuments,
 } from "../document-mappers";
@@ -90,6 +92,20 @@ export function useDocumentCollections() {
   const request = useCallback(
     (signal: AbortSignal) => loadAllCollections(signal),
     [],
+  );
+  const state = useApiRequest(request);
+  return { ...state, queryKey };
+}
+
+export function useDocumentDetails(documentId: string) {
+  const queryKey = useMemo(
+    () => documentsQueryKeys.detail(documentId),
+    [documentId],
+  );
+  const request = useCallback(
+    async (signal: AbortSignal) =>
+      mapDocumentRecord(await getDocumentApi(documentId, signal)),
+    [documentId],
   );
   const state = useApiRequest(request);
   return { ...state, queryKey };
