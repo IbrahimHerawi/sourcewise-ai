@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Skeleton } from "@/components/ui/skeleton";
 import { appendDashboardReturnTo } from "@/features/dashboard/navigation";
 import type { CollectionApiRecord } from "@/features/collections/collections-api-types";
-import { formatDateTime } from "@/features/collections/collection-formatters";
+import { formatDateTime } from "@/lib/formatters";
 import { CollectionButton } from "./collection-button";
 import styles from "./collection-list.module.css";
 

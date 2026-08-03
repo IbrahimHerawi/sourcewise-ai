@@ -87,7 +87,7 @@ const historyItem = {
       rank: 1,
       document_id: documentId,
       document_filename: "market-report.pdf",
-      chunk_id: "chunk-1",
+      chunk_id: "77777777-7777-4777-8777-777777777777",
       chunk_index: 7,
       excerpt: "Revenue grew by twelve percent.",
       distance: 0.12,

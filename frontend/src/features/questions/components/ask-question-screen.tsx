@@ -6,30 +6,28 @@ import { DashboardPage } from "@/features/dashboard/components/dashboard-page";
 import { useDocumentCollections } from "@/features/documents/hooks/use-documents-api";
 import { useAuth } from "@/hooks/use-auth";
 import { ApiError } from "@/lib/api";
+import { isApiUuid } from "@/lib/api-contract";
 import { AskQuestionForm } from "./ask-question-form";
 import {
   AskQuestionErrorState,
   AskQuestionSkeleton,
   QuestionGeneratingState,
+  QuestionSourceState,
 } from "./ask-question-states";
 import { QuestionAnswerPanel } from "./question-answer-panel";
 import { useAskQuestion } from "../hooks/use-ask-question";
+import { useQuestionSources } from "../hooks/use-question-sources";
 import {
   getQuestionCollectionsError,
   getQuestionErrorContent,
+  getQuestionFailureAction,
+  getQuestionSourcesError,
 } from "../question-error-utils";
 import {
   normalizeQuestion,
   validateQuestion,
 } from "../question-validation";
 import styles from "./ask-question.module.css";
-
-const UUID_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
-function isUuid(value: string | undefined): value is string {
-  return Boolean(value && UUID_PATTERN.test(value));
-}
 
 export function AskQuestionScreen({
   initialCollectionId,
@@ -41,16 +39,17 @@ export function AskQuestionScreen({
   const [question, setQuestion] = useState("");
   const [inputError, setInputError] = useState<string>();
   const [selectionNotice, setSelectionNotice] = useState<string | undefined>(
-    initialCollectionId && !isUuid(initialCollectionId)
+    initialCollectionId && !isApiUuid(initialCollectionId)
       ? "The linked collection was invalid, so all documents are selected."
       : undefined,
   );
   const [selectedCollectionId, setSelectedCollectionId] = useState<
     string | null
-  >(isUuid(initialCollectionId) ? initialCollectionId : null);
+  >(isApiUuid(initialCollectionId) ? initialCollectionId : null);
   const failureRef = useRef<HTMLDivElement>(null);
 
   const collectionsRequest = useDocumentCollections();
+  const sourcesRequest = useQuestionSources();
   const questionRequest = useAskQuestion();
   const resetQuestionRequest = questionRequest.reset;
 
@@ -77,31 +76,15 @@ export function AskQuestionScreen({
   ]);
 
   useEffect(() => {
-    if (
-      collectionsRequest.status === "error" &&
-      selectedCollectionId !== null
-    ) {
-      setSelectedCollectionId(null);
-      setSelectionNotice(
-        "Collections could not be loaded, so all documents are selected.",
-      );
-      resetQuestionRequest();
-      router.replace("/dashboard/ask-question", { scroll: false });
-    }
-  }, [
-    collectionsRequest.status,
-    resetQuestionRequest,
-    router,
-    selectedCollectionId,
-  ]);
-
-  useEffect(() => {
     const errors = [
       collectionsRequest.status === "error"
         ? collectionsRequest.error
         : undefined,
       questionRequest.state.status === "failed"
         ? questionRequest.state.error
+        : undefined,
+      sourcesRequest.status === "error"
+        ? sourcesRequest.error
         : undefined,
     ];
     if (
@@ -116,6 +99,8 @@ export function AskQuestionScreen({
     collectionsRequest.status,
     logout,
     questionRequest.state,
+    sourcesRequest.error,
+    sourcesRequest.status,
   ]);
 
   useEffect(() => {
@@ -131,7 +116,9 @@ export function AskQuestionScreen({
   const selectedCollection = collections.find(
     (collection) => collection.id === selectedCollectionId,
   );
-  const scopeLabel = selectedCollection?.name ?? "All documents";
+  const scopeLabel = selectedCollectionId
+    ? (selectedCollection?.name ?? "the selected collection")
+    : "All documents";
 
   const changeContext = (collectionId: string | null) => {
     setSelectedCollectionId(collectionId);
@@ -169,7 +156,10 @@ export function AskQuestionScreen({
     submitQuestion();
   };
 
-  if (collectionsRequest.status === "loading") {
+  if (
+    collectionsRequest.status === "loading" ||
+    sourcesRequest.status === "loading"
+  ) {
     return (
       <DashboardPage>
         <AskQuestionSkeleton />
@@ -192,33 +182,63 @@ export function AskQuestionScreen({
       </p>
     ) : undefined;
 
+  const sourceFeedback =
+    sourcesRequest.status === "error" ? (
+      <AskQuestionErrorState
+        content={getQuestionSourcesError(sourcesRequest.error)}
+        onRetry={() => void sourcesRequest.refetch().catch(() => undefined)}
+        retryLabel="Reload document status"
+      />
+    ) : (
+      <QuestionSourceState
+        documentCount={sourcesRequest.data.documentCount}
+        readyCount={
+          selectedCollectionId
+            ? (sourcesRequest.data.readyByCollection[selectedCollectionId] ?? 0)
+            : sourcesRequest.data.readyDocumentCount
+        }
+        scopeLabel={scopeLabel}
+      />
+    );
+
   const questionError =
     questionRequest.state.status === "failed"
       ? getQuestionErrorContent(questionRequest.state.error)
       : undefined;
+  const failureAction =
+    questionRequest.state.status === "failed"
+      ? getQuestionFailureAction(
+          questionRequest.state.error,
+          questionRequest.state.submission.collectionId,
+        )
+      : undefined;
   const questionErrorAction =
-    questionRequest.state.status === "failed" &&
-    questionRequest.state.error instanceof ApiError &&
-    (questionRequest.state.error.code === "invalid_response" ||
-      questionRequest.state.error.status === 401 ||
-      questionRequest.state.error.status === 403)
-      ? undefined
-      : questionRequest.state.status === "failed" &&
-          questionRequest.state.error instanceof ApiError &&
-          questionRequest.state.error.status === 404
-        ? () => changeContext(null)
-        : submitQuestion;
+    failureAction === "search-all"
+      ? () => changeContext(null)
+      : failureAction === "retry"
+        ? submitQuestion
+        : undefined;
+  const validationError = validateQuestion(question);
 
   return (
     <DashboardPage>
       <div className={styles.pageContent}>
         <AskQuestionForm
           collections={collections}
-          contextFeedback={collectionFeedback}
+          contextFeedback={
+            <>
+              {collectionFeedback}
+              {sourceFeedback}
+            </>
+          }
           contextSelectionDisabled={collectionsRequest.status !== "success"}
           inputError={inputError}
           isPending={questionRequest.isPending}
+          isSubmitDisabled={
+            questionRequest.isPending || validationError !== undefined
+          }
           onContextChange={changeContext}
+          onQuestionBlur={() => setInputError(validationError)}
           onQuestionChange={(value) => {
             setQuestion(value);
             setInputError(undefined);

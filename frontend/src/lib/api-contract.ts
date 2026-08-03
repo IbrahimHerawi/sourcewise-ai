@@ -2,12 +2,19 @@ import { ApiError } from "@/lib/api";
 
 type ApiObject = Record<string, unknown>;
 
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export function invalidApiResponse(contract: string): never {
   throw new ApiError(
     `The server returned an invalid ${contract} response.`,
     "invalid_response",
     0,
   );
+}
+
+export function isApiUuid(value: unknown): value is string {
+  return typeof value === "string" && UUID_PATTERN.test(value);
 }
 
 export function readApiObject(value: unknown, contract: string): ApiObject {
@@ -95,13 +102,7 @@ export function readApiUuid(
   contract: string,
 ): string {
   const value = readApiString(object, key, contract);
-  if (
-    !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-      value,
-    )
-  ) {
-    return invalidApiResponse(contract);
-  }
+  if (!isApiUuid(value)) return invalidApiResponse(contract);
   return value;
 }
 

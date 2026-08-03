@@ -21,6 +21,13 @@ export function QuestionContextSelector({
   onChange: (collectionId: string | null) => void;
   selectedCollectionId: string | null;
 }) {
+  const selectedCollection = collections.find(
+    (collection) => collection.id === selectedCollectionId,
+  );
+  const selectedLabel = selectedCollectionId
+    ? (selectedCollection?.name ?? "Selected collection")
+    : "All documents";
+
   return (
     <div className={styles.contextField}>
       <label htmlFor="question-context">Collection</label>
@@ -32,7 +39,7 @@ export function QuestionContextSelector({
         value={selectedCollectionId ?? ALL_DOCUMENTS_VALUE}
       >
         <SelectTrigger className={styles.contextTrigger} id="question-context">
-          <SelectValue />
+          <SelectValue>{selectedLabel}</SelectValue>
         </SelectTrigger>
         <SelectContent className={styles.contextMenu}>
           <SelectItem value={ALL_DOCUMENTS_VALUE}>All documents</SelectItem>

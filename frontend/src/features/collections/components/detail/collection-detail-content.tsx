@@ -7,9 +7,9 @@ import type {
   QuestionHistoryItem,
 } from "@/features/collections/collections-api-types";
 import { formatResultRange } from "@/features/collections/collection-detail-utils";
+import { QuestionHistoryList } from "@/features/questions/components/question-history-list";
 import { CollectionDetailTabs } from "./collection-detail-tabs";
 import { CollectionDocumentList } from "./collection-document-list";
-import { CollectionHistoryList } from "./collection-history-list";
 import { CollectionPagination } from "./collection-pagination";
 import { CollectionSectionHeader } from "./collection-section-header";
 import { CollectionSummary } from "./collection-summary";
@@ -75,7 +75,7 @@ export function CollectionDetailContent({
             countLabel={`Showing ${formatResultRange(historyPage, PAGE_SIZE, history.total)} of ${history.total}`}
             title="Question history"
           />
-          <CollectionHistoryList
+          <QuestionHistoryList
             items={history.items}
             onDelete={onDeleteHistory}
             onViewDetails={onViewHistory}

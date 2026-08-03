@@ -8,7 +8,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { formatDateTime, formatFileSize } from "@/features/collections/collection-formatters";
+import { formatDateTime, formatFileSize } from "@/lib/formatters";
 import { getPaginationItems } from "@/features/collections/collection-detail-utils";
 import { DocumentStatusBadge } from "@/features/collections/components/detail/collection-document-list";
 import {

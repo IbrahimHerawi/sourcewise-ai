@@ -1,4 +1,5 @@
 import { forwardRef } from "react";
+import Link from "next/link";
 import { CircleAlert, Loader2 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { CollectionButton } from "@/features/collections/components/collection-button";
@@ -10,7 +11,9 @@ export function AskQuestionSkeleton() {
     <section
       aria-busy="true"
       aria-labelledby="ask-question-loading"
+      aria-live="polite"
       className={styles.questionCard}
+      role="status"
     >
       <h2 className="sr-only" id="ask-question-loading">
         Loading the question form
@@ -23,7 +26,47 @@ export function AskQuestionSkeleton() {
         </div>
         <Skeleton className={styles.skeletonButton} />
       </div>
+      <Skeleton className={styles.skeletonSourceStatus} />
     </section>
+  );
+}
+
+export function QuestionSourceState({
+  documentCount,
+  readyCount,
+  scopeLabel,
+}: {
+  documentCount: number;
+  readyCount: number;
+  scopeLabel: string;
+}) {
+  if (readyCount > 0) {
+    return (
+      <p className={styles.sourceStatus} role="status">
+        {readyCount.toLocaleString()} ready{" "}
+        {readyCount === 1 ? "document" : "documents"} will be searched in{" "}
+        {scopeLabel}.
+      </p>
+    );
+  }
+
+  return (
+    <div className={styles.noReadySources} role="status">
+      <div>
+        <strong>
+          {documentCount === 0
+            ? "No documents have been uploaded"
+            : `No ready documents in ${scopeLabel}`}
+        </strong>
+        <p>
+          Questions only retrieve ready documents. You can still submit, but a
+          grounded answer requires processed source material.
+        </p>
+      </div>
+      <CollectionButton asChild tone="secondary">
+        <Link href="/dashboard/documents">Open Documents</Link>
+      </CollectionButton>
+    </div>
   );
 }
 

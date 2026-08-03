@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { BookOpenCheck } from "lucide-react";
-import { CitationList } from "@/features/collections/components/detail/citation-list";
-import { formatDateTime } from "@/features/collections/collection-formatters";
+import { formatDateTime } from "@/lib/formatters";
+import { CitationList } from "./citation-list";
 import type {
   AskQuestionState,
 } from "../hooks/use-ask-question";
@@ -40,7 +40,13 @@ export function QuestionAnswerPanel({
         </time>
       </div>
 
-      <p className={styles.answerText}>{state.answer.answer}</p>
+      {state.answer.answer.trim() ? (
+        <p className={styles.answerText}>{state.answer.answer}</p>
+      ) : (
+        <div className={styles.emptyAnswer} role="status">
+          The server returned an empty answer.
+        </div>
+      )}
 
       {state.answer.citations.length > 0 ? (
         <section

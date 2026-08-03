@@ -151,6 +151,7 @@ export async function apiRequest<T>(
   }
 
   const response = await fetch(url, {
+    cache: "no-store",
     ...options,
     headers,
   });
@@ -190,7 +191,15 @@ export async function apiRequest<T>(
     return {} as T;
   }
 
-  return response.json() as Promise<T>;
+  try {
+    return (await response.json()) as T;
+  } catch {
+    throw new ApiError(
+      "The server returned an invalid response.",
+      "invalid_response",
+      response.status,
+    );
+  }
 }
 
 export const api = {

@@ -21,12 +21,14 @@
 }
 
 .answerCard {
+  border: 1px solid var(--sw-color-border-default);
   padding: var(--sw-spacing-24);
   box-shadow: var(--shadow-sw-card);
 }
 
-.answerCard:focus {
-  outline: none;
+.answerCard:focus-visible {
+  outline: 0.125rem solid var(--sw-color-focus-ring);
+  outline-offset: 0.125rem;
 }
 
 .fieldError,
@@ -36,8 +38,11 @@
 .answerHeader h2,
 .answerHeader p,
 .answerText,
+.emptyAnswer,
 .noCitations p,
-.citationsHeader h3 {
+.citationsHeader h3,
+.sourceStatus,
+.noReadySources p {
   margin: 0;
 }
 
@@ -71,7 +76,7 @@
 
 .contextTrigger {
   width: min(14rem, 100%);
-  height: 2.625rem;
+  height: 2.75rem;
   border-color: var(--sw-color-border-default);
   border-radius: var(--sw-radius-small);
   background: var(--sw-color-background-surface);
@@ -156,13 +161,18 @@
   justify-content: flex-end;
 }
 
+.formActions button {
+  min-height: 2.75rem;
+}
+
 .spinner,
 .generatingIcon svg {
   animation: question-spin 1s linear infinite;
 }
 
 .generatingState,
-.questionError {
+.questionError,
+.noReadySources {
   display: flex;
   min-width: 0;
   align-items: center;
@@ -189,13 +199,15 @@
 }
 
 .generatingState > div,
-.errorCopy {
+.errorCopy,
+.noReadySources > div {
   min-width: 0;
   flex: 1;
 }
 
 .generatingState strong,
 .questionError strong,
+.noReadySources strong,
 .noCitations strong {
   color: var(--sw-color-text-primary);
   font-size: var(--sw-type-size-metadata);
@@ -205,11 +217,31 @@
 
 .generatingState p,
 .questionError p,
+.noReadySources p,
 .noCitations p {
   margin-top: var(--sw-spacing-4);
   color: var(--sw-color-text-secondary);
   font-size: var(--sw-type-size-metadata);
   line-height: var(--sw-type-line-height-metadata);
+}
+
+.sourceStatus {
+  border-radius: var(--sw-radius-small);
+  background: var(--sw-color-status-success-background);
+  padding: var(--sw-spacing-12) var(--sw-spacing-16);
+  color: var(--sw-color-status-success-foreground);
+  font-size: var(--sw-type-size-metadata);
+  font-weight: 600;
+  line-height: var(--sw-type-line-height-metadata);
+}
+
+.noReadySources {
+  background: var(--sw-color-status-pending-background);
+}
+
+.noReadySources strong,
+.noReadySources p {
+  color: var(--sw-color-status-pending-foreground);
 }
 
 .selectionNotice {
@@ -309,6 +341,17 @@
   white-space: pre-wrap;
 }
 
+.emptyAnswer {
+  margin-top: var(--sw-spacing-24);
+  border-radius: var(--sw-radius-small);
+  background: var(--sw-color-status-destructive-background);
+  padding: var(--sw-spacing-16);
+  color: var(--sw-color-validation-body);
+  font-size: var(--sw-type-size-metadata);
+  font-weight: 600;
+  line-height: var(--sw-type-line-height-metadata);
+}
+
 .citations {
   margin-top: var(--sw-spacing-32);
 }
@@ -347,7 +390,7 @@
 
 .skeletonSelect {
   width: min(14rem, 100%);
-  height: 2.625rem;
+  height: 2.75rem;
   margin-top: var(--sw-spacing-8);
 }
 
@@ -373,6 +416,12 @@
   height: var(--sw-component-height-button);
 }
 
+.skeletonSourceStatus {
+  width: 100%;
+  height: 2.75rem;
+  margin-top: var(--sw-spacing-24);
+}
+
 @keyframes question-spin {
   to {
     transform: rotate(360deg);
@@ -386,6 +435,7 @@
   }
 
   .questionError,
+  .noReadySources,
   .answerHeader,
   .citationsHeader {
     align-items: flex-start;
@@ -393,6 +443,7 @@
   }
 
   .questionError button,
+  .noReadySources a,
   .formActions,
   .formActions button {
     width: 100%;

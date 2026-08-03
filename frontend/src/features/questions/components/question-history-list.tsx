@@ -1,15 +1,15 @@
 import { MoreHorizontal, Trash2 } from "lucide-react";
-import type { QuestionHistoryItem } from "@/features/collections/collections-api-types";
-import { formatRelativeDate } from "@/features/collections/collection-formatters";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import styles from "./collection-detail.module.css";
+import { formatRelativeDate } from "@/lib/formatters";
+import type { QuestionHistoryItem } from "../questions-api-types";
+import styles from "./question-history-list.module.css";
 
-export function CollectionHistoryCard({
+export function QuestionHistoryCard({
   item,
   onDelete,
   onViewDetails,
@@ -20,10 +20,10 @@ export function CollectionHistoryCard({
 }) {
   return (
     <li>
-      <article className={styles.historyCard}>
-        <div className={styles.historyCardHeader}>
+      <article className={styles.card}>
+        <div className={styles.header}>
           <button
-            className={styles.historyTitleButton}
+            className={styles.titleButton}
             onClick={() => onViewDetails(item)}
             type="button"
           >
@@ -51,18 +51,21 @@ export function CollectionHistoryCard({
           </DropdownMenu>
         </div>
         <p className={styles.answer}>{item.answer}</p>
-        <div className={styles.historyMetadata}>
+        <div className={styles.metadata}>
           <span className={styles.citationBadge}>
-            {item.citations.length} {item.citations.length === 1 ? "citation" : "citations"}
+            {item.citations.length}{" "}
+            {item.citations.length === 1 ? "citation" : "citations"}
           </span>
-          <time dateTime={item.created_at}>Asked {formatRelativeDate(item.created_at)}</time>
+          <time dateTime={item.created_at}>
+            Asked {formatRelativeDate(item.created_at)}
+          </time>
         </div>
       </article>
     </li>
   );
 }
 
-export function CollectionHistoryList({
+export function QuestionHistoryList({
   items,
   onDelete,
   onViewDetails,
@@ -72,9 +75,9 @@ export function CollectionHistoryList({
   onViewDetails: (item: QuestionHistoryItem) => void;
 }) {
   return (
-    <ul className={styles.historyList}>
+    <ul className={styles.list}>
       {items.map((item) => (
-        <CollectionHistoryCard
+        <QuestionHistoryCard
           item={item}
           key={item.question_id}
           onDelete={onDelete}

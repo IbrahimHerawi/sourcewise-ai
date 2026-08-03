@@ -1,9 +1,8 @@
 "use client";
 
 import { useCallback, useMemo } from "react";
-import { getCollections } from "@/features/collections/collections-api";
+import { listAllCollectionsApi } from "@/features/collections/collections-api";
 import { useApiMutation, useApiRequest } from "@/hooks/use-api-request";
-import { invalidApiResponse } from "@/lib/api-contract";
 import {
   deleteDocumentApi,
   getDocumentApi,
@@ -17,8 +16,6 @@ import {
 } from "../document-mappers";
 import type { DocumentsUploadApiInput } from "../documents-api-types";
 import type { DocumentCollection } from "../types";
-
-const COLLECTION_PAGE_SIZE = 100;
 
 export const documentsQueryKeys = {
   all: ["documents"] as const,
@@ -64,27 +61,10 @@ export function useDocumentsList({
 async function loadAllCollections(
   signal: AbortSignal,
 ): Promise<DocumentCollection[]> {
-  const collections: DocumentCollection[] = [];
-  let offset = 0;
-  let total = 0;
-
-  do {
-    const response = await getCollections(
-      COLLECTION_PAGE_SIZE,
-      offset,
-      signal,
-    );
-    total = response.total;
-    if (response.offset !== offset || (response.items.length === 0 && offset < total)) {
-      return invalidApiResponse("Collections");
-    }
-    collections.push(
-      ...response.items.map(({ id, name }) => ({ id, name })),
-    );
-    offset += response.items.length;
-  } while (offset < total);
-
-  return collections;
+  return (await listAllCollectionsApi(signal)).map(({ id, name }) => ({
+    id,
+    name,
+  }));
 }
 
 export function useDocumentCollections() {

@@ -129,7 +129,11 @@ export async function askQuestionApi(
     }),
     signal,
   });
-  return parseQuestionAnswerRecord(response, QUESTION_CONTRACT);
+  const answer = parseQuestionAnswerRecord(response, QUESTION_CONTRACT);
+  if (answer.collection_id !== input.collectionId) {
+    return invalidApiResponse(QUESTION_CONTRACT);
+  }
+  return answer;
 }
 
 export async function listQuestionHistoryApi(
@@ -163,7 +167,11 @@ export async function getQuestionHistoryItemApi(
     `/questions/history/${questionId}`,
     { signal },
   );
-  return parseQuestionHistoryItem(response);
+  const item = parseQuestionHistoryItem(response);
+  if (item.question_id !== questionId) {
+    return invalidApiResponse(QUESTION_HISTORY_CONTRACT);
+  }
+  return item;
 }
 
 export function deleteQuestionHistoryItemApi(

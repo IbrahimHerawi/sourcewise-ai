@@ -9,7 +9,7 @@ import {
 } from "react";
 import { FileText, UploadCloud, X } from "lucide-react";
 import type { DocumentUploadResponse } from "@/features/collections/collections-api-types";
-import { formatFileSize } from "@/features/collections/collection-formatters";
+import { formatFileSize } from "@/lib/formatters";
 import { useAuth } from "@/hooks/use-auth";
 import { ApiError } from "@/lib/api";
 import { getUploadErrorMessage } from "@/features/documents/documents-error-utils";

@@ -16,7 +16,9 @@ export function AskQuestionForm({
   contextSelectionDisabled,
   inputError,
   isPending,
+  isSubmitDisabled,
   onContextChange,
+  onQuestionBlur,
   onQuestionChange,
   onSubmit,
   question,
@@ -27,7 +29,9 @@ export function AskQuestionForm({
   contextSelectionDisabled: boolean;
   inputError?: string;
   isPending: boolean;
+  isSubmitDisabled: boolean;
   onContextChange: (collectionId: string | null) => void;
+  onQuestionBlur: () => void;
   onQuestionChange: (value: string) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   question: string;
@@ -55,6 +59,7 @@ export function AskQuestionForm({
               aria-required="true"
               disabled={isPending}
               id="question-input"
+              onBlur={onQuestionBlur}
               onChange={(event) => onQuestionChange(event.target.value)}
               placeholder="Ask about a fact, decision, or theme in your documents…"
               value={question}
@@ -91,7 +96,7 @@ export function AskQuestionForm({
           />
 
           <div className={styles.formActions}>
-            <CollectionButton disabled={isPending} type="submit">
+            <CollectionButton disabled={isSubmitDisabled} type="submit">
               {isPending ? (
                 <>
                   <Loader2
