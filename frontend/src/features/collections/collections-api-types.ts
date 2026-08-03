@@ -26,27 +26,8 @@ export type {
   DocumentUploadItem,
   DocumentUploadResult as DocumentUploadResponse,
 } from "@/features/documents/types";
-
-export type Citation = {
-  rank: number;
-  document_id: string;
-  document_filename: string;
-  chunk_id: string;
-  chunk_index: number;
-  excerpt: string;
-  distance: number;
-};
-
-export type QuestionAnswer = {
-  question_id: string;
-  collection_id: string | null;
-  answer: string;
-  citations: Citation[];
-  created_at: string;
-  provider: "openai" | "ollama" | null;
-  model: string | null;
-};
-
-export type QuestionHistoryItem = QuestionAnswer & {
-  question: string;
-};
+export type {
+  Citation,
+  QuestionAnswer,
+  QuestionHistoryItem,
+} from "@/features/questions/questions-api-types";

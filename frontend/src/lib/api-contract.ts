@@ -39,6 +39,16 @@ export function readApiString(
   return value;
 }
 
+export function readApiText(
+  object: ApiObject,
+  key: string,
+  contract: string,
+): string {
+  const value = object[key];
+  if (typeof value !== "string") return invalidApiResponse(contract);
+  return value;
+}
+
 export function readApiNullableString(
   object: ApiObject,
   key: string,
@@ -47,6 +57,18 @@ export function readApiNullableString(
   const value = object[key];
   if (value === null) return null;
   if (typeof value !== "string") return invalidApiResponse(contract);
+  return value;
+}
+
+export function readApiNumber(
+  object: ApiObject,
+  key: string,
+  contract: string,
+): number {
+  const value = object[key];
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return invalidApiResponse(contract);
+  }
   return value;
 }
 

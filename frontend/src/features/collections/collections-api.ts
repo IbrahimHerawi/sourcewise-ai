@@ -14,9 +14,13 @@ import type {
   CollectionCreateInput,
   CollectionUpdateInput,
   PaginatedResponse,
-  QuestionAnswer,
-  QuestionHistoryItem,
 } from "@/features/collections/collections-api-types";
+import {
+  askQuestionApi,
+  deleteQuestionHistoryItemApi,
+  getQuestionHistoryItemApi,
+  listQuestionHistoryApi,
+} from "@/features/questions/questions-api";
 
 const COLLECTIONS_CONTRACT = "Collections";
 
@@ -117,11 +121,7 @@ export function askCollection(
   question: string,
   signal?: AbortSignal,
 ) {
-  return apiRequest<QuestionAnswer>("/questions/ask", {
-    method: "POST",
-    body: JSON.stringify({ question, collection_id: collectionId }),
-    signal,
-  });
+  return askQuestionApi({ collectionId, question }, signal);
 }
 
 export function getCollectionHistory(
@@ -130,21 +130,16 @@ export function getCollectionHistory(
   offset: number,
   signal?: AbortSignal,
 ) {
-  const query = paginationQuery(limit, offset);
-  query.set("collection_id", collectionId);
-  return apiRequest<PaginatedResponse<QuestionHistoryItem>>(
-    `/questions/history?${query}`,
-    { signal },
+  return listQuestionHistoryApi(
+    { collectionId, limit, offset },
+    signal,
   );
 }
 
 export function getQuestionHistoryItem(questionId: string, signal?: AbortSignal) {
-  return apiRequest<QuestionHistoryItem>(`/questions/history/${questionId}`, { signal });
+  return getQuestionHistoryItemApi(questionId, signal);
 }
 
 export function deleteQuestionHistoryItem(questionId: string, signal?: AbortSignal) {
-  return apiRequest<Record<string, never>>(`/questions/history/${questionId}`, {
-    method: "DELETE",
-    signal,
-  });
+  return deleteQuestionHistoryItemApi(questionId, signal);
 }
