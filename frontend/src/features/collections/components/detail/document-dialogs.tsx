@@ -1,13 +1,15 @@
 "use client";
 
-import { useCallback, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { CircleAlert, Loader2 } from "lucide-react";
 import { deleteDocument, getDocument } from "@/features/collections/collections-api";
 import type { CollectionDocument } from "@/features/collections/collections-api-types";
 import { formatDateTime, formatFileSize } from "@/features/collections/collection-formatters";
 import { safeDocumentFailureMessage } from "@/features/collections/document-status";
 import { useApiMutation, useApiRequest } from "@/hooks/use-api-request";
-import { getApiErrorMessage } from "@/lib/api";
+import { useAuth } from "@/hooks/use-auth";
+import { ApiError, getApiErrorMessage } from "@/lib/api";
+import { getDeleteErrorMessage } from "@/features/documents/documents-error-utils";
 import { CollectionButton } from "../collection-button";
 import {
   CollectionDialog,
@@ -24,12 +26,19 @@ export function DocumentDetailsDialog({
   documentId: string;
   onClose: () => void;
 }) {
+  const { logout } = useAuth();
   const closeRef = useRef<HTMLButtonElement>(null);
   const request = useCallback(
     (signal: AbortSignal) => getDocument(documentId, signal),
     [documentId],
   );
   const state = useApiRequest(request);
+
+  useEffect(() => {
+    if (state.status === "error" && state.error instanceof ApiError) {
+      if (state.error.status === 401) logout();
+    }
+  }, [logout, state.error, state.status]);
 
   return (
     <CollectionDialog
@@ -104,6 +113,7 @@ export function DeleteDocumentDialog({
   onClose: () => void;
   onDeleted: () => void;
 }) {
+  const { logout } = useAuth();
   const cancelRef = useRef<HTMLButtonElement>(null);
   const mutation = useApiMutation((documentId: string, signal) =>
     deleteDocument(documentId, signal),
@@ -111,6 +121,12 @@ export function DeleteDocumentDialog({
   const submit = () => {
     void mutation.mutate(document.id).then(onDeleted).catch(() => undefined);
   };
+
+  useEffect(() => {
+    if (mutation.error instanceof ApiError && mutation.error.status === 401) {
+      logout();
+    }
+  }, [logout, mutation.error]);
 
   return (
     <CollectionDialog
@@ -134,7 +150,7 @@ export function DeleteDocumentDialog({
       </CollectionDialogFooter>
       {mutation.error ? (
         <p className={styles.dialogMutationError} role="alert">
-          {getApiErrorMessage(mutation.error, "The document could not be deleted.")}
+          {getDeleteErrorMessage(mutation.error)}
         </p>
       ) : null}
     </CollectionDialog>

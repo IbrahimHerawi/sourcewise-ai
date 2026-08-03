@@ -4,7 +4,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 export type RequestState<T> =
   | { status: "loading"; data?: undefined; error?: undefined }
-  | { status: "success"; data: T; error?: undefined }
+  | {
+      status: "success";
+      data: T;
+      error?: undefined;
+      isRefreshing: boolean;
+      refreshError?: unknown;
+    }
   | { status: "error"; data?: undefined; error: unknown };
 
 export function useApiRequest<T>(request: (signal: AbortSignal) => Promise<T>) {
@@ -18,7 +24,14 @@ export function useApiRequest<T>(request: (signal: AbortSignal) => Promise<T>) {
     const controller = new AbortController();
     controllerRef.current = controller;
     const sequence = ++requestSequence.current;
-    if (!options.silent || dataRef.current === undefined) {
+    const retainedData = dataRef.current;
+    if (options.silent && retainedData !== undefined) {
+      setState({
+        status: "success",
+        data: retainedData,
+        isRefreshing: true,
+      });
+    } else {
       setState({ status: "loading" });
     }
 
@@ -26,12 +39,21 @@ export function useApiRequest<T>(request: (signal: AbortSignal) => Promise<T>) {
       const data = await request(controller.signal);
       if (!controller.signal.aborted && sequence === requestSequence.current) {
         dataRef.current = data;
-        setState({ status: "success", data });
+        setState({ status: "success", data, isRefreshing: false });
       }
       return data;
     } catch (error) {
       if (!controller.signal.aborted && sequence === requestSequence.current) {
-        setState({ status: "error", error });
+        if (options.silent && retainedData !== undefined) {
+          setState({
+            status: "success",
+            data: retainedData,
+            isRefreshing: false,
+            refreshError: error,
+          });
+        } else {
+          setState({ status: "error", error });
+        }
       }
       throw error;
     }

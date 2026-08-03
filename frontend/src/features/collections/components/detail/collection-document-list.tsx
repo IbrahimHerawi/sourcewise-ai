@@ -10,7 +10,7 @@ import { formatFileSize, formatRelativeDate } from "@/features/collections/colle
 import {
   DOCUMENT_STATUS_PRESENTATION,
   safeDocumentFailureMessage,
-} from "@/features/collections/document-status";
+} from "@/features/documents/document-status";
 import { cn } from "@/lib/utils";
 import styles from "./collection-detail.module.css";
 
@@ -69,6 +69,7 @@ export function CollectionDocumentRow({
   onDelete: (document: CollectionDocument) => void;
   onViewDetails: (document: CollectionDocument) => void;
 }) {
+  const status = DOCUMENT_STATUS_PRESENTATION[document.status];
   return (
     <li>
       <article className={styles.documentRow}>
@@ -83,6 +84,8 @@ export function CollectionDocumentRow({
             <p className={styles.documentFailure}>
               {safeDocumentFailureMessage(document.error_message)}
             </p>
+          ) : status.processingMessage ? (
+            <p>{status.processingMessage}</p>
           ) : null}
         </div>
         <DocumentStatusBadge status={document.status} />

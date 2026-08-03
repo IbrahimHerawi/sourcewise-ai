@@ -167,6 +167,15 @@
   line-height: var(--sw-type-line-height-body);
 }
 
+.descriptionBody {
+  width: 100%;
+  margin: 0;
+  color: var(--sw-color-text-secondary);
+  font-size: var(--sw-type-size-body);
+  font-weight: 400;
+  line-height: var(--sw-type-line-height-body);
+}
+
 @media (max-width: 30rem) {
   .modal {
     padding: var(--sw-spacing-16);

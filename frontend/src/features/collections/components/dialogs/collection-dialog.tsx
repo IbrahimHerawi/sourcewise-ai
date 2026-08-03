@@ -18,7 +18,7 @@ import styles from "../collection-dialogs.module.css";
 type CollectionDialogProps = {
   children: ReactNode;
   description: string;
-  descriptionVariant?: "hidden" | "warning";
+  descriptionVariant?: "body" | "hidden" | "warning";
   initialFocusRef: RefObject<HTMLElement | null>;
   onClose: () => void;
   role?: "dialog" | "alertdialog";
@@ -55,7 +55,11 @@ export function CollectionDialog({
         </DialogHeader>
         <DialogDescription
           className={
-            descriptionVariant === "warning" ? styles.retentionWarning : "sr-only"
+            descriptionVariant === "warning"
+              ? styles.retentionWarning
+              : descriptionVariant === "body"
+                ? styles.descriptionBody
+                : "sr-only"
           }
         >
           {description}

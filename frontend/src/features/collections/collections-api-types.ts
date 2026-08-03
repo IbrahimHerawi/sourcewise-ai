@@ -20,31 +20,12 @@ export type CollectionCreateInput = {
 
 export type CollectionUpdateInput = Partial<CollectionCreateInput>;
 
-export type DocumentStatus = "PENDING" | "PROCESSING" | "READY" | "FAILED";
-
-export type CollectionDocument = {
-  id: string;
-  collection_id: string | null;
-  filename: string;
-  original_extension: string;
-  content_type: string;
-  size_bytes: number;
-  status: DocumentStatus;
-  error_message: string | null;
-  created_at: string;
-  updated_at: string;
-};
-
-export type DocumentUploadItem = {
-  document_id: string;
-  filename: string;
-  collection_id: string | null;
-  status: DocumentStatus;
-};
-
-export type DocumentUploadResponse = {
-  items: DocumentUploadItem[];
-};
+export type {
+  DocumentRecord as CollectionDocument,
+  DocumentStatus,
+  DocumentUploadItem,
+  DocumentUploadResult as DocumentUploadResponse,
+} from "@/features/documents/types";
 
 export type Citation = {
   rank: number;

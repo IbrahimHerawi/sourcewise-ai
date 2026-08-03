@@ -17,6 +17,7 @@ import {
   useCollectionHistory,
   useCollectionRecord,
 } from "@/features/collections/hooks/use-collections-api";
+import { useDocumentProcessingPolling } from "@/features/documents/hooks/use-document-processing-polling";
 import { CollectionButton } from "../collection-button";
 import { CollectionsDialogs } from "../dialogs/collections-dialogs";
 import { CollectionDetailContent } from "./collection-detail-content";
@@ -51,8 +52,6 @@ type HistoryDialogState =
   | null;
 
 const PAGE_SIZE = 20;
-const PROCESSING_POLL_INTERVAL_MS = 2_500;
-
 export function CollectionDetailPage({
   collectionId,
   initialTab = "documents",
@@ -73,6 +72,17 @@ export function CollectionDetailPage({
     PAGE_SIZE,
     (documentPage - 1) * PAGE_SIZE,
   );
+  useDocumentProcessingPolling({
+    data:
+      documentsRequest.status === "success"
+        ? documentsRequest.data
+        : undefined,
+    isRefreshing:
+      documentsRequest.status === "success"
+        ? documentsRequest.isRefreshing
+        : false,
+    refetch: documentsRequest.refetch,
+  });
   const historyRequest = useCollectionHistory(
     collectionId,
     PAGE_SIZE,
@@ -91,21 +101,6 @@ export function CollectionDetailPage({
       if (firstError.error.status === 401) logout();
     }
   }, [firstError, logout]);
-
-  useEffect(() => {
-    if (
-      documentsRequest.status !== "success" ||
-      !documentsRequest.data.items.some((document) =>
-        document.status === "PENDING" || document.status === "PROCESSING"
-      )
-    ) {
-      return;
-    }
-    const timer = window.setTimeout(() => {
-      void documentsRequest.refetch({ silent: true }).catch(() => undefined);
-    }, PROCESSING_POLL_INTERVAL_MS);
-    return () => window.clearTimeout(timer);
-  }, [documentsRequest]);
 
   const backHref = resolveDashboardBackHref(
     searchParams?.get("returnTo"),
@@ -217,6 +212,11 @@ export function CollectionDetailPage({
         <UploadCollectionDialog
           collectionId={collectionId}
           onClose={() => setShowUpload(false)}
+          onUploadOutcomeUnknown={() => {
+            void documentsRequest
+              .refetch({ silent: true })
+              .catch(() => undefined);
+          }}
           onUploaded={() => {
             setShowUpload(false);
             setDocumentPage(1);
