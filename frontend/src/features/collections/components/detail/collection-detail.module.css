@@ -264,6 +264,11 @@
   color: var(--sw-color-validation-body);
 }
 
+.status-unknown {
+  background: var(--sw-color-background-selected);
+  color: var(--sw-color-text-secondary);
+}
+
 .documentFailure {
   color: var(--sw-color-validation-body) !important;
 }

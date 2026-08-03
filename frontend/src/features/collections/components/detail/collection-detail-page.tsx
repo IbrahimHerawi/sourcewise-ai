@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
-import { ApiError, getApiErrorMessage } from "@/lib/api";
+import { ApiError } from "@/lib/api";
 import { useDashboardHeader } from "@/features/dashboard/components/dashboard-header-context";
 import { resolveDashboardBackHref } from "@/features/dashboard/navigation";
 import type { CollectionDetailTab } from "@/features/collections/collection-detail-types";
@@ -17,6 +17,7 @@ import {
   useCollectionHistory,
   useCollectionRecord,
 } from "@/features/collections/hooks/use-collections-api";
+import { useDocumentProcessingPolling } from "@/features/documents/hooks/use-document-processing-polling";
 import { CollectionButton } from "../collection-button";
 import { CollectionsDialogs } from "../dialogs/collections-dialogs";
 import { CollectionDetailContent } from "./collection-detail-content";
@@ -51,7 +52,16 @@ type HistoryDialogState =
   | null;
 
 const PAGE_SIZE = 20;
-const PROCESSING_POLL_INTERVAL_MS = 2_500;
+
+function getDetailPageFailureMessage(error: unknown): string {
+  if (error instanceof ApiError && error.code === "invalid_response") {
+    return "The server returned collection data in an unexpected format. Try again.";
+  }
+  if (error instanceof TypeError) {
+    return "The collection could not be reached. Check your connection and try again.";
+  }
+  return "The collection could not be loaded. Try again.";
+}
 
 export function CollectionDetailPage({
   collectionId,
@@ -73,6 +83,17 @@ export function CollectionDetailPage({
     PAGE_SIZE,
     (documentPage - 1) * PAGE_SIZE,
   );
+  useDocumentProcessingPolling({
+    data:
+      documentsRequest.status === "success"
+        ? documentsRequest.data
+        : undefined,
+    isRefreshing:
+      documentsRequest.status === "success"
+        ? documentsRequest.isRefreshing
+        : false,
+    refetch: documentsRequest.refetch,
+  });
   const historyRequest = useCollectionHistory(
     collectionId,
     PAGE_SIZE,
@@ -91,21 +112,6 @@ export function CollectionDetailPage({
       if (firstError.error.status === 401) logout();
     }
   }, [firstError, logout]);
-
-  useEffect(() => {
-    if (
-      documentsRequest.status !== "success" ||
-      !documentsRequest.data.items.some((document) =>
-        document.status === "PENDING" || document.status === "PROCESSING"
-      )
-    ) {
-      return;
-    }
-    const timer = window.setTimeout(() => {
-      void documentsRequest.refetch({ silent: true }).catch(() => undefined);
-    }, PROCESSING_POLL_INTERVAL_MS);
-    return () => window.clearTimeout(timer);
-  }, [documentsRequest]);
 
   const backHref = resolveDashboardBackHref(
     searchParams?.get("returnTo"),
@@ -161,7 +167,7 @@ export function CollectionDetailPage({
         <CollectionDetailErrorState
           description={
             kind === "server-error"
-              ? getApiErrorMessage(firstError.error, "The collection could not be loaded. Try again.")
+              ? getDetailPageFailureMessage(firstError.error)
               : undefined
           }
           kind={kind}
@@ -217,10 +223,18 @@ export function CollectionDetailPage({
         <UploadCollectionDialog
           collectionId={collectionId}
           onClose={() => setShowUpload(false)}
+          onUploadOutcomeUnknown={() => {
+            void documentsRequest
+              .refetch({ silent: true })
+              .catch(() => undefined);
+          }}
           onUploaded={() => {
             setShowUpload(false);
-            setDocumentPage(1);
-            void documentsRequest.refetch().catch(() => undefined);
+            if (documentPage === 1) {
+              void documentsRequest.refetch().catch(() => undefined);
+            } else {
+              setDocumentPage(1);
+            }
           }}
         />
       ) : null}
@@ -233,7 +247,14 @@ export function CollectionDetailPage({
           onClose={closeDocumentDialog}
           onDeleted={() => {
             closeDocumentDialog();
-            void documentsRequest.refetch().catch(() => undefined);
+            if (
+              documentPage > 1 &&
+              documentsRequest.data.items.length === 1
+            ) {
+              setDocumentPage((page) => page - 1);
+            } else {
+              void documentsRequest.refetch().catch(() => undefined);
+            }
           }}
         />
       ) : null}

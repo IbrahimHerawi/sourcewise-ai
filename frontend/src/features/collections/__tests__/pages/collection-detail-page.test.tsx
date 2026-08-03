@@ -227,7 +227,14 @@ describe("CollectionDetailPage API integration", () => {
         ),
       },
     });
-    expect(await screen.findByText("Choose no more than three documents.")).toBeVisible();
+    expect(
+      await screen.findByText(
+        /Upload blocked — Select 1–3 PDF, TXT, or MD files/i,
+      ),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Upload 4 documents" }),
+    ).toBeDisabled();
 
     await user.click(screen.getAllByRole("button", { name: "Close" })[0]);
     await user.click(screen.getAllByRole("button", { name: "Upload to collection" })[0]);
@@ -261,7 +268,14 @@ describe("CollectionDetailPage API integration", () => {
     );
     await user.click(screen.getByRole("button", { name: "Upload 1 document" }));
 
-    expect(await screen.findByText("Upload exceeds MAX_UPLOAD_MB (10 MB).")).toBeVisible();
+    expect(
+      await screen.findByText(
+        "One or more files is larger than the 10 MB upload limit.",
+      ),
+    ).toBeVisible();
+    expect(
+      screen.queryByText("Upload exceeds MAX_UPLOAD_MB (10 MB)."),
+    ).not.toBeInTheDocument();
     expect(screen.getByRole("dialog", { name: "Upload to collection" })).toBeVisible();
   });
 
@@ -329,6 +343,64 @@ describe("CollectionDetailPage API integration", () => {
     await waitFor(() => expect(fetchMock.mock.calls.some(([url]) =>
       String(url).includes("/questions/history?limit=20&offset=20")
     )).toBe(true));
+  });
+
+  it("returns to the previous document page after deleting its final item", async () => {
+    const user = userEvent.setup();
+    let deleted = false;
+    const fetchMock = installDetailApi((url, init) => {
+      if (
+        url.endsWith(`/api/v1/documents/${documentId}`) &&
+        init?.method === "DELETE"
+      ) {
+        deleted = true;
+        return new Response(null, { status: 204 });
+      }
+      if (url.includes("/api/v1/documents?")) {
+        const offset = Number(
+          new URL(url, "http://localhost").searchParams.get("offset"),
+        );
+        if (offset === 20 && !deleted) {
+          return jsonResponse({
+            items: [documents[0]],
+            limit: 20,
+            offset: 20,
+            total: 21,
+          });
+        }
+        return jsonResponse({
+          items: [documents[1]],
+          limit: 20,
+          offset: 0,
+          total: deleted ? 20 : 21,
+        });
+      }
+    });
+    renderWithDashboardHeader(
+      <CollectionDetailPage collectionId={collectionId} />,
+    );
+    await screen.findByRole("heading", { name: collection.name });
+
+    await user.click(screen.getByRole("button", { name: "Go to next page" }));
+    await screen.findByRole("heading", { name: documents[0].filename });
+    await user.click(
+      screen.getByRole("button", {
+        name: `Actions for ${documents[0].filename}`,
+      }),
+    );
+    await user.click(
+      screen.getByRole("menuitem", { name: "Delete document" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Delete document" }));
+
+    expect(
+      await screen.findByRole("heading", { name: documents[1].filename }),
+    ).toBeVisible();
+    expect(
+      fetchMock.mock.calls.some(([url]) =>
+        String(url).includes("/documents?limit=20&offset=0"),
+      ),
+    ).toBe(true);
   });
 
   it("shows successful empty document and history states", async () => {

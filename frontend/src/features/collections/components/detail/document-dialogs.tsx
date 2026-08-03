@@ -1,13 +1,20 @@
 "use client";
 
-import { useCallback, useRef } from "react";
+import { useEffect, useRef } from "react";
 import { CircleAlert, Loader2 } from "lucide-react";
-import { deleteDocument, getDocument } from "@/features/collections/collections-api";
 import type { CollectionDocument } from "@/features/collections/collections-api-types";
 import { formatDateTime, formatFileSize } from "@/features/collections/collection-formatters";
-import { safeDocumentFailureMessage } from "@/features/collections/document-status";
-import { useApiMutation, useApiRequest } from "@/hooks/use-api-request";
-import { getApiErrorMessage } from "@/lib/api";
+import { safeDocumentFailureMessage } from "@/features/documents/document-status";
+import {
+  useDeleteDocumentMutation,
+  useDocumentDetails,
+} from "@/features/documents/hooks/use-documents-api";
+import { useAuth } from "@/hooks/use-auth";
+import { ApiError } from "@/lib/api";
+import {
+  getDeleteErrorMessage,
+  getDocumentDetailsErrorMessage,
+} from "@/features/documents/documents-error-utils";
 import { CollectionButton } from "../collection-button";
 import {
   CollectionDialog,
@@ -24,12 +31,15 @@ export function DocumentDetailsDialog({
   documentId: string;
   onClose: () => void;
 }) {
+  const { logout } = useAuth();
   const closeRef = useRef<HTMLButtonElement>(null);
-  const request = useCallback(
-    (signal: AbortSignal) => getDocument(documentId, signal),
-    [documentId],
-  );
-  const state = useApiRequest(request);
+  const state = useDocumentDetails(documentId);
+
+  useEffect(() => {
+    if (state.status === "error" && state.error instanceof ApiError) {
+      if (state.error.status === 401) logout();
+    }
+  }, [logout, state.error, state.status]);
 
   return (
     <CollectionDialog
@@ -46,7 +56,7 @@ export function DocumentDetailsDialog({
       ) : state.status === "error" ? (
         <div className={styles.dialogError} role="alert">
           <CircleAlert aria-hidden="true" />
-          <p>{getApiErrorMessage(state.error, "Document details could not be loaded.")}</p>
+          <p>{getDocumentDetailsErrorMessage(state.error)}</p>
           <CollectionButton onClick={() => void state.refetch().catch(() => undefined)}>
             Try again
           </CollectionButton>
@@ -104,20 +114,25 @@ export function DeleteDocumentDialog({
   onClose: () => void;
   onDeleted: () => void;
 }) {
+  const { logout } = useAuth();
   const cancelRef = useRef<HTMLButtonElement>(null);
-  const mutation = useApiMutation((documentId: string, signal) =>
-    deleteDocument(documentId, signal),
-  );
+  const mutation = useDeleteDocumentMutation();
   const submit = () => {
     void mutation.mutate(document.id).then(onDeleted).catch(() => undefined);
   };
+
+  useEffect(() => {
+    if (mutation.error instanceof ApiError && mutation.error.status === 401) {
+      logout();
+    }
+  }, [logout, mutation.error]);
 
   return (
     <CollectionDialog
       description={`Delete ${document.filename} permanently? This removes the uploaded document and its processed data. Existing citation snapshots remain in question history.`}
       descriptionVariant="warning"
       initialFocusRef={cancelRef}
-      onClose={onClose}
+      onClose={mutation.isPending ? () => undefined : onClose}
       role="alertdialog"
       title="Delete document?"
     >
@@ -134,7 +149,7 @@ export function DeleteDocumentDialog({
       </CollectionDialogFooter>
       {mutation.error ? (
         <p className={styles.dialogMutationError} role="alert">
-          {getApiErrorMessage(mutation.error, "The document could not be deleted.")}
+          {getDeleteErrorMessage(mutation.error)}
         </p>
       ) : null}
     </CollectionDialog>
