@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react";
 import { CircleAlert, Loader2 } from "lucide-react";
 import type { CollectionDocument } from "@/features/collections/collections-api-types";
-import { formatDateTime, formatFileSize } from "@/features/collections/collection-formatters";
+import { formatDateTime, formatFileSize } from "@/lib/formatters";
 import { safeDocumentFailureMessage } from "@/features/documents/document-status";
 import {
   useDeleteDocumentMutation,

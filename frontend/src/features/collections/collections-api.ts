@@ -14,11 +14,10 @@ import type {
   CollectionCreateInput,
   CollectionUpdateInput,
   PaginatedResponse,
-  QuestionAnswer,
-  QuestionHistoryItem,
 } from "@/features/collections/collections-api-types";
 
 const COLLECTIONS_CONTRACT = "Collections";
+const MAX_COLLECTION_PAGE_SIZE = 100;
 
 function paginationQuery(limit: number, offset: number) {
   return new URLSearchParams({ limit: String(limit), offset: String(offset) });
@@ -70,6 +69,35 @@ export async function getCollections(
   return parseCollectionPage(response);
 }
 
+export async function listAllCollectionsApi(
+  signal?: AbortSignal,
+): Promise<CollectionApiRecord[]> {
+  const collections: CollectionApiRecord[] = [];
+  const collectionIds = new Set<string>();
+  let expectedTotal: number | undefined;
+  let offset = 0;
+  let total = 0;
+
+  do {
+    const page = await getCollections(MAX_COLLECTION_PAGE_SIZE, offset, signal);
+    total = page.total;
+    expectedTotal ??= total;
+    if (
+      page.offset !== offset ||
+      total !== expectedTotal ||
+      (page.items.length === 0 && offset < total) ||
+      page.items.some(({ id }) => collectionIds.has(id))
+    ) {
+      return invalidApiResponse(COLLECTIONS_CONTRACT);
+    }
+    collections.push(...page.items);
+    page.items.forEach(({ id }) => collectionIds.add(id));
+    offset += page.items.length;
+  } while (offset < total);
+
+  return collections;
+}
+
 export async function getCollection(
   collectionId: string,
   signal?: AbortSignal,
@@ -107,43 +135,6 @@ export async function updateCollection(
 
 export function deleteCollection(collectionId: string, signal?: AbortSignal) {
   return apiRequest<Record<string, never>>(`/collections/${collectionId}`, {
-    method: "DELETE",
-    signal,
-  });
-}
-
-export function askCollection(
-  collectionId: string,
-  question: string,
-  signal?: AbortSignal,
-) {
-  return apiRequest<QuestionAnswer>("/questions/ask", {
-    method: "POST",
-    body: JSON.stringify({ question, collection_id: collectionId }),
-    signal,
-  });
-}
-
-export function getCollectionHistory(
-  collectionId: string,
-  limit: number,
-  offset: number,
-  signal?: AbortSignal,
-) {
-  const query = paginationQuery(limit, offset);
-  query.set("collection_id", collectionId);
-  return apiRequest<PaginatedResponse<QuestionHistoryItem>>(
-    `/questions/history?${query}`,
-    { signal },
-  );
-}
-
-export function getQuestionHistoryItem(questionId: string, signal?: AbortSignal) {
-  return apiRequest<QuestionHistoryItem>(`/questions/history/${questionId}`, { signal });
-}
-
-export function deleteQuestionHistoryItem(questionId: string, signal?: AbortSignal) {
-  return apiRequest<Record<string, never>>(`/questions/history/${questionId}`, {
     method: "DELETE",
     signal,
   });

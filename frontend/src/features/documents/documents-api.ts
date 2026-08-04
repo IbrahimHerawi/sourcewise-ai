@@ -20,6 +20,7 @@ import type {
 } from "./documents-api-types";
 
 const DOCUMENT_CONTRACT = "Documents";
+const MAX_DOCUMENT_PAGE_SIZE = 100;
 
 function parseDocument(value: unknown): DocumentApiRecord {
   const record = readApiObject(value, DOCUMENT_CONTRACT);
@@ -109,6 +110,41 @@ export async function listDocumentsApi(
     return invalidApiResponse(DOCUMENT_CONTRACT);
   }
   return page;
+}
+
+export async function listAllDocumentsApi(
+  signal?: AbortSignal,
+): Promise<DocumentApiRecord[]> {
+  const documents: DocumentApiRecord[] = [];
+  const documentIds = new Set<string>();
+  let expectedTotal: number | undefined;
+  let offset = 0;
+  let total = 0;
+
+  do {
+    const page = await listDocumentsApi(
+      {
+        collectionId: null,
+        limit: MAX_DOCUMENT_PAGE_SIZE,
+        offset,
+      },
+      signal,
+    );
+    total = page.total;
+    expectedTotal ??= total;
+    if (
+      total !== expectedTotal ||
+      (page.items.length === 0 && offset < total) ||
+      page.items.some(({ id }) => documentIds.has(id))
+    ) {
+      return invalidApiResponse(DOCUMENT_CONTRACT);
+    }
+    documents.push(...page.items);
+    page.items.forEach(({ id }) => documentIds.add(id));
+    offset += page.items.length;
+  } while (offset < total);
+
+  return documents;
 }
 
 export async function getDocumentApi(

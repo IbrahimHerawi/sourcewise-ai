@@ -3,18 +3,20 @@ import { getPaginationItems } from "@/features/collections/collection-detail-uti
 import styles from "./collection-detail.module.css";
 
 type CollectionPaginationProps = {
+  ariaLabel?: string;
   currentPage: number;
   onPageChange: (page: number) => void;
   pageCount: number;
 };
 
 export function CollectionPagination({
+  ariaLabel = "Collection content pagination",
   currentPage,
   onPageChange,
   pageCount,
 }: CollectionPaginationProps) {
   return (
-    <nav aria-label="Collection content pagination" className={styles.pagination}>
+    <nav aria-label={ariaLabel} className={styles.pagination}>
       <button
         aria-label="Go to previous page"
         className={styles.paginationDirection}

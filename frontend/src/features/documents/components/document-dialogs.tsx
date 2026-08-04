@@ -9,10 +9,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { CollectionButton } from "@/features/collections/components/collection-button";
-import {
-  formatDateTime,
-  formatFileSize,
-} from "@/features/collections/collection-formatters";
+import { formatDateTime, formatFileSize } from "@/lib/formatters";
 import { DocumentStatusBadge } from "@/features/collections/components/detail/collection-document-list";
 import {
   CollectionDialog,

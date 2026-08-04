@@ -1,0 +1,121 @@
+.historyContent {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--sw-spacing-24);
+}
+
+.sectionHeader {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sw-spacing-16);
+}
+
+.sectionHeader > div {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--sw-spacing-8);
+}
+
+.sectionHeader svg {
+  width: 1.25rem;
+  height: 1.25rem;
+  flex: none;
+  color: var(--sw-color-brand-default);
+}
+
+.sectionHeader h2,
+.sectionHeader p,
+.messageState h2,
+.messageState p {
+  margin: 0;
+}
+
+.sectionHeader h2 {
+  color: var(--sw-color-text-primary);
+  font-size: var(--sw-type-size-card-title);
+  font-weight: 600;
+  line-height: var(--sw-type-line-height-card-title);
+}
+
+.sectionHeader p {
+  color: var(--sw-color-text-secondary);
+  font-size: var(--sw-type-size-metadata);
+  line-height: var(--sw-type-line-height-metadata);
+}
+
+.loadingState,
+.messageState {
+  display: flex;
+  width: 100%;
+  min-height: 14rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--sw-radius-medium);
+  background: var(--sw-color-background-surface);
+  color: var(--sw-color-text-secondary);
+}
+
+.loadingState {
+  gap: var(--sw-spacing-8);
+}
+
+.loadingState svg {
+  width: 1.25rem;
+  height: 1.25rem;
+  animation: question-history-spin 1s linear infinite;
+}
+
+.messageState {
+  flex-direction: column;
+  gap: var(--sw-spacing-12);
+  padding: var(--sw-spacing-24);
+  text-align: center;
+}
+
+.messageState > svg {
+  width: 2rem;
+  height: 2rem;
+  color: var(--sw-color-brand-default);
+}
+
+.messageState[role="alert"] > svg {
+  color: var(--sw-color-validation-icon);
+}
+
+.messageState h2 {
+  color: var(--sw-color-text-primary);
+  font-size: var(--sw-type-size-card-title);
+  font-weight: 600;
+  line-height: var(--sw-type-line-height-card-title);
+}
+
+.messageState p {
+  max-width: 36rem;
+  color: var(--sw-color-text-secondary);
+  font-size: var(--sw-type-size-metadata);
+  line-height: var(--sw-type-line-height-metadata);
+}
+
+@keyframes question-history-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 40rem) {
+  .sectionHeader {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loadingState svg {
+    animation: none;
+  }
+}

@@ -16,7 +16,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { CollectionButton } from "@/features/collections/components/collection-button";
-import { formatFileSize } from "@/features/collections/collection-formatters";
+import { formatFileSize } from "@/lib/formatters";
 import {
   DOCUMENT_UPLOAD_LIMITS,
   getUploadValidationMessage,

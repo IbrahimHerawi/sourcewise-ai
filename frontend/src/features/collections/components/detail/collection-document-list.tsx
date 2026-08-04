@@ -6,7 +6,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import type { CollectionDocument, DocumentStatus } from "@/features/collections/collections-api-types";
-import { formatFileSize, formatRelativeDate } from "@/features/collections/collection-formatters";
+import { formatFileSize, formatRelativeDate } from "@/lib/formatters";
 import {
   DOCUMENT_STATUS_PRESENTATION,
   safeDocumentFailureMessage,

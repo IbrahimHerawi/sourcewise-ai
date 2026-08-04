@@ -18,6 +18,10 @@ import {
   useCollectionRecord,
 } from "@/features/collections/hooks/use-collections-api";
 import { useDocumentProcessingPolling } from "@/features/documents/hooks/use-document-processing-polling";
+import {
+  DeleteQuestionHistoryDialog,
+  QuestionHistoryDetailsDialog,
+} from "@/features/questions/components/question-history-dialogs";
 import { CollectionButton } from "../collection-button";
 import { CollectionsDialogs } from "../dialogs/collections-dialogs";
 import { CollectionDetailContent } from "./collection-detail-content";
@@ -30,10 +34,6 @@ import {
   DeleteDocumentDialog,
   DocumentDetailsDialog,
 } from "./document-dialogs";
-import {
-  DeleteHistoryDialog,
-  HistoryDetailsDialog,
-} from "./history-dialogs";
 import { UploadCollectionDialog } from "./upload-collection-dialog";
 
 type CollectionDetailPageProps = {
@@ -259,10 +259,13 @@ export function CollectionDetailPage({
         />
       ) : null}
       {historyDialog?.type === "details" ? (
-        <HistoryDetailsDialog questionId={historyDialog.item.question_id} onClose={closeHistoryDialog} />
+        <QuestionHistoryDetailsDialog
+          questionId={historyDialog.item.question_id}
+          onClose={closeHistoryDialog}
+        />
       ) : null}
       {historyDialog?.type === "delete" ? (
-        <DeleteHistoryDialog
+        <DeleteQuestionHistoryDialog
           item={historyDialog.item}
           onClose={closeHistoryDialog}
           onDeleted={() => {

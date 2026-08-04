@@ -2,24 +2,24 @@
 
 import { useCallback, useRef } from "react";
 import { CircleAlert, Loader2 } from "lucide-react";
-import {
-  deleteQuestionHistoryItem,
-  getQuestionHistoryItem,
-} from "@/features/collections/collections-api";
-import type { QuestionHistoryItem } from "@/features/collections/collections-api-types";
-import { formatDateTime } from "@/features/collections/collection-formatters";
-import { useApiMutation, useApiRequest } from "@/hooks/use-api-request";
-import { getApiErrorMessage } from "@/lib/api";
-import { CollectionButton } from "../collection-button";
+import { CollectionButton } from "@/features/collections/components/collection-button";
 import {
   CollectionDialog,
   CollectionDialogCancel,
   CollectionDialogFooter,
-} from "../dialogs/collection-dialog";
+} from "@/features/collections/components/dialogs/collection-dialog";
+import { useApiMutation, useApiRequest } from "@/hooks/use-api-request";
+import { formatDateTime } from "@/lib/formatters";
+import { getQuestionHistoryErrorContent } from "../question-error-utils";
+import {
+  deleteQuestionHistoryItemApi,
+  getQuestionHistoryItemApi,
+} from "../questions-api";
+import type { QuestionHistoryItem } from "../questions-api-types";
 import { CitationList } from "./citation-list";
-import styles from "./collection-detail.module.css";
+import styles from "./question-history-dialogs.module.css";
 
-export function HistoryDetailsDialog({
+export function QuestionHistoryDetailsDialog({
   questionId,
   onClose,
 }: {
@@ -28,7 +28,8 @@ export function HistoryDetailsDialog({
 }) {
   const closeRef = useRef<HTMLButtonElement>(null);
   const request = useCallback(
-    (signal: AbortSignal) => getQuestionHistoryItem(questionId, signal),
+    (signal: AbortSignal) =>
+      getQuestionHistoryItemApi(questionId, signal),
     [questionId],
   );
   const state = useApiRequest(request);
@@ -41,20 +42,27 @@ export function HistoryDetailsDialog({
       title="Question details"
     >
       {state.status === "loading" ? (
-        <div aria-busy="true" className={styles.dialogLoading}>
+        <div
+          aria-busy="true"
+          aria-live="polite"
+          className={styles.loading}
+          role="status"
+        >
           <Loader2 aria-hidden="true" />
           <span>Loading question details…</span>
         </div>
       ) : state.status === "error" ? (
-        <div className={styles.dialogError} role="alert">
+        <div className={styles.error} role="alert">
           <CircleAlert aria-hidden="true" />
-          <p>{getApiErrorMessage(state.error, "Question details could not be loaded.")}</p>
-          <CollectionButton onClick={() => void state.refetch().catch(() => undefined)}>
+          <p>{getQuestionHistoryErrorContent(state.error).description}</p>
+          <CollectionButton
+            onClick={() => void state.refetch().catch(() => undefined)}
+          >
             Try again
           </CollectionButton>
         </div>
       ) : (
-        <HistoryDetails item={state.data} />
+        <QuestionHistoryDetails item={state.data} />
       )}
       <CollectionDialogFooter>
         <CollectionDialogCancel ref={closeRef}>Close</CollectionDialogCancel>
@@ -63,30 +71,34 @@ export function HistoryDetailsDialog({
   );
 }
 
-function HistoryDetails({ item }: { item: QuestionHistoryItem }) {
+function QuestionHistoryDetails({ item }: { item: QuestionHistoryItem }) {
   return (
-    <div className={styles.historyDetailsBody}>
+    <div className={styles.details}>
       <div>
-        <span className={styles.detailLabel}>Question</span>
+        <span className={styles.label}>Question</span>
         <h3>{item.question}</h3>
       </div>
       <div>
-        <span className={styles.detailLabel}>Answer</span>
+        <span className={styles.label}>Answer</span>
         <p className={styles.fullAnswer}>{item.answer}</p>
       </div>
       <div className={styles.answerMetadata}>
         <time dateTime={item.created_at}>{formatDateTime(item.created_at)}</time>
-        {item.provider && item.model ? <span>{item.provider} · {item.model}</span> : null}
+        {item.provider && item.model ? (
+          <span>
+            {item.provider} · {item.model}
+          </span>
+        ) : null}
       </div>
-      <section aria-labelledby="history-citations-title">
-        <h4 id="history-citations-title">Citations</h4>
+      <section aria-labelledby={`history-citations-${item.question_id}`}>
+        <h4 id={`history-citations-${item.question_id}`}>Citations</h4>
         <CitationList citations={item.citations} />
       </section>
     </div>
   );
 }
 
-export function DeleteHistoryDialog({
+export function DeleteQuestionHistoryDialog({
   item,
   onClose,
   onDeleted,
@@ -97,7 +109,7 @@ export function DeleteHistoryDialog({
 }) {
   const cancelRef = useRef<HTMLButtonElement>(null);
   const mutation = useApiMutation((questionId: string, signal) =>
-    deleteQuestionHistoryItem(questionId, signal),
+    deleteQuestionHistoryItemApi(questionId, signal),
   );
 
   return (
@@ -115,7 +127,10 @@ export function DeleteHistoryDialog({
         <CollectionButton
           disabled={mutation.isPending}
           onClick={() =>
-            void mutation.mutate(item.question_id).then(onDeleted).catch(() => undefined)
+            void mutation
+              .mutate(item.question_id)
+              .then(onDeleted)
+              .catch(() => undefined)
           }
           tone="solid-danger"
           type="button"
@@ -124,8 +139,8 @@ export function DeleteHistoryDialog({
         </CollectionButton>
       </CollectionDialogFooter>
       {mutation.error ? (
-        <p className={styles.dialogMutationError} role="alert">
-          {getApiErrorMessage(mutation.error, "The history item could not be deleted.")}
+        <p className={styles.mutationError} role="alert">
+          {getQuestionHistoryErrorContent(mutation.error).description}
         </p>
       ) : null}
     </CollectionDialog>
