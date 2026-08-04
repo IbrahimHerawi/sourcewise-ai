@@ -1,11 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { CircleAlert, Loader2, MessageCircleQuestion } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { CollectionButton } from "@/features/collections/components/collection-button";
 import { DashboardPagination } from "@/features/dashboard/components/dashboard-pagination";
+import { useDocumentCollections } from "@/features/documents/hooks/use-documents-api";
 import {
   DeleteQuestionHistoryDialog,
   QuestionHistoryDetailsDialog,
@@ -38,16 +39,38 @@ export function QuestionHistoryScreen({
     PAGE_SIZE,
     (currentPage - 1) * PAGE_SIZE,
   );
+  const collectionsRequest = useDocumentCollections();
+  const collectionNames = useMemo(
+    () =>
+      new Map<string, string>(
+        collectionsRequest.status === "success"
+          ? collectionsRequest.data.map(({ id, name }) => [id, name])
+          : [],
+      ),
+    [collectionsRequest.data, collectionsRequest.status],
+  );
 
   useEffect(() => {
+    const errors = [
+      request.status === "error" ? request.error : undefined,
+      collectionsRequest.status === "error"
+        ? collectionsRequest.error
+        : undefined,
+    ];
     if (
-      request.status === "error" &&
-      request.error instanceof ApiError &&
-      request.error.status === 401
+      errors.some(
+        (error) => error instanceof ApiError && error.status === 401,
+      )
     ) {
       logout();
     }
-  }, [logout, request.error, request.status]);
+  }, [
+    collectionsRequest.error,
+    collectionsRequest.status,
+    logout,
+    request.error,
+    request.status,
+  ]);
 
   const changePage = useCallback(
     (page: number) => {
@@ -69,7 +92,10 @@ export function QuestionHistoryScreen({
     if (currentPage > lastPage) changePage(lastPage);
   }, [changePage, currentPage, request.data, request.status]);
 
-  if (request.status === "loading") {
+  if (
+    request.status === "loading" ||
+    collectionsRequest.status === "loading"
+  ) {
     return (
       <DashboardPage>
         <div
@@ -132,6 +158,7 @@ export function QuestionHistoryScreen({
           className={styles.historyContent}
         >
           <QuestionHistoryList
+            collectionNames={collectionNames}
             items={request.data.items}
             onDelete={(item) => setDialog({ item, type: "delete" })}
             onViewDetails={(item) => setDialog({ item, type: "details" })}

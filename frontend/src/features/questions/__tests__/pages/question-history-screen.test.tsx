@@ -22,6 +22,13 @@ const questionId = "11111111-1111-4111-8111-111111111111";
 const collectionId = "22222222-2222-4222-8222-222222222222";
 const documentId = "33333333-3333-4333-8333-333333333333";
 const chunkId = "44444444-4444-4444-8444-444444444444";
+const collection = {
+  id: collectionId,
+  name: "Quarterly Research",
+  description: null,
+  created_at: "2026-07-01T12:00:00Z",
+  updated_at: "2026-07-02T12:00:00Z",
+};
 const historyItem = {
   question_id: questionId,
   collection_id: collectionId,
@@ -71,6 +78,14 @@ function installHistoryApi(override?: HistoryApiOverride) {
           total: listRequests > 1 ? 0 : 1,
         });
       }
+      if (url.includes("/api/v1/collections?") && !init?.method) {
+        return jsonResponse({
+          items: [collection],
+          limit: 100,
+          offset: 0,
+          total: 1,
+        });
+      }
       if (
         url.endsWith(`/api/v1/questions/history/${questionId}`) &&
         !init?.method
@@ -104,6 +119,7 @@ describe("QuestionHistoryScreen", () => {
 
     expect(screen.getByText("Loading question history…")).toBeInTheDocument();
     expect(await screen.findByText("1 source")).toBeVisible();
+    expect(screen.getByText(collection.name)).toBeVisible();
     expect(screen.getByText("Showing 1–1 of 1")).toBeVisible();
     expect(
       screen.queryByRole("heading", { name: "Saved questions" }),
@@ -129,9 +145,65 @@ describe("QuestionHistoryScreen", () => {
       "Bearer test-token",
     );
     expect(listCall?.[1]?.cache).toBe("no-store");
+    const collectionsCall = fetchMock.mock.calls.find(([url]) =>
+      String(url).includes("/collections?"),
+    );
+    expect(String(collectionsCall?.[0])).toContain(
+      "/collections?limit=100&offset=0",
+    );
+    expect(new Headers(collectionsCall?.[1]?.headers).get("Authorization")).toBe(
+      "Bearer test-token",
+    );
   });
 
-  it("pluralizes the source count only when it is greater than one", async () => {
+  it("omits the collection chip when a collection is missing or inaccessible", async () => {
+    installHistoryApi((url, init) => {
+      if (url.includes("/api/v1/collections?") && !init?.method) {
+        return jsonResponse({
+          items: [],
+          limit: 100,
+          offset: 0,
+          total: 0,
+        });
+      }
+    });
+    renderWithDashboardHeader(<QuestionHistoryScreen />);
+
+    expect(
+      await screen.findByRole("button", { name: historyItem.question }),
+    ).toBeVisible();
+    expect(screen.queryByText(collection.name)).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/unknown collection|deleted collection/i),
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps history available when collection names cannot be loaded", async () => {
+    installHistoryApi((url, init) => {
+      if (url.includes("/api/v1/collections?") && !init?.method) {
+        return jsonResponse(
+          {
+            error: {
+              code: "forbidden",
+              message: "SENTINEL_COLLECTION_ACCESS_ERROR",
+            },
+          },
+          403,
+        );
+      }
+    });
+    renderWithDashboardHeader(<QuestionHistoryScreen />);
+
+    expect(
+      await screen.findByRole("button", { name: historyItem.question }),
+    ).toBeVisible();
+    expect(screen.queryByText(collection.name)).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("SENTINEL_COLLECTION_ACCESS_ERROR"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("uses the singular source label only for exactly one source", async () => {
     installHistoryApi((url, init) => {
       if (!url.includes("/api/v1/questions/history?") || init?.method) {
         return undefined;
@@ -167,7 +239,7 @@ describe("QuestionHistoryScreen", () => {
     });
     renderWithDashboardHeader(<QuestionHistoryScreen />);
 
-    expect(await screen.findByText("0 source")).toBeVisible();
+    expect(await screen.findByText("0 sources")).toBeVisible();
     expect(screen.getByText("1 source")).toBeVisible();
     expect(screen.getByText("2 sources")).toBeVisible();
   });
