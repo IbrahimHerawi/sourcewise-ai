@@ -11,17 +11,17 @@ import React, {
 import { useRouter } from "next/navigation";
 import {
   api,
-  clearStoredAuthToken,
-  getStoredAuthToken,
+  clearAuthSession,
+  clearLegacyAuthStorage,
+  hasAuthSession,
   RegisterResponse,
   ResendVerificationResponse,
-  storeAuthToken,
+  setAuthFailureHandler,
   User,
 } from "@/lib/api";
 
 export interface AuthContextType {
   user: User | null;
-  token: string | null;
   isLoading: boolean;
   isAuthenticated: boolean;
   login: (email: string, password: string) => Promise<void>;
@@ -31,7 +31,7 @@ export interface AuthContextType {
     first_name: string,
     last_name: string
   ) => Promise<RegisterResponse>;
-  logout: () => void;
+  logout: () => Promise<void>;
   verifyEmail: (token: string) => Promise<void>;
   resendVerification: (email: string) => Promise<ResendVerificationResponse>;
 }
@@ -40,43 +40,57 @@ export const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
-  const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const router = useRouter();
 
   useEffect(() => {
-    async function initAuth() {
-      const savedToken = getStoredAuthToken();
+    clearLegacyAuthStorage();
 
+    return setAuthFailureHandler(() => {
+      setUser(null);
+      setIsLoading(false);
+      router.replace("/");
+    });
+  }, [router]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function initAuth() {
       try {
-        if (savedToken) {
-          setToken(savedToken);
+        const hasSession = hasAuthSession() || await api.restoreSession();
+        if (hasSession) {
           const userData = await api.getMe();
-          setUser(userData);
+          if (!cancelled) {
+            setUser(userData);
+          }
         }
       } catch (error) {
-        console.error("Failed to authenticate with saved token", error);
-        clearStoredAuthToken();
-        setToken(null);
-        setUser(null);
+        console.error("Failed to restore the authentication session", error);
+        clearAuthSession();
+        if (!cancelled) {
+          setUser(null);
+        }
       } finally {
-        setIsLoading(false);
+        if (!cancelled) {
+          setIsLoading(false);
+        }
       }
     }
 
     initAuth();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const login = useCallback(async (email: string, password: string) => {
     setIsLoading(true);
     try {
       const response = await api.login({ email, password });
-      storeAuthToken(response.access_token);
-      setToken(response.access_token);
       setUser(response.user);
     } catch (error) {
-      clearStoredAuthToken();
-      setToken(null);
+      clearAuthSession();
       setUser(null);
       throw error;
     } finally {
@@ -104,11 +118,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const logout = useCallback(() => {
-    clearStoredAuthToken();
-    setToken(null);
+  const logout = useCallback(async () => {
     setUser(null);
     router.replace("/");
+    try {
+      await api.logout();
+    } catch (error) {
+      console.error("Backend logout could not be completed", error);
+    }
   }, [router]);
 
   const verifyEmail = useCallback(async (token: string) => {
@@ -122,7 +139,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const value = useMemo<AuthContextType>(
     () => ({
       user,
-      token,
       isLoading,
       isAuthenticated: !!user,
       login,
@@ -131,7 +147,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       verifyEmail,
       resendVerification,
     }),
-    [user, token, isLoading, login, signup, logout, verifyEmail, resendVerification],
+    [user, isLoading, login, signup, logout, verifyEmail, resendVerification],
   );
 
   return (

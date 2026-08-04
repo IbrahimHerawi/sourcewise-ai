@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DocumentsScreen } from "@/features/documents/components/documents-screen";
 import { getAccessibilityViolations } from "@test/helpers/accessibility";
+import { installTestAuthSession } from "@test/helpers/auth";
 import { renderWithDashboardHeader } from "@test/render/render-with-dashboard-header";
 import {
   installDocumentsApi,
@@ -20,7 +21,7 @@ vi.mock("next/navigation", () => ({
 
 describe("DocumentsScreen accessibility", () => {
   beforeEach(() => {
-    localStorage.setItem("sourcewise_token", "test-token");
+    installTestAuthSession();
     installDocumentsApi();
   });
 

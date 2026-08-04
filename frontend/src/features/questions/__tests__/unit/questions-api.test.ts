@@ -6,6 +6,7 @@ import {
   getQuestionHistoryItemApi,
   listQuestionHistoryApi,
 } from "@/features/questions/questions-api";
+import { installTestAuthSession } from "@test/helpers/auth";
 
 const collectionId = "11111111-1111-4111-8111-111111111111";
 const questionId = "22222222-2222-4222-8222-222222222222";
@@ -44,7 +45,7 @@ function jsonResponse(body: unknown, status = 200) {
 
 describe("Questions API contract", () => {
   beforeEach(() => {
-    localStorage.setItem("sourcewise_token", "test-token");
+    installTestAuthSession();
   });
 
   it("submits only the supported question and optional collection fields", async () => {

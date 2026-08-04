@@ -2,6 +2,7 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { CollectionsScreen } from "@/features/collections/components/collections-screen";
+import { installTestAuthSession } from "@test/helpers/auth";
 import { renderWithDashboardHeader } from "@test/render/render-with-dashboard-header";
 
 const { logoutMock, pushMock, replaceMock } = vi.hoisted(() => ({
@@ -66,7 +67,7 @@ function collectionArticle(name: string): HTMLElement {
 
 describe("CollectionsScreen API integration", () => {
   beforeEach(() => {
-    localStorage.setItem("sourcewise_token", "test-token");
+    installTestAuthSession();
     logoutMock.mockReset();
     pushMock.mockReset();
     replaceMock.mockReset();
@@ -235,6 +236,17 @@ describe("CollectionsScreen API integration", () => {
     const user = userEvent.setup();
     let attempts = 0;
     installCollectionsApi((url) => {
+      if (url.endsWith("/api/v1/auth/refresh")) {
+        return jsonResponse(
+          {
+            error: {
+              code: "invalid_refresh_token",
+              message: "Refresh token is invalid or expired.",
+            },
+          },
+          401,
+        );
+      }
       if (url.includes("/api/v1/collections?")) {
         attempts += 1;
         if (attempts === 1) {
