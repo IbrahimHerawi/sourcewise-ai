@@ -100,6 +100,7 @@ export function getApiErrorMessage(error: unknown, fallback: string): string {
 const BASE_URL = "/api/v1";
 const ACCESS_TOKEN_REFRESH_WINDOW_MS = 5_000;
 const LEGACY_AUTH_TOKEN_STORAGE_KEY = "sourcewise_token";
+const REFRESH_SESSION_STORAGE_KEY = "sourcewise_refresh_session";
 
 type TokenPair = Pick<
   RefreshTokenResponse,
@@ -117,12 +118,18 @@ type AuthSession = {
   refreshTokenExpiresAt: number;
 };
 
+type StoredRefreshSession = Pick<
+  AuthSession,
+  "refreshToken" | "refreshTokenExpiresAt"
+>;
+
 type AuthFailureHandler = () => void;
 
 let authSession: AuthSession | null = null;
 let nextAuthSessionId = 1;
 let authStateVersion = 0;
 let refreshRequest: Promise<string> | null = null;
+let restoreRequest: Promise<boolean> | null = null;
 let authFailureHandler: AuthFailureHandler | null = null;
 
 class StaleAuthSessionError extends Error {
@@ -161,6 +168,58 @@ function validateTokenPair(value: TokenPair): void {
   }
 }
 
+function clearStoredRefreshSession(): void {
+  if (typeof window === "undefined") return;
+  try {
+    sessionStorage.removeItem(REFRESH_SESSION_STORAGE_KEY);
+  } catch {
+    // Storage cleanup must not prevent the in-memory session from being cleared.
+  }
+}
+
+function storeRefreshSession(session: StoredRefreshSession): void {
+  if (typeof window === "undefined") return;
+  try {
+    sessionStorage.setItem(
+      REFRESH_SESSION_STORAGE_KEY,
+      JSON.stringify({
+        refreshToken: session.refreshToken,
+        refreshTokenExpiresAt: session.refreshTokenExpiresAt,
+      } satisfies StoredRefreshSession),
+    );
+  } catch {
+    // Authentication still works in memory when browser storage is unavailable.
+  }
+}
+
+function readStoredRefreshSession(): StoredRefreshSession | null {
+  if (typeof window === "undefined") return null;
+
+  try {
+    const rawValue = sessionStorage.getItem(REFRESH_SESSION_STORAGE_KEY);
+    if (!rawValue) return null;
+
+    const value = JSON.parse(rawValue) as Partial<StoredRefreshSession>;
+    if (
+      typeof value.refreshToken !== "string" ||
+      value.refreshToken.length < 32 ||
+      value.refreshToken.length > 512 ||
+      !isPositiveFiniteNumber(value.refreshTokenExpiresAt)
+    ) {
+      clearStoredRefreshSession();
+      return null;
+    }
+
+    return {
+      refreshToken: value.refreshToken,
+      refreshTokenExpiresAt: value.refreshTokenExpiresAt,
+    };
+  } catch {
+    clearStoredRefreshSession();
+    return null;
+  }
+}
+
 function beginAuthSession(tokenPair: TokenPair): void {
   validateTokenPair(tokenPair);
   const now = Date.now();
@@ -173,6 +232,7 @@ function beginAuthSession(tokenPair: TokenPair): void {
     refreshToken: tokenPair.refresh_token,
     refreshTokenExpiresAt: now + tokenPair.refresh_token_expires_in * 1_000,
   };
+  storeRefreshSession(authSession);
 }
 
 function rotateAuthSession(tokenPair: TokenPair, sessionId: number): string {
@@ -190,6 +250,7 @@ function rotateAuthSession(tokenPair: TokenPair, sessionId: number): string {
     refreshToken: tokenPair.refresh_token,
     refreshTokenExpiresAt: now + tokenPair.refresh_token_expires_in * 1_000,
   };
+  storeRefreshSession(authSession);
   return tokenPair.access_token;
 }
 
@@ -197,6 +258,8 @@ export function clearAuthSession(): void {
   authStateVersion += 1;
   authSession = null;
   refreshRequest = null;
+  restoreRequest = null;
+  clearStoredRefreshSession();
 }
 
 export function hasAuthSession(): boolean {
@@ -219,7 +282,7 @@ export function clearLegacyAuthStorage(): void {
   try {
     localStorage.removeItem(LEGACY_AUTH_TOKEN_STORAGE_KEY);
   } catch {
-    // Legacy storage cleanup must not block memory-only authentication.
+    // Legacy storage cleanup must not block authentication.
   }
 }
 
@@ -390,6 +453,74 @@ async function refreshAccessToken(sessionId: number): Promise<string> {
   }
 }
 
+async function restoreAuthSession(): Promise<boolean> {
+  if (authSession) {
+    return true;
+  }
+  if (restoreRequest) {
+    return restoreRequest;
+  }
+
+  const storedSession = readStoredRefreshSession();
+  if (!storedSession) {
+    return false;
+  }
+  if (storedSession.refreshTokenExpiresAt <= Date.now()) {
+    clearStoredRefreshSession();
+    return false;
+  }
+
+  const restoreAuthStateVersion = authStateVersion;
+  const refreshToken = storedSession.refreshToken;
+  const currentRestoreRequest = (async () => {
+    try {
+      const response = await fetchApiResponse(
+        "/auth/refresh",
+        {
+          method: "POST",
+          body: JSON.stringify({ refresh_token: refreshToken }),
+        },
+      );
+      const tokenPair = await parseApiResponse<RefreshTokenResponse>(response);
+
+      if (
+        authStateVersion !== restoreAuthStateVersion ||
+        readStoredRefreshSession()?.refreshToken !== refreshToken
+      ) {
+        throw new StaleAuthSessionError();
+      }
+
+      beginAuthSession(tokenPair);
+      return true;
+    } catch (error) {
+      if (authStateVersion !== restoreAuthStateVersion) {
+        throw new StaleAuthSessionError();
+      }
+
+      // As with an in-memory rotation, an ambiguous failure is unsafe to
+      // retry because the server may already have consumed this token.
+      clearStoredRefreshSession();
+      if (
+        error instanceof ApiError &&
+        error.status === 401 &&
+        error.code === "invalid_refresh_token"
+      ) {
+        return false;
+      }
+      throw error;
+    }
+  })();
+
+  restoreRequest = currentRestoreRequest;
+  try {
+    return await currentRestoreRequest;
+  } finally {
+    if (restoreRequest === currentRestoreRequest) {
+      restoreRequest = null;
+    }
+  }
+}
+
 type ApiRequestConfig = {
   auth?: "none" | "required";
 };
@@ -503,8 +634,13 @@ export const api = {
     });
   },
 
+  restoreSession(): Promise<boolean> {
+    return restoreAuthSession();
+  },
+
   async logout(): Promise<void> {
-    const refreshToken = authSession?.refreshToken;
+    const refreshToken =
+      authSession?.refreshToken ?? readStoredRefreshSession()?.refreshToken;
     clearAuthSession();
     if (!refreshToken) return;
 

@@ -58,14 +58,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     async function initAuth() {
       try {
-        if (hasAuthSession()) {
+        const hasSession = hasAuthSession() || await api.restoreSession();
+        if (hasSession) {
           const userData = await api.getMe();
           if (!cancelled) {
             setUser(userData);
           }
         }
       } catch (error) {
-        console.error("Failed to authenticate the in-memory session", error);
+        console.error("Failed to restore the authentication session", error);
         clearAuthSession();
         if (!cancelled) {
           setUser(null);
