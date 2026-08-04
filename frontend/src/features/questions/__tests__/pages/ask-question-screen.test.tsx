@@ -172,6 +172,10 @@ describe("AskQuestionScreen", () => {
     expect(screen.getByText("Revenue grew by twelve percent.")).toBeVisible();
     expect(screen.getByText("report.pdf")).toBeVisible();
     expect(screen.getByText("Chunk 2")).toBeVisible();
+    expect(screen.getByText("Cosine distance 0.100")).toBeVisible();
+    expect(
+      screen.getByRole("link", { name: "View saved answer in History" }),
+    ).toHaveAttribute("href", "/dashboard/history");
 
     const askCall = fetchMock.mock.calls.find(([, init]) => init?.method === "POST");
     expect(JSON.parse(String(askCall?.[1]?.body))).toEqual({
@@ -186,6 +190,32 @@ describe("AskQuestionScreen", () => {
     expect(document.activeElement).toBe(
       screen.getByRole("region", { name: "Answer" }),
     );
+  });
+
+  it("renders the backend generation provider and model when they are present", async () => {
+    const user = userEvent.setup();
+    installQuestionApi({
+      ask: () =>
+        jsonResponse(
+          answerResponse({
+            provider: "openai",
+            model: "gpt-test",
+          }),
+        ),
+    });
+    renderWithDashboardHeader(
+      <AskQuestionScreen initialCollectionId={collectionId} />,
+    );
+    await screen.findByText(/ready document will be searched/i);
+    await user.type(
+      screen.getByLabelText("Ask your question"),
+      "Which model answered?",
+    );
+    await user.click(screen.getByRole("button", { name: "Ask question" }));
+
+    expect(
+      await screen.findByText("Generated with OpenAI · gpt-test"),
+    ).toBeVisible();
   });
 
   it("prevents duplicate submissions and announces the non-streaming pending state", async () => {

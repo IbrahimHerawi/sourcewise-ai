@@ -107,13 +107,39 @@
   line-height: var(--sw-type-line-height-metadata);
 }
 
-.citationBadge {
+.metadataChip {
+  display: inline-flex;
+  min-width: 0;
+  max-width: min(20rem, 100%);
   flex: none;
+  align-items: center;
+  gap: var(--sw-spacing-4);
   border-radius: var(--sw-radius-small);
-  background: var(--sw-color-background-selected);
   padding: var(--sw-spacing-4) var(--sw-spacing-8);
-  color: var(--sw-color-brand-default);
   font-size: var(--sw-type-size-caption);
   font-weight: 600;
   line-height: var(--sw-type-line-height-caption);
+}
+
+.sourceChip {
+  background: var(--sw-color-background-selected);
+  color: var(--sw-color-brand-default);
+}
+
+.collectionChip {
+  background: var(--sw-color-background-surface-subtle);
+  color: var(--sw-color-text-secondary);
+}
+
+.collectionChip svg {
+  width: 0.875rem;
+  height: 0.875rem;
+  flex: none;
+}
+
+.collectionName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import Link from "next/link";
 import { BookOpenCheck } from "lucide-react";
 import { formatDateTime } from "@/lib/formatters";
 import { CitationList } from "./citation-list";
@@ -13,6 +14,12 @@ export function QuestionAnswerPanel({
   state: Extract<AskQuestionState, { status: "completed" }>;
 }) {
   const panelRef = useRef<HTMLElement>(null);
+  const generationLabel =
+    state.answer.provider && state.answer.model
+      ? `${
+          state.answer.provider === "openai" ? "OpenAI" : "Ollama"
+        } · ${state.answer.model}`
+      : null;
 
   useEffect(() => {
     panelRef.current?.focus();
@@ -47,6 +54,11 @@ export function QuestionAnswerPanel({
           The server returned an empty answer.
         </div>
       )}
+
+      <div className={styles.answerMetadata}>
+        {generationLabel ? <span>Generated with {generationLabel}</span> : null}
+        <Link href="/dashboard/history">View saved answer in History</Link>
+      </div>
 
       {state.answer.citations.length > 0 ? (
         <section

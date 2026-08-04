@@ -1,0 +1,110 @@
+.paginationBar {
+  display: flex;
+  min-height: 4.5rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sw-spacing-16);
+  padding: var(--sw-spacing-12) var(--sw-spacing-4);
+  color: var(--sw-color-text-secondary);
+  font-size: var(--sw-type-size-caption);
+  font-weight: 600;
+  line-height: var(--sw-type-line-height-caption);
+}
+
+.paginationBar p,
+.paginationControls ol {
+  margin: 0;
+}
+
+.paginationControls,
+.paginationControls ol {
+  display: flex;
+  align-items: center;
+  gap: var(--sw-spacing-8);
+}
+
+.paginationControls ol {
+  padding: 0;
+  list-style: none;
+}
+
+.paginationControls button {
+  display: inline-flex;
+  min-width: 2rem;
+  height: 2rem;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sw-spacing-4);
+  border: 0;
+  border-radius: var(--sw-radius-small);
+  background: transparent;
+  padding-inline: var(--sw-spacing-8);
+  color: var(--sw-color-text-primary);
+  cursor: pointer;
+  font-family: var(--font-dashboard);
+  font-size: var(--sw-type-size-metadata);
+}
+
+.paginationControls button:hover:not(:disabled) {
+  background: var(--sw-color-background-selected);
+}
+
+.paginationControls button:focus-visible {
+  outline: 0.125rem solid var(--sw-color-focus-ring);
+  outline-offset: 0.125rem;
+}
+
+.paginationControls button:disabled {
+  color: var(--sw-color-text-disabled);
+  cursor: not-allowed;
+}
+
+.paginationControls .paginationPage[aria-current="page"] {
+  background: var(--sw-color-brand-default);
+  color: var(--sw-color-background-surface);
+}
+
+.paginationDirection svg,
+.paginationEllipsis svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.paginationEllipsis {
+  display: inline-flex;
+  width: 2rem;
+  height: 2rem;
+  align-items: center;
+  justify-content: center;
+}
+
+@media (max-width: 40rem) {
+  .paginationBar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .paginationControls {
+    justify-content: space-between;
+  }
+
+  .paginationControls ol {
+    gap: var(--sw-spacing-4);
+  }
+
+  .paginationDirection span {
+    display: none;
+  }
+}
+
+@media (max-width: 30rem) {
+  .paginationControls {
+    flex-wrap: wrap;
+  }
+
+  .paginationControls ol {
+    order: -1;
+    width: 100%;
+    justify-content: center;
+  }
+}
