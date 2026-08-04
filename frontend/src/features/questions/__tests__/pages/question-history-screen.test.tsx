@@ -103,8 +103,9 @@ describe("QuestionHistoryScreen", () => {
     renderWithDashboardHeader(<QuestionHistoryScreen />);
 
     expect(screen.getByText("Loading question history…")).toBeInTheDocument();
+    expect(await screen.findByText("1 source")).toBeVisible();
     await user.click(
-      await screen.findByRole("button", { name: historyItem.question }),
+      screen.getByRole("button", { name: historyItem.question }),
     );
     const dialog = await screen.findByRole("dialog", {
       name: "Question details",
@@ -124,6 +125,47 @@ describe("QuestionHistoryScreen", () => {
       "Bearer test-token",
     );
     expect(listCall?.[1]?.cache).toBe("no-store");
+  });
+
+  it("pluralizes the source count only when it is greater than one", async () => {
+    installHistoryApi((url, init) => {
+      if (!url.includes("/api/v1/questions/history?") || init?.method) {
+        return undefined;
+      }
+
+      return jsonResponse({
+        items: [
+          {
+            ...historyItem,
+            question_id: "55555555-5555-4555-8555-555555555555",
+            question: "What had no supporting passages?",
+            citations: [],
+          },
+          historyItem,
+          {
+            ...historyItem,
+            question_id: "66666666-6666-4666-8666-666666666666",
+            question: "What had two supporting passages?",
+            citations: [
+              historyItem.citations[0],
+              {
+                ...historyItem.citations[0],
+                rank: 2,
+                chunk_id: "77777777-7777-4777-8777-777777777777",
+              },
+            ],
+          },
+        ],
+        limit: 20,
+        offset: 0,
+        total: 3,
+      });
+    });
+    renderWithDashboardHeader(<QuestionHistoryScreen />);
+
+    expect(await screen.findByText("0 source")).toBeVisible();
+    expect(screen.getByText("1 source")).toBeVisible();
+    expect(screen.getByText("2 sources")).toBeVisible();
   });
 
   it("deletes by backend question id and refreshes the public list", async () => {

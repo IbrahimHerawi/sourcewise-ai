@@ -54,7 +54,7 @@ export function QuestionHistoryCard({
         <div className={styles.metadata}>
           <span className={styles.citationBadge}>
             {item.citations.length}{" "}
-            {item.citations.length === 1 ? "citation" : "citations"}
+            {item.citations.length > 1 ? "sources" : "source"}
           </span>
           <time dateTime={item.created_at}>
             Asked {formatRelativeDate(item.created_at)}
