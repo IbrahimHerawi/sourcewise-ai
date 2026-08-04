@@ -1,6 +1,5 @@
 "use client";
 
-import { ChevronLeft, ChevronRight, MoreHorizontal } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -8,8 +7,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { DashboardPagination } from "@/features/dashboard/components/dashboard-pagination";
 import { formatDateTime, formatFileSize } from "@/lib/formatters";
-import { getPaginationItems } from "@/features/collections/collection-detail-utils";
 import { DocumentStatusBadge } from "@/features/collections/components/detail/collection-document-list";
 import {
   DOCUMENT_STATUS_PRESENTATION,
@@ -96,70 +95,6 @@ function DocumentRow({
   );
 }
 
-function DocumentsPagination({
-  currentPage,
-  onPageChange,
-  pageCount,
-  pageSize,
-  total,
-}: Pick<
-  DocumentLibraryProps,
-  "currentPage" | "onPageChange" | "pageCount" | "pageSize" | "total"
->) {
-  const first = total === 0 ? 0 : (currentPage - 1) * pageSize + 1;
-  const last = Math.min(currentPage * pageSize, total);
-
-  return (
-    <div className={styles.paginationBar}>
-      <p>Showing {first}–{last} of {total}</p>
-      <nav aria-label="Documents pagination" className={styles.paginationControls}>
-        <button
-          aria-label="Go to previous page"
-          className={styles.paginationDirection}
-          disabled={currentPage === 1}
-          onClick={() => onPageChange(currentPage - 1)}
-          type="button"
-        >
-          <ChevronLeft aria-hidden="true" />
-          <span>Previous</span>
-        </button>
-        <ol>
-          {getPaginationItems(currentPage, pageCount).map((item, index) =>
-            item === "ellipsis" ? (
-              <li className={styles.paginationEllipsis} key={`ellipsis-${index}`}>
-                <MoreHorizontal aria-hidden="true" />
-                <span className="sr-only">More pages</span>
-              </li>
-            ) : (
-              <li key={item}>
-                <button
-                  aria-current={item === currentPage ? "page" : undefined}
-                  aria-label={`Go to page ${item}`}
-                  className={styles.paginationPage}
-                  onClick={() => onPageChange(item)}
-                  type="button"
-                >
-                  {item}
-                </button>
-              </li>
-            ),
-          )}
-        </ol>
-        <button
-          aria-label="Go to next page"
-          className={styles.paginationDirection}
-          disabled={currentPage === pageCount}
-          onClick={() => onPageChange(currentPage + 1)}
-          type="button"
-        >
-          <span>Next</span>
-          <ChevronRight aria-hidden="true" />
-        </button>
-      </nav>
-    </div>
-  );
-}
-
 export function DocumentsToolbar({
   collections,
   filter,
@@ -219,7 +154,8 @@ export function DocumentList({
           />
         ))}
       </ul>
-      <DocumentsPagination
+      <DashboardPagination
+        ariaLabel="Documents pagination"
         currentPage={currentPage}
         onPageChange={onPageChange}
         pageCount={pageCount}

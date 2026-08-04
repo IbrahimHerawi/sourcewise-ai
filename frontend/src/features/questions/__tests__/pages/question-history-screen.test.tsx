@@ -104,6 +104,10 @@ describe("QuestionHistoryScreen", () => {
 
     expect(screen.getByText("Loading question history…")).toBeInTheDocument();
     expect(await screen.findByText("1 source")).toBeVisible();
+    expect(screen.getByText("Showing 1–1 of 1")).toBeVisible();
+    expect(
+      screen.queryByRole("heading", { name: "Saved questions" }),
+    ).not.toBeInTheDocument();
     await user.click(
       screen.getByRole("button", { name: historyItem.question }),
     );
@@ -237,6 +241,7 @@ describe("QuestionHistoryScreen", () => {
     });
     renderWithDashboardHeader(<QuestionHistoryScreen />);
     await screen.findByRole("button", { name: historyItem.question });
+    expect(screen.getByText("Showing 1–20 of 21")).toBeVisible();
 
     await user.click(screen.getByRole("button", { name: "Go to next page" }));
     expect(replaceMock).toHaveBeenCalledWith("/dashboard/history?page=2", {
@@ -249,6 +254,7 @@ describe("QuestionHistoryScreen", () => {
         ),
       ).toBe(true),
     );
+    expect(screen.getByText("Showing 21–21 of 21")).toBeVisible();
   });
 
   it("uses safe authorization errors and logs out on authentication failure", async () => {
