@@ -2,6 +2,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DocumentDetailsDialog } from "@/features/collections/components/detail/document-dialogs";
+import { installTestAuthSession } from "@test/helpers/auth";
 import {
   documentId,
   installDocumentsApi,
@@ -19,7 +20,7 @@ vi.mock("@/hooks/use-auth", () => ({
 
 describe("DocumentDetailsDialog", () => {
   beforeEach(() => {
-    localStorage.setItem("sourcewise_token", "test-token");
+    installTestAuthSession();
     logoutMock.mockReset();
   });
 
@@ -100,6 +101,17 @@ describe("DocumentDetailsDialog", () => {
 
   it("logs out when detail authentication fails", async () => {
     installDocumentsApi((url) => {
+      if (url.endsWith("/auth/refresh")) {
+        return jsonResponse(
+          {
+            error: {
+              code: "invalid_refresh_token",
+              message: "Refresh token is invalid or expired.",
+            },
+          },
+          401,
+        );
+      }
       if (url.endsWith(`/documents/${documentId}`)) {
         return jsonResponse(
           { error: { code: "unauthorized", message: "Expired" } },

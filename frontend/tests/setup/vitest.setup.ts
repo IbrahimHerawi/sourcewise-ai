@@ -1,6 +1,7 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup } from "@testing-library/react";
 import { afterEach } from "vitest";
+import { clearAuthSession, setAuthFailureHandler } from "@/lib/api";
 
 const storageValues = new Map<string, string>();
 const testLocalStorage: Storage = {
@@ -21,6 +22,8 @@ Object.defineProperty(globalThis, "localStorage", {
 
 afterEach(() => {
   cleanup();
+  clearAuthSession();
+  setAuthFailureHandler(null);
   localStorage.clear();
 });
 

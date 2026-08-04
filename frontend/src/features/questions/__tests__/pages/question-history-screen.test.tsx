@@ -2,6 +2,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { QuestionHistoryScreen } from "@/features/questions/components/question-history-screen";
+import { installTestAuthSession } from "@test/helpers/auth";
 import { renderWithDashboardHeader } from "@test/render/render-with-dashboard-header";
 
 const { logoutMock, replaceMock } = vi.hoisted(() => ({
@@ -107,7 +108,7 @@ function installHistoryApi(override?: HistoryApiOverride) {
 
 describe("QuestionHistoryScreen", () => {
   beforeEach(() => {
-    localStorage.setItem("sourcewise_token", "test-token");
+    installTestAuthSession();
     logoutMock.mockReset();
     replaceMock.mockReset();
   });

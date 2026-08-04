@@ -28,8 +28,19 @@ export interface RegisterResponse {
 
 export interface LoginResponse {
   access_token: string;
+  refresh_token: string;
   token_type: "bearer";
+  access_token_expires_in: number;
+  refresh_token_expires_in: number;
   user: User;
+}
+
+export interface RefreshTokenResponse {
+  access_token: string;
+  refresh_token: string;
+  token_type: "bearer";
+  access_token_expires_in: number;
+  refresh_token_expires_in: number;
 }
 
 export interface MessageResponse {
@@ -86,36 +97,149 @@ export function getApiErrorMessage(error: unknown, fallback: string): string {
   return error.message || fallback;
 }
 
-export const AUTH_TOKEN_STORAGE_KEY = "sourcewise_token";
-
 const BASE_URL = "/api/v1";
+const ACCESS_TOKEN_REFRESH_WINDOW_MS = 5_000;
+const LEGACY_AUTH_TOKEN_STORAGE_KEY = "sourcewise_token";
 
-export function getStoredAuthToken(): string | null {
-  if (typeof window === "undefined") {
-    return null;
-  }
+type TokenPair = Pick<
+  RefreshTokenResponse,
+  | "access_token"
+  | "refresh_token"
+  | "access_token_expires_in"
+  | "refresh_token_expires_in"
+>;
 
-  try {
-    return localStorage.getItem(AUTH_TOKEN_STORAGE_KEY);
-  } catch {
-    return null;
+type AuthSession = {
+  accessToken: string;
+  accessTokenExpiresAt: number;
+  id: number;
+  refreshToken: string;
+  refreshTokenExpiresAt: number;
+};
+
+type AuthFailureHandler = () => void;
+
+let authSession: AuthSession | null = null;
+let nextAuthSessionId = 1;
+let authStateVersion = 0;
+let refreshRequest: Promise<string> | null = null;
+let authFailureHandler: AuthFailureHandler | null = null;
+
+class StaleAuthSessionError extends Error {
+  constructor() {
+    super("The authentication session changed while the request was in progress.");
+    this.name = "StaleAuthSessionError";
   }
 }
 
-export function storeAuthToken(token: string): void {
-  try {
-    localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, token);
-  } catch {
-    throw new Error("Authentication storage is unavailable.");
+function invalidRefreshTokenError(): ApiError {
+  return new ApiError(
+    "Refresh token is invalid or expired.",
+    "invalid_refresh_token",
+    401,
+  );
+}
+
+function isPositiveFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0;
+}
+
+function validateTokenPair(value: TokenPair): void {
+  if (
+    typeof value.access_token !== "string" ||
+    !value.access_token ||
+    typeof value.refresh_token !== "string" ||
+    !value.refresh_token ||
+    !isPositiveFiniteNumber(value.access_token_expires_in) ||
+    !isPositiveFiniteNumber(value.refresh_token_expires_in)
+  ) {
+    throw new ApiError(
+      "The server returned an invalid authentication response.",
+      "invalid_response",
+      200,
+    );
   }
 }
 
-export function clearStoredAuthToken(): void {
-  try {
-    localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
-  } catch {
-    // Clearing an unavailable storage area should not prevent logout or recovery.
+function beginAuthSession(tokenPair: TokenPair): void {
+  validateTokenPair(tokenPair);
+  const now = Date.now();
+  authStateVersion += 1;
+  refreshRequest = null;
+  authSession = {
+    accessToken: tokenPair.access_token,
+    accessTokenExpiresAt: now + tokenPair.access_token_expires_in * 1_000,
+    id: nextAuthSessionId++,
+    refreshToken: tokenPair.refresh_token,
+    refreshTokenExpiresAt: now + tokenPair.refresh_token_expires_in * 1_000,
+  };
+}
+
+function rotateAuthSession(tokenPair: TokenPair, sessionId: number): string {
+  validateTokenPair(tokenPair);
+  if (authSession?.id !== sessionId) {
+    throw new StaleAuthSessionError();
   }
+
+  const now = Date.now();
+  authStateVersion += 1;
+  authSession = {
+    accessToken: tokenPair.access_token,
+    accessTokenExpiresAt: now + tokenPair.access_token_expires_in * 1_000,
+    id: sessionId,
+    refreshToken: tokenPair.refresh_token,
+    refreshTokenExpiresAt: now + tokenPair.refresh_token_expires_in * 1_000,
+  };
+  return tokenPair.access_token;
+}
+
+export function clearAuthSession(): void {
+  authStateVersion += 1;
+  authSession = null;
+  refreshRequest = null;
+}
+
+export function hasAuthSession(): boolean {
+  return authSession !== null;
+}
+
+export function setAuthFailureHandler(
+  handler: AuthFailureHandler | null,
+): () => void {
+  authFailureHandler = handler;
+  return () => {
+    if (authFailureHandler === handler) {
+      authFailureHandler = null;
+    }
+  };
+}
+
+export function clearLegacyAuthStorage(): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.removeItem(LEGACY_AUTH_TOKEN_STORAGE_KEY);
+  } catch {
+    // Legacy storage cleanup must not block memory-only authentication.
+  }
+}
+
+function invalidateAuthSession(sessionId?: number): void {
+  if (sessionId !== undefined && authSession?.id !== sessionId) {
+    return;
+  }
+  clearAuthSession();
+  authFailureHandler?.();
+}
+
+/**
+ * Installs a complete in-memory token pair.
+ *
+ * Authentication entry points use this internally. It is exported so API
+ * contract tests and non-React consumers can initialize the same client
+ * without creating a second request path.
+ */
+export function setAuthSession(tokenPair: TokenPair): void {
+  beginAuthSession(tokenPair);
 }
 
 type ErrorResponse = {
@@ -135,27 +259,7 @@ function asMessage(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value : undefined;
 }
 
-export async function apiRequest<T>(
-  path: string,
-  options: RequestInit = {}
-): Promise<T> {
-  const url = `${BASE_URL}${path}`;
-  const token = getStoredAuthToken();
-
-  const headers = new Headers(options.headers);
-  if (!headers.has("Content-Type") && !(options.body instanceof FormData)) {
-    headers.set("Content-Type", "application/json");
-  }
-  if (token) {
-    headers.set("Authorization", `Bearer ${token}`);
-  }
-
-  const response = await fetch(url, {
-    cache: "no-store",
-    ...options,
-    headers,
-  });
-
+async function parseApiResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
     let errorData: ErrorResponse | undefined;
     try {
@@ -164,7 +268,7 @@ export async function apiRequest<T>(
       throw new ApiError(
         response.statusText || "Request failed",
         "request_error",
-        response.status
+        response.status,
       );
     }
 
@@ -178,15 +282,9 @@ export async function apiRequest<T>(
       ? errorPayload.details
       : undefined;
 
-    throw new ApiError(
-      message,
-      code,
-      response.status,
-      details,
-    );
+    throw new ApiError(message, code, response.status, details);
   }
 
-  // Handle empty content / 204 responses
   if (response.status === 204) {
     return {} as T;
   }
@@ -202,38 +300,221 @@ export async function apiRequest<T>(
   }
 }
 
+function fetchApiResponse(
+  path: string,
+  options: RequestInit,
+  accessToken?: string,
+): Promise<Response> {
+  const headers = new Headers(options.headers);
+  if (!headers.has("Content-Type") && !(options.body instanceof FormData)) {
+    headers.set("Content-Type", "application/json");
+  }
+  if (accessToken) {
+    headers.set("Authorization", `Bearer ${accessToken}`);
+  } else {
+    headers.delete("Authorization");
+  }
+
+  return fetch(`${BASE_URL}${path}`, {
+    cache: "no-store",
+    credentials: "same-origin",
+    ...options,
+    headers,
+  });
+}
+
+async function isAccessTokenUnauthorized(response: Response): Promise<boolean> {
+  if (response.status !== 401) return false;
+
+  try {
+    const payload = (await response.clone().json()) as ErrorResponse;
+    return payload.error?.code === "unauthorized";
+  } catch {
+    return false;
+  }
+}
+
+async function refreshAccessToken(sessionId: number): Promise<string> {
+  if (refreshRequest) {
+    return refreshRequest;
+  }
+
+  const session = authSession;
+  if (!session || session.id !== sessionId) {
+    throw new StaleAuthSessionError();
+  }
+  if (session.refreshTokenExpiresAt <= Date.now()) {
+    invalidateAuthSession(sessionId);
+    throw invalidRefreshTokenError();
+  }
+
+  const refreshToken = session.refreshToken;
+  const currentRefreshRequest = (async () => {
+    try {
+      const response = await fetchApiResponse(
+        "/auth/refresh",
+        {
+          method: "POST",
+          body: JSON.stringify({ refresh_token: refreshToken }),
+        },
+      );
+      const tokenPair = await parseApiResponse<RefreshTokenResponse>(response);
+
+      if (
+        authSession?.id !== sessionId ||
+        authSession.refreshToken !== refreshToken
+      ) {
+        throw new StaleAuthSessionError();
+      }
+
+      return rotateAuthSession(tokenPair, sessionId);
+    } catch (error) {
+      if (
+        authSession?.id === sessionId &&
+        authSession.refreshToken === refreshToken
+      ) {
+        // A failed rotating-token exchange is not safe to retry: the server
+        // may have consumed the token even if the response was lost.
+        invalidateAuthSession(sessionId);
+      }
+      throw error;
+    }
+  })();
+  refreshRequest = currentRefreshRequest;
+  try {
+    return await currentRefreshRequest;
+  } finally {
+    if (refreshRequest === currentRefreshRequest) {
+      refreshRequest = null;
+    }
+  }
+}
+
+type ApiRequestConfig = {
+  auth?: "none" | "required";
+};
+
+export async function apiRequest<T>(
+  path: string,
+  options: RequestInit = {},
+  config: ApiRequestConfig = {},
+): Promise<T> {
+  if (config.auth === "none") {
+    return parseApiResponse<T>(await fetchApiResponse(path, options));
+  }
+
+  const initialSession = authSession;
+  if (!initialSession) {
+    return parseApiResponse<T>(await fetchApiResponse(path, options));
+  }
+
+  const sessionId = initialSession.id;
+  let accessToken = initialSession.accessToken;
+  let refreshedBeforeRequest = false;
+
+  if (
+    initialSession.accessTokenExpiresAt <=
+    Date.now() + ACCESS_TOKEN_REFRESH_WINDOW_MS
+  ) {
+    accessToken = await refreshAccessToken(sessionId);
+    refreshedBeforeRequest = true;
+  }
+
+  if (authSession?.id !== sessionId) {
+    throw new StaleAuthSessionError();
+  }
+
+  const response = await fetchApiResponse(path, options, accessToken);
+  if (authSession?.id !== sessionId) {
+    throw new StaleAuthSessionError();
+  }
+  if (!(await isAccessTokenUnauthorized(response))) {
+    return parseApiResponse<T>(response);
+  }
+
+  if (refreshedBeforeRequest) {
+    invalidateAuthSession(sessionId);
+    return parseApiResponse<T>(response);
+  }
+
+  const currentSession = authSession;
+  if (!currentSession || currentSession.id !== sessionId) {
+    return parseApiResponse<T>(response);
+  }
+
+  if (currentSession.accessToken !== accessToken) {
+    accessToken = currentSession.accessToken;
+  } else {
+    accessToken = await refreshAccessToken(sessionId);
+  }
+
+  if (authSession?.id !== sessionId) {
+    throw new StaleAuthSessionError();
+  }
+
+  const retryResponse = await fetchApiResponse(path, options, accessToken);
+  if (authSession?.id !== sessionId) {
+    throw new StaleAuthSessionError();
+  }
+  if (await isAccessTokenUnauthorized(retryResponse)) {
+    invalidateAuthSession(sessionId);
+  }
+  return parseApiResponse<T>(retryResponse);
+}
+
 export const api = {
   async register(payload: RegisterRequest): Promise<RegisterResponse> {
     return apiRequest<RegisterResponse>("/auth/register", {
       method: "POST",
       body: JSON.stringify(payload),
-    });
+    }, { auth: "none" });
   },
 
   async login(payload: LoginRequest): Promise<LoginResponse> {
-    return apiRequest<LoginResponse>("/auth/login", {
+    const loginAuthStateVersion = authStateVersion;
+    const response = await apiRequest<LoginResponse>("/auth/login", {
       method: "POST",
       body: JSON.stringify(payload),
-    });
+    }, { auth: "none" });
+    if (authStateVersion !== loginAuthStateVersion) {
+      throw new StaleAuthSessionError();
+    }
+    beginAuthSession(response);
+    return response;
   },
 
   async verifyEmail(token: string): Promise<MessageResponse> {
     return apiRequest<MessageResponse>("/auth/verify-email", {
       method: "POST",
       body: JSON.stringify({ token }),
-    });
+    }, { auth: "none" });
   },
 
   async resendVerification(email: string): Promise<ResendVerificationResponse> {
     return apiRequest<ResendVerificationResponse>("/auth/resend-verification", {
       method: "POST",
       body: JSON.stringify({ email }),
-    });
+    }, { auth: "none" });
   },
 
   async getMe(): Promise<User> {
     return apiRequest<User>("/auth/me", {
       method: "GET",
     });
+  },
+
+  async logout(): Promise<void> {
+    const refreshToken = authSession?.refreshToken;
+    clearAuthSession();
+    if (!refreshToken) return;
+
+    await apiRequest<Record<string, never>>(
+      "/auth/logout",
+      {
+        method: "POST",
+        body: JSON.stringify({ refresh_token: refreshToken }),
+      },
+      { auth: "none" },
+    );
   },
 };

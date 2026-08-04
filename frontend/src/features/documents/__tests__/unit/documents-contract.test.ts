@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "@/lib/api";
+import { installTestAuthSession } from "@test/helpers/auth";
 import {
   deleteDocumentApi,
   getDocumentApi,
@@ -22,7 +23,7 @@ import {
 
 describe("Documents API contract", () => {
   beforeEach(() => {
-    localStorage.setItem("sourcewise_token", "test-token");
+    installTestAuthSession();
   });
 
   it("uses the real list query contract and authenticated API client", async () => {

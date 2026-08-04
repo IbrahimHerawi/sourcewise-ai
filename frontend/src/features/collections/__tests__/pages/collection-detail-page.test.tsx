@@ -2,6 +2,7 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { CollectionDetailPage } from "@/features/collections/components/detail/collection-detail-page";
+import { installTestAuthSession } from "@test/helpers/auth";
 import { renderWithDashboardHeader } from "@test/render/render-with-dashboard-header";
 
 const { logoutMock, pushMock, replaceMock } = vi.hoisted(() => ({
@@ -132,7 +133,7 @@ function installDetailApi(overrides?: (url: string, init?: RequestInit) => Respo
 
 describe("CollectionDetailPage API integration", () => {
   beforeEach(() => {
-    localStorage.setItem("sourcewise_token", "test-token");
+    installTestAuthSession();
     logoutMock.mockReset();
     pushMock.mockReset();
     replaceMock.mockReset();

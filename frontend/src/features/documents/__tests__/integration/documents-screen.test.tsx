@@ -8,6 +8,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DocumentsScreen } from "@/features/documents/components/documents-screen";
 import { DOCUMENT_UPLOAD_LIMITS } from "@/features/documents/file-validation";
+import { installTestAuthSession } from "@test/helpers/auth";
 import { renderWithDashboardHeader } from "@test/render/render-with-dashboard-header";
 import {
   collectionId,
@@ -40,7 +41,7 @@ function documentArticle(filename: string): HTMLElement {
 describe("DocumentsScreen API integration", () => {
   beforeEach(() => {
     vi.useRealTimers();
-    localStorage.setItem("sourcewise_token", "test-token");
+    installTestAuthSession();
     logoutMock.mockReset();
   });
 
@@ -176,6 +177,17 @@ describe("DocumentsScreen API integration", () => {
 
   it("logs out on authentication failure", async () => {
     installDocumentsApi((url) => {
+      if (url.endsWith("/auth/refresh")) {
+        return jsonResponse(
+          {
+            error: {
+              code: "invalid_refresh_token",
+              message: "Refresh token is invalid or expired.",
+            },
+          },
+          401,
+        );
+      }
       if (url.includes("/documents?")) {
         return jsonResponse(
           { error: { code: "unauthorized", message: "Expired" } },

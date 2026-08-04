@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AskQuestionScreen } from "@/features/questions/components/ask-question-screen";
 import { getAccessibilityViolations } from "@test/helpers/accessibility";
+import { installTestAuthSession } from "@test/helpers/auth";
 import { renderWithDashboardHeader } from "@test/render/render-with-dashboard-header";
 
 const { logoutMock, replaceMock } = vi.hoisted(() => ({
@@ -64,7 +65,7 @@ function installContextApi() {
 
 describe("Ask Question accessibility", () => {
   beforeEach(() => {
-    localStorage.setItem("sourcewise_token", "test-token");
+    installTestAuthSession();
     logoutMock.mockReset();
     replaceMock.mockReset();
     installContextApi();

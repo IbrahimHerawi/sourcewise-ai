@@ -2,6 +2,7 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AskQuestionScreen } from "@/features/questions/components/ask-question-screen";
+import { installTestAuthSession } from "@test/helpers/auth";
 import { renderWithDashboardHeader } from "@test/render/render-with-dashboard-header";
 
 const { logoutMock, replaceMock } = vi.hoisted(() => ({
@@ -127,7 +128,7 @@ function installQuestionApi(options: QuestionApiOptions = {}) {
 
 describe("AskQuestionScreen", () => {
   beforeEach(() => {
-    localStorage.setItem("sourcewise_token", "test-token");
+    installTestAuthSession();
     logoutMock.mockReset();
     replaceMock.mockReset();
   });
@@ -497,6 +498,17 @@ describe("AskQuestionScreen", () => {
     expect(await screen.findByText("The answer couldn’t be verified")).toBeVisible();
 
     fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+      if (String(input).endsWith("/auth/refresh")) {
+        return jsonResponse(
+          {
+            error: {
+              code: "invalid_refresh_token",
+              message: "Refresh token is invalid or expired.",
+            },
+          },
+          401,
+        );
+      }
       if (String(input).includes("/collections?")) {
         return jsonResponse(
           {
