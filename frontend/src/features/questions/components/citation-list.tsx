@@ -27,7 +27,17 @@ export function CitationList({
             <div className={styles.citationHeader}>
               <FileText aria-hidden="true" />
               <strong>{citation.document_filename}</strong>
-              <span>Chunk {citation.chunk_index.toLocaleString()}</span>
+              <span className={styles.citationMetadata}>
+                <span>Chunk {citation.chunk_index.toLocaleString()}</span>
+                <span aria-hidden="true">·</span>
+                <span>
+                  Cosine distance{" "}
+                  {citation.distance.toLocaleString(undefined, {
+                    maximumFractionDigits: 3,
+                    minimumFractionDigits: 3,
+                  })}
+                </span>
+              </span>
             </div>
             <blockquote>{citation.excerpt}</blockquote>
           </div>

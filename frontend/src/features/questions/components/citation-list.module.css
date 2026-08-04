@@ -60,7 +60,16 @@
   white-space: nowrap;
 }
 
-.citationHeader span,
+.citationMetadata {
+  display: inline-flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--sw-spacing-4);
+}
+
+.citationHeader .citationMetadata,
 .noCitations {
   color: var(--sw-color-text-secondary);
   font-size: var(--sw-type-size-metadata);
@@ -77,4 +86,16 @@
 
 .noCitations {
   margin: 0;
+}
+
+@media (max-width: 40rem) {
+  .citationHeader strong {
+    flex-basis: calc(100% - 1.5rem);
+  }
+
+  .citationMetadata {
+    width: 100%;
+    justify-content: flex-start;
+    padding-inline-start: calc(1rem + var(--sw-spacing-8));
+  }
 }

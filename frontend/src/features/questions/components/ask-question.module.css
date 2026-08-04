@@ -317,6 +317,7 @@
 
 .answerHeader p,
 .answerHeader time,
+.answerMetadata,
 .citationsHeader span {
   color: var(--sw-color-text-secondary);
   font-size: var(--sw-type-size-metadata);
@@ -339,6 +340,39 @@
   font-size: var(--sw-type-size-body);
   line-height: 1.75;
   white-space: pre-wrap;
+}
+
+.answerMetadata {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sw-spacing-8) var(--sw-spacing-16);
+  margin-top: var(--sw-spacing-12);
+}
+
+.answerMetadata span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.answerMetadata a {
+  color: var(--sw-color-brand-default);
+  font-weight: 600;
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  text-underline-offset: 0.2em;
+  transition: text-decoration-color 140ms ease;
+}
+
+.answerMetadata a:hover {
+  text-decoration-color: currentColor;
+}
+
+.answerMetadata a:focus-visible {
+  border-radius: var(--sw-radius-small);
+  outline: 0.125rem solid var(--sw-color-focus-ring);
+  outline-offset: 0.125rem;
 }
 
 .emptyAnswer {
