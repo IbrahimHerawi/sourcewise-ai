@@ -11,7 +11,13 @@ import { DashboardPage } from "@/features/dashboard/components/dashboard-page";
 import { useDashboardHeader } from "@/features/dashboard/components/dashboard-header-context";
 import { useAuth } from "@/hooks/use-auth";
 import { ApiError } from "@/lib/api";
-import { createUploadQueue, hasBlockingUploadError } from "../file-validation";
+import {
+  createUploadQueue,
+  DOCUMENT_FILE_TYPE_LABELS,
+  hasBlockingUploadError,
+  isSupportedDocumentExtension,
+  type SupportedDocumentExtension,
+} from "../file-validation";
 import {
   getDocumentsListError,
   getDocumentsRefreshError,
@@ -53,6 +59,8 @@ export function DocumentsScreen() {
   const libraryRef = useRef<HTMLElement>(null);
   const [queue, setQueue] = useState<UploadQueueItem[]>([]);
   const [filter, setFilter] = useState(ALL_COLLECTIONS_FILTER);
+  const [fileTypeFilter, setFileTypeFilter] =
+    useState<SupportedDocumentExtension | null>(null);
   const [uploadCollectionId, setUploadCollectionId] = useState<string | null>(
     null,
   );
@@ -64,6 +72,7 @@ export function DocumentsScreen() {
     filter === ALL_COLLECTIONS_FILTER ? null : filter;
   const documentsRequest = useDocumentsList({
     collectionId,
+    fileType: fileTypeFilter,
     limit: PAGE_SIZE,
     offset: (currentPage - 1) * PAGE_SIZE,
   });
@@ -332,15 +341,27 @@ export function DocumentsScreen() {
               <DocumentsToolbar
                 collections={collections}
                 filter={filter}
+                fileType={fileTypeFilter ?? "all"}
                 onFilterChange={(value) => {
                   setFilter(value);
                   setCurrentPage(1);
                 }}
-                showFilter={
+                onFileTypeChange={(value) => {
+                  setFileTypeFilter(
+                    isSupportedDocumentExtension(value) ? value : null,
+                  );
+                  setCurrentPage(1);
+                }}
+                showCollectionFilter={
                   collectionsRequest.status === "success" &&
                   collections.length > 0 &&
                   (documentData.total > 0 ||
                     filter !== ALL_COLLECTIONS_FILTER)
+                }
+                showFileTypeFilter={
+                  documentData.total > 0 ||
+                  filter !== ALL_COLLECTIONS_FILTER ||
+                  fileTypeFilter !== null
                 }
               />
               {documentRefreshError ? (
@@ -356,6 +377,7 @@ export function DocumentsScreen() {
                 />
               ) : null}
               {filter === ALL_COLLECTIONS_FILTER &&
+              fileTypeFilter === null &&
               documentData.total === 0 ? (
                 <DocumentsEmptyState
                   onChooseFiles={() => fileInputRef.current?.click()}
@@ -363,10 +385,18 @@ export function DocumentsScreen() {
               ) : documentData.items.length === 0 ? (
                 <DocumentsZeroResultsState
                   collectionName={
-                    selectedCollection?.name ?? "this collection"
+                    filter === ALL_COLLECTIONS_FILTER
+                      ? undefined
+                      : selectedCollection?.name ?? "this collection"
+                  }
+                  fileTypeLabel={
+                    fileTypeFilter
+                      ? DOCUMENT_FILE_TYPE_LABELS[fileTypeFilter]
+                      : undefined
                   }
                   onShowAll={() => {
                     setFilter(ALL_COLLECTIONS_FILTER);
+                    setFileTypeFilter(null);
                     setCurrentPage(1);
                   }}
                 />

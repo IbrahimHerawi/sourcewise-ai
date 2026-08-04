@@ -6,9 +6,26 @@ export const DOCUMENT_UPLOAD_LIMITS = {
   maxFiles: 3,
 } as const;
 
+export type SupportedDocumentExtension =
+  (typeof DOCUMENT_UPLOAD_LIMITS.acceptedExtensions)[number];
+
+export const DOCUMENT_FILE_TYPE_LABELS: Readonly<
+  Record<SupportedDocumentExtension, string>
+> = {
+  ".pdf": "PDF",
+  ".txt": "TXT",
+  ".md": "MD",
+};
+
 const ACCEPTED_EXTENSION_SET = new Set<string>(
   DOCUMENT_UPLOAD_LIMITS.acceptedExtensions,
 );
+
+export function isSupportedDocumentExtension(
+  value: string,
+): value is SupportedDocumentExtension {
+  return ACCEPTED_EXTENSION_SET.has(value);
+}
 
 function fileExtension(filename: string): string {
   const extensionIndex = filename.lastIndexOf(".");
