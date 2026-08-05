@@ -104,7 +104,9 @@ export function getApiErrorMessage(error: unknown, fallback: string): string {
 const BASE_URL = "/api/v1";
 const ACCESS_TOKEN_REFRESH_WINDOW_MS = 5_000;
 const LEGACY_AUTH_TOKEN_STORAGE_KEY = "sourcewise_token";
-const REFRESH_SESSION_STORAGE_KEY = "sourcewise_refresh_session";
+const LEGACY_REFRESH_SESSION_STORAGE_KEY = "sourcewise_refresh_session";
+const AUTH_REFRESH_LOCK_NAME = "sourcewise-auth-refresh";
+export const AUTH_SESSION_STORAGE_KEY = "sourcewise_refresh_session";
 
 type TokenPair = Pick<
   RefreshTokenResponse,
@@ -175,7 +177,8 @@ function validateTokenPair(value: TokenPair): void {
 function clearStoredRefreshSession(): void {
   if (typeof window === "undefined") return;
   try {
-    sessionStorage.removeItem(REFRESH_SESSION_STORAGE_KEY);
+    localStorage.removeItem(AUTH_SESSION_STORAGE_KEY);
+    sessionStorage.removeItem(LEGACY_REFRESH_SESSION_STORAGE_KEY);
   } catch {
     // Storage cleanup must not prevent the in-memory session from being cleared.
   }
@@ -184,13 +187,14 @@ function clearStoredRefreshSession(): void {
 function storeRefreshSession(session: StoredRefreshSession): void {
   if (typeof window === "undefined") return;
   try {
-    sessionStorage.setItem(
-      REFRESH_SESSION_STORAGE_KEY,
+    localStorage.setItem(
+      AUTH_SESSION_STORAGE_KEY,
       JSON.stringify({
         refreshToken: session.refreshToken,
         refreshTokenExpiresAt: session.refreshTokenExpiresAt,
       } satisfies StoredRefreshSession),
     );
+    sessionStorage.removeItem(LEGACY_REFRESH_SESSION_STORAGE_KEY);
   } catch {
     // Authentication still works in memory when browser storage is unavailable.
   }
@@ -200,7 +204,11 @@ function readStoredRefreshSession(): StoredRefreshSession | null {
   if (typeof window === "undefined") return null;
 
   try {
-    const rawValue = sessionStorage.getItem(REFRESH_SESSION_STORAGE_KEY);
+    const localValue = localStorage.getItem(AUTH_SESSION_STORAGE_KEY);
+    const legacyValue = localValue
+      ? null
+      : sessionStorage.getItem(LEGACY_REFRESH_SESSION_STORAGE_KEY);
+    const rawValue = localValue ?? legacyValue;
     if (!rawValue) return null;
 
     const value = JSON.parse(rawValue) as Partial<StoredRefreshSession>;
@@ -214,14 +222,41 @@ function readStoredRefreshSession(): StoredRefreshSession | null {
       return null;
     }
 
-    return {
+    const storedSession = {
       refreshToken: value.refreshToken,
       refreshTokenExpiresAt: value.refreshTokenExpiresAt,
     };
+    if (legacyValue) {
+      storeRefreshSession(storedSession);
+    }
+    return storedSession;
   } catch {
     clearStoredRefreshSession();
     return null;
   }
+}
+
+async function withAuthRefreshLock<T>(callback: () => Promise<T>): Promise<T> {
+  if (typeof navigator === "undefined" || !navigator.locks) {
+    return callback();
+  }
+
+  return navigator.locks.request(AUTH_REFRESH_LOCK_NAME, callback);
+}
+
+function synchronizeStoredRefreshSession(
+  sessionId: number,
+  storedSession: StoredRefreshSession,
+): void {
+  if (!authSession || authSession.id !== sessionId) {
+    throw new StaleAuthSessionError();
+  }
+
+  authSession = {
+    ...authSession,
+    refreshToken: storedSession.refreshToken,
+    refreshTokenExpiresAt: storedSession.refreshTokenExpiresAt,
+  };
 }
 
 function beginAuthSession(tokenPair: TokenPair): void {
@@ -406,17 +441,26 @@ async function refreshAccessToken(sessionId: number): Promise<string> {
     return refreshRequest;
   }
 
-  const session = authSession;
-  if (!session || session.id !== sessionId) {
+  if (!authSession || authSession.id !== sessionId) {
     throw new StaleAuthSessionError();
   }
-  if (session.refreshTokenExpiresAt <= Date.now()) {
-    invalidateAuthSession(sessionId);
-    throw invalidRefreshTokenError();
-  }
 
-  const refreshToken = session.refreshToken;
-  const currentRefreshRequest = (async () => {
+  const currentRefreshRequest = withAuthRefreshLock(async () => {
+    const session = authSession;
+    if (!session || session.id !== sessionId) {
+      throw new StaleAuthSessionError();
+    }
+
+    const persistedSession = readStoredRefreshSession();
+    const refreshSession = persistedSession ?? session;
+    synchronizeStoredRefreshSession(sessionId, refreshSession);
+
+    if (refreshSession.refreshTokenExpiresAt <= Date.now()) {
+      invalidateAuthSession(sessionId);
+      throw invalidRefreshTokenError();
+    }
+
+    const refreshToken = refreshSession.refreshToken;
     try {
       const response = await fetchApiResponse(
         "/auth/refresh",
@@ -426,19 +470,29 @@ async function refreshAccessToken(sessionId: number): Promise<string> {
         },
       );
       const tokenPair = await parseApiResponse<RefreshTokenResponse>(response);
+      const latestStoredSession = readStoredRefreshSession();
 
       if (
         authSession?.id !== sessionId ||
-        authSession.refreshToken !== refreshToken
+        authSession.refreshToken !== refreshToken ||
+        (
+          persistedSession &&
+          latestStoredSession?.refreshToken !== refreshToken
+        )
       ) {
         throw new StaleAuthSessionError();
       }
 
       return rotateAuthSession(tokenPair, sessionId);
     } catch (error) {
+      const latestStoredSession = readStoredRefreshSession();
       if (
         authSession?.id === sessionId &&
-        authSession.refreshToken === refreshToken
+        authSession.refreshToken === refreshToken &&
+        (
+          !persistedSession ||
+          latestStoredSession?.refreshToken === refreshToken
+        )
       ) {
         // A failed rotating-token exchange is not safe to retry: the server
         // may have consumed the token even if the response was lost.
@@ -446,7 +500,7 @@ async function refreshAccessToken(sessionId: number): Promise<string> {
       }
       throw error;
     }
-  })();
+  });
   refreshRequest = currentRefreshRequest;
   try {
     return await currentRefreshRequest;
@@ -465,18 +519,18 @@ async function restoreAuthSession(): Promise<boolean> {
     return restoreRequest;
   }
 
-  const storedSession = readStoredRefreshSession();
-  if (!storedSession) {
-    return false;
-  }
-  if (storedSession.refreshTokenExpiresAt <= Date.now()) {
-    clearStoredRefreshSession();
-    return false;
-  }
-
   const restoreAuthStateVersion = authStateVersion;
-  const refreshToken = storedSession.refreshToken;
-  const currentRestoreRequest = (async () => {
+  const currentRestoreRequest = withAuthRefreshLock(async () => {
+    const storedSession = readStoredRefreshSession();
+    if (!storedSession) {
+      return false;
+    }
+    if (storedSession.refreshTokenExpiresAt <= Date.now()) {
+      clearStoredRefreshSession();
+      return false;
+    }
+
+    const refreshToken = storedSession.refreshToken;
     try {
       const response = await fetchApiResponse(
         "/auth/refresh",
@@ -503,7 +557,9 @@ async function restoreAuthSession(): Promise<boolean> {
 
       // As with an in-memory rotation, an ambiguous failure is unsafe to
       // retry because the server may already have consumed this token.
-      clearStoredRefreshSession();
+      if (readStoredRefreshSession()?.refreshToken === refreshToken) {
+        clearStoredRefreshSession();
+      }
       if (
         error instanceof ApiError &&
         error.status === 401 &&
@@ -513,7 +569,7 @@ async function restoreAuthSession(): Promise<boolean> {
       }
       throw error;
     }
-  })();
+  });
 
   restoreRequest = currentRestoreRequest;
   try {

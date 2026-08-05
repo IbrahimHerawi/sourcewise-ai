@@ -42,6 +42,20 @@ describe("DashboardLayout route protection", () => {
     await waitFor(() => expect(replaceMock).toHaveBeenCalledWith("/"));
   });
 
+  it("waits for authentication initialization before redirecting", () => {
+    authState.isLoading = true;
+
+    render(
+      <DashboardLayout>
+        <div>Private content</div>
+      </DashboardLayout>,
+    );
+
+    expect(screen.getByText("Loading workspace...")).toBeVisible();
+    expect(screen.queryByText("Private content")).not.toBeInTheDocument();
+    expect(replaceMock).not.toHaveBeenCalled();
+  });
+
   it("renders protected content only for an authenticated session", () => {
     authState.isAuthenticated = true;
 
