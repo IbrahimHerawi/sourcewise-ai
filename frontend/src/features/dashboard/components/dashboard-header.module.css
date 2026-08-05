@@ -100,9 +100,9 @@
   gap: var(--sw-spacing-8);
 }
 
-@media (max-width: 48rem) {
-  .inner {
-    padding-inline: var(--sw-spacing-16);
+@media (max-width: 64rem) {
+  .header {
+    display: none;
   }
 }
 

@@ -1,5 +1,5 @@
-import { redirect } from "next/navigation";
+import { OverviewScreen } from "@/features/overview/components/overview-screen";
 
 export default function DashboardPage() {
-  redirect("/dashboard/history");
+  return <OverviewScreen />;
 }

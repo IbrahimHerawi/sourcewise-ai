@@ -38,6 +38,19 @@ function documentArticle(filename: string): HTMLElement {
   return article;
 }
 
+async function selectUploadCollection(
+  user: ReturnType<typeof userEvent.setup>,
+) {
+  await user.click(
+    screen.getByRole("combobox", {
+      name: "Choose a collection for this upload",
+    }),
+  );
+  await user.click(
+    screen.getByRole("option", { name: collections[0].name }),
+  );
+}
+
 describe("DocumentsScreen API integration", () => {
   beforeEach(() => {
     vi.useRealTimers();
@@ -263,13 +276,35 @@ describe("DocumentsScreen API integration", () => {
 
   it("supports file picker, drag-and-drop, validation, and removal", async () => {
     const user = userEvent.setup();
-    installDocumentsApi();
+    const fetchMock = installDocumentsApi();
     renderWithDashboardHeader(<DocumentsScreen />);
     await screen.findByRole("heading", { name: readyDocument.filename });
 
     const input = screen.getByLabelText("Choose documents");
+    expect(
+      screen.getByRole("combobox", {
+        name: "Choose a collection for this upload",
+      }),
+    ).toHaveTextContent("Select collection");
+    expect(screen.queryByText("No collection")).not.toBeInTheDocument();
     await user.upload(input, new File(["notes"], "notes.txt"));
     expect(screen.getByText("Ready to upload")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Upload 1 file" }));
+    expect(screen.getByText("Select a collection.")).toBeVisible();
+    expect(
+      fetchMock.mock.calls.filter(
+        ([url, init]) =>
+          String(url).endsWith("/documents/upload") &&
+          init?.method === "POST",
+      ),
+    ).toHaveLength(0);
+    expect(
+      screen.getByRole("combobox", {
+        name: "Choose a collection for this upload",
+      }),
+    ).toHaveAccessibleDescription("Select a collection.");
+    await selectUploadCollection(user);
+    expect(screen.queryByText("Select a collection.")).not.toBeInTheDocument();
 
     fireEvent.drop(
       screen.getByRole("button", {
@@ -299,6 +334,7 @@ describe("DocumentsScreen API integration", () => {
     installDocumentsApi();
     renderWithDashboardHeader(<DocumentsScreen />);
     await screen.findByRole("heading", { name: readyDocument.filename });
+    await selectUploadCollection(user);
 
     await user.upload(
       screen.getByLabelText("Choose documents"),
@@ -320,6 +356,7 @@ describe("DocumentsScreen API integration", () => {
     });
     renderWithDashboardHeader(<DocumentsScreen />);
     await screen.findByRole("heading", { name: readyDocument.filename });
+    await selectUploadCollection(user);
 
     await user.upload(
       screen.getByLabelText("Choose documents"),
@@ -336,6 +373,9 @@ describe("DocumentsScreen API integration", () => {
         String(url).endsWith("/documents/upload") && init?.method === "POST",
     );
     expect(post).toBeTruthy();
+    expect((post?.[1]?.body as FormData).get("collection_id")).toBe(
+      collectionId,
+    );
   });
 
   it("prevents duplicate upload submissions and preserves failures", async () => {
@@ -351,6 +391,7 @@ describe("DocumentsScreen API integration", () => {
     });
     renderWithDashboardHeader(<DocumentsScreen />);
     await screen.findByRole("heading", { name: readyDocument.filename });
+    await selectUploadCollection(user);
     await user.upload(
       screen.getByLabelText("Choose documents"),
       new File(["notes"], "notes.txt"),

@@ -20,25 +20,35 @@ export function DocumentsEmptyState({ onChooseFiles }: { onChooseFiles: () => vo
 
 export function DocumentsZeroResultsState({
   collectionName,
+  fileTypeLabel,
   onShowAll,
 }: {
-  collectionName: string;
+  collectionName?: string;
+  fileTypeLabel?: string;
   onShowAll: () => void;
 }) {
-  const conciseCollectionName =
-    collectionName.replace(/\s+collection$/i, "").trim() || collectionName;
+  const conciseCollectionName = collectionName
+    ? collectionName.replace(/\s+collection$/i, "").trim() || collectionName
+    : undefined;
+  const title =
+    fileTypeLabel && conciseCollectionName
+      ? `No ${fileTypeLabel} documents in ${conciseCollectionName}`
+      : fileTypeLabel
+        ? `No ${fileTypeLabel} documents`
+        : `No documents in ${conciseCollectionName ?? "this collection"}`;
+  const description = fileTypeLabel
+    ? "No documents match these filters. Choose another file type or clear the filters."
+    : "This collection has no documents. Choose another collection or show all documents.";
 
   return (
     <section aria-labelledby="documents-zero-title" className={styles.messageState}>
       <span aria-hidden="true" className={styles.zeroResultsHalo}>
         0
       </span>
-      <h2 id="documents-zero-title">
-        No documents in {conciseCollectionName}
-      </h2>
-      <p>This collection has no documents. Choose another collection or show all documents.</p>
+      <h2 id="documents-zero-title">{title}</h2>
+      <p>{description}</p>
       <CollectionButton onClick={onShowAll} tone="secondary" type="button">
-        Show all documents
+        {fileTypeLabel ? "Clear filters" : "Show all documents"}
       </CollectionButton>
     </section>
   );

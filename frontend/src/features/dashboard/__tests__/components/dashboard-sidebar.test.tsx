@@ -46,7 +46,7 @@ describe("DashboardSidebar", () => {
     render(<DashboardSidebar />);
 
     await user.tab();
-    expect(screen.getByRole("link", { name: "Documents" })).toHaveFocus();
+    expect(screen.getByRole("link", { name: "Overview" })).toHaveFocus();
   });
 
   it("enables the navigation fallback only when its content overflows", () => {

@@ -191,38 +191,8 @@
   height: var(--size-dashboard-nav-icon);
 }
 
-@media (max-width: 48rem) {
+@media (max-width: 64rem) {
   .sidebar {
-    width: 100%;
-    height: auto;
-    min-height: auto;
-    overflow: visible;
-    flex-basis: auto;
-  }
-
-  .logo {
-    margin-block: var(--spacing-dashboard-sidebar-logo-block-start)
-      var(--spacing-dashboard-nav-block-start);
-    margin-inline: var(--spacing-dashboard-sidebar-content-inline);
-  }
-
-  .navigation {
-    flex-direction: row;
-    min-height: auto;
-    margin-top: 0;
-    overflow-x: auto;
-    overflow-y: hidden;
-    overscroll-behavior-y: auto;
-    padding-block-end: var(--spacing-dashboard-sidebar-content-inline);
-    flex: none;
-  }
-
-  .item {
-    flex: 0 0 auto;
-  }
-
-  .footer {
-    padding: var(--spacing-dashboard-profile-footer);
-    margin-top: 0;
+    display: none;
   }
 }

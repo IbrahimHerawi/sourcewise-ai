@@ -139,9 +139,16 @@ describe("AskQuestionScreen", () => {
 
     expect(screen.getByText("Loading the question form")).toBeInTheDocument();
     expect(
-      await screen.findByText("1 ready document will be searched in All documents."),
+      await screen.findByText(
+        "Select a collection to see which ready documents will be searched.",
+      ),
     ).toBeVisible();
-    expect(screen.getByLabelText("Collection")).toHaveTextContent("All documents");
+    expect(screen.getByLabelText("Collection")).toHaveTextContent(
+      "Select collection",
+    );
+    expect(
+      screen.queryByRole("option", { name: "All documents" }),
+    ).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Ask question" })).toBeDisabled();
 
     const contextCalls = fetchMock.mock.calls.filter(([url]) =>
@@ -255,7 +262,7 @@ describe("AskQuestionScreen", () => {
     const user = userEvent.setup();
     const fetchMock = installQuestionApi();
     renderWithDashboardHeader(<AskQuestionScreen />);
-    await screen.findByText(/ready document will be searched/i);
+    await screen.findByText(/select a collection to see which ready documents/i);
     const input = screen.getByLabelText("Ask your question");
     expect(screen.getByRole("button", { name: "Ask question" })).toBeDisabled();
 
@@ -274,6 +281,19 @@ describe("AskQuestionScreen", () => {
     expect(
       fetchMock.mock.calls.filter(([, init]) => init?.method === "POST"),
     ).toHaveLength(0);
+
+    fireEvent.change(input, { target: { value: "What changed?" } });
+    await user.click(screen.getByRole("button", { name: "Ask question" }));
+    expect(screen.getByText("Select a collection.")).toBeVisible();
+    expect(screen.getByLabelText("Collection")).toHaveAccessibleDescription(
+      "Select a collection.",
+    );
+
+    await user.click(screen.getByLabelText("Collection"));
+    await user.click(
+      screen.getByRole("option", { name: collection.name }),
+    );
+    expect(screen.queryByText("Select a collection.")).not.toBeInTheDocument();
   });
 
   it("keeps input after a provider failure, hides raw errors, and retries only a safe failure", async () => {
@@ -318,7 +338,9 @@ describe("AskQuestionScreen", () => {
     installQuestionApi({
       ask: () => Promise.reject(new TypeError("SENTINEL_NETWORK_DETAIL")),
     });
-    renderWithDashboardHeader(<AskQuestionScreen />);
+    renderWithDashboardHeader(
+      <AskQuestionScreen initialCollectionId={collectionId} />,
+    );
     await screen.findByText(/ready document will be searched/i);
 
     const input = screen.getByLabelText("Ask your question");
@@ -383,7 +405,7 @@ describe("AskQuestionScreen", () => {
     },
   );
 
-  it("handles no-ready-source and empty-collection states without fabricating a requirement", async () => {
+  it("requires a collection when no collection options are available", async () => {
     const user = userEvent.setup();
     installQuestionApi({
       collections: { items: [], limit: 100, offset: 0, total: 0 },
@@ -404,10 +426,13 @@ describe("AskQuestionScreen", () => {
     });
     renderWithDashboardHeader(<AskQuestionScreen />);
 
-    expect(await screen.findByText("No ready documents in All documents")).toBeVisible();
-    expect(screen.getByRole("link", { name: "Open Documents" })).toHaveAttribute(
-      "href",
-      "/dashboard/documents",
+    expect(
+      await screen.findByText(
+        "Select a collection to see which ready documents will be searched.",
+      ),
+    ).toBeVisible();
+    expect(screen.getByLabelText("Collection")).toHaveTextContent(
+      "Select collection",
     );
     await user.type(
       screen.getByLabelText("Ask your question"),
@@ -416,13 +441,11 @@ describe("AskQuestionScreen", () => {
     expect(screen.getByRole("button", { name: "Ask question" })).toBeEnabled();
     await user.click(screen.getByRole("button", { name: "Ask question" }));
     expect(
-      await screen.findByText(
-        "I could not find the answer in the uploaded documents.",
-      ),
+      screen.getByText("Select a collection."),
     ).toBeVisible();
     expect(
-      screen.getByText("No supporting excerpts were returned"),
-    ).toBeVisible();
+      vi.mocked(fetch).mock.calls.filter(([, init]) => init?.method === "POST"),
+    ).toHaveLength(0);
   });
 
   it("preserves a linked scope when collections fail and handles source authorization safely", async () => {
@@ -538,7 +561,9 @@ describe("AskQuestionScreen", () => {
         return new Promise<Response>(() => undefined);
       },
     });
-    const view = renderWithDashboardHeader(<AskQuestionScreen />);
+    const view = renderWithDashboardHeader(
+      <AskQuestionScreen initialCollectionId={collectionId} />,
+    );
     await screen.findByText(/ready document will be searched/i);
     await user.type(screen.getByLabelText("Ask your question"), "Keep working?");
     await user.click(screen.getByRole("button", { name: "Ask question" }));

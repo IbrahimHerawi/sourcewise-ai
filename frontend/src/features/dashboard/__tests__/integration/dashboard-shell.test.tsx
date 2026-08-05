@@ -15,6 +15,12 @@ vi.mock("@/features/dashboard/components/dashboard-sidebar", () => ({
   DashboardSidebar: () => <aside aria-label="Dashboard sidebar" />,
 }));
 
+vi.mock("@/features/dashboard/components/dashboard-mobile-navigation", () => ({
+  DashboardMobileNavigation: () => (
+    <header aria-label="Mobile header">SourceWise</header>
+  ),
+}));
+
 describe("DashboardShell", () => {
   it("keeps one sidebar beside the shared main content region", () => {
     render(
@@ -37,7 +43,13 @@ describe("DashboardShell", () => {
     expect(content).toHaveAttribute("id", "dashboard-main-content");
     expect(content).toHaveAttribute("tabindex", "0");
     expect(content).toHaveTextContent("Dashboard content");
-    expect(screen.getByRole("banner")).toHaveTextContent("Collections");
+    expect(screen.getByText("Collections").closest("header")).toHaveAttribute(
+      "data-slot",
+      "dashboard-header",
+    );
+    expect(screen.getByRole("banner", { name: "Mobile header" })).toHaveTextContent(
+      "SourceWise",
+    );
     expect(screen.getByRole("link", { name: "Skip to main content" })).toHaveAttribute(
       "href",
       "#dashboard-main-content",

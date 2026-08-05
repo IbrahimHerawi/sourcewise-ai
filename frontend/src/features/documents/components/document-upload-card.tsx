@@ -26,6 +26,7 @@ import type { DocumentCollection, UploadQueueItem } from "../types";
 import styles from "./documents-page.module.css";
 
 type DocumentUploadCardProps = {
+  collectionError?: string;
   collectionOptions: readonly DocumentCollection[];
   collectionsUnavailable: boolean;
   fileInputRef: RefObject<HTMLInputElement | null>;
@@ -96,6 +97,7 @@ function UploadQueue({
 }
 
 export function DocumentUploadCard({
+  collectionError,
   collectionOptions,
   collectionsUnavailable,
   fileInputRef,
@@ -167,28 +169,33 @@ export function DocumentUploadCard({
       </div>
       <div className={styles.uploadAssignment}>
         <label htmlFor="documents-upload-collection">Add to collection</label>
-        {collectionsUnavailable ? (
-          <p>
-            Collection assignment is unavailable. Files can still be uploaded
-            without a collection.
-          </p>
-        ) : (
+        <div className={styles.uploadCollectionField}>
           <Select
-            disabled={isUploading}
-            onValueChange={(value) =>
-              onCollectionChange(value === "unassigned" ? null : value)
+            disabled={
+              isUploading ||
+              collectionsUnavailable ||
+              collectionOptions.length === 0
             }
-            value={selectedCollectionId ?? "unassigned"}
+            onValueChange={onCollectionChange}
+            value={selectedCollectionId ?? ""}
           >
             <SelectTrigger
+              aria-describedby={
+                collectionError
+                  ? "documents-upload-collection-error"
+                  : collectionsUnavailable
+                    ? "documents-upload-collection-unavailable"
+                    : undefined
+              }
+              aria-invalid={Boolean(collectionError)}
               aria-label="Choose a collection for this upload"
+              aria-required="true"
               className={styles.collectionSelect}
               id="documents-upload-collection"
             >
-              <SelectValue />
+              <SelectValue placeholder="Select collection" />
             </SelectTrigger>
             <SelectContent className={styles.collectionSelectContent}>
-              <SelectItem value="unassigned">No collection</SelectItem>
               {collectionOptions.map((collection) => (
                 <SelectItem key={collection.id} value={collection.id}>
                   {collection.name}
@@ -196,7 +203,20 @@ export function DocumentUploadCard({
               ))}
             </SelectContent>
           </Select>
-        )}
+          {collectionError ? (
+            <p
+              className={styles.collectionError}
+              id="documents-upload-collection-error"
+              role="alert"
+            >
+              {collectionError}
+            </p>
+          ) : collectionsUnavailable ? (
+            <p id="documents-upload-collection-unavailable">
+              Collections are temporarily unavailable.
+            </p>
+          ) : null}
+        </div>
       </div>
       <button
         aria-describedby="upload-constraints upload-selection-summary"

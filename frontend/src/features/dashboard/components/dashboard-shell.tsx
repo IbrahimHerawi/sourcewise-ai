@@ -5,6 +5,7 @@ import { Inter } from "next/font/google";
 import { useDashboardScrollRestoration } from "@/features/dashboard/hooks/use-dashboard-scroll-restoration";
 import { DashboardHeader } from "./dashboard-header";
 import { DashboardHeaderProvider } from "./dashboard-header-context";
+import { DashboardMobileNavigation } from "./dashboard-mobile-navigation";
 import { DashboardSidebar } from "./dashboard-sidebar";
 import styles from "./dashboard-shell.module.css";
 
@@ -29,6 +30,7 @@ function DashboardShellContent({ children }: DashboardShellProps) {
       </a>
       <DashboardSidebar />
       <div className={styles.mainRegion} data-slot="dashboard-main-region">
+        <DashboardMobileNavigation />
         <DashboardHeader scrollContainerRef={contentRef} />
         <main
           aria-label="Dashboard content"

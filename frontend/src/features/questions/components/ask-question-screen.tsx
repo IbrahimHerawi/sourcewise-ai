@@ -38,9 +38,10 @@ export function AskQuestionScreen({
   const { logout } = useAuth();
   const [question, setQuestion] = useState("");
   const [inputError, setInputError] = useState<string>();
+  const [collectionError, setCollectionError] = useState<string>();
   const [selectionNotice, setSelectionNotice] = useState<string | undefined>(
     initialCollectionId && !isApiUuid(initialCollectionId)
-      ? "The linked collection was invalid, so all documents are selected."
+      ? "The linked collection was invalid. Select a collection to continue."
       : undefined,
   );
   const [selectedCollectionId, setSelectedCollectionId] = useState<
@@ -61,7 +62,7 @@ export function AskQuestionScreen({
       if (!selectedCollectionExists) {
         setSelectedCollectionId(null);
         setSelectionNotice(
-          "The linked collection is no longer available, so all documents are selected.",
+          "The linked collection is no longer available. Select another collection to continue.",
         );
         resetQuestionRequest();
         router.replace("/dashboard/ask-question", { scroll: false });
@@ -116,12 +117,11 @@ export function AskQuestionScreen({
   const selectedCollection = collections.find(
     (collection) => collection.id === selectedCollectionId,
   );
-  const scopeLabel = selectedCollectionId
-    ? (selectedCollection?.name ?? "the selected collection")
-    : "All documents";
+  const scopeLabel = selectedCollection?.name ?? "the selected collection";
 
   const changeContext = (collectionId: string | null) => {
     setSelectedCollectionId(collectionId);
+    if (collectionId) setCollectionError(undefined);
     setSelectionNotice(undefined);
     setInputError(undefined);
     resetQuestionRequest();
@@ -135,13 +135,17 @@ export function AskQuestionScreen({
 
   const submitQuestion = () => {
     const validationError = validateQuestion(question);
-    if (validationError) {
-      setInputError(validationError);
+    setInputError(validationError);
+    if (!selectedCollectionId) {
+      setCollectionError("Select a collection.");
+    }
+    if (validationError || !selectedCollectionId) {
       return;
     }
 
     const normalized = normalizeQuestion(question);
     setInputError(undefined);
+    setCollectionError(undefined);
     void questionRequest
       .submit({
         collectionId: selectedCollectionId,
@@ -190,15 +194,19 @@ export function AskQuestionScreen({
         retryLabel="Reload document status"
       />
     ) : (
-      <QuestionSourceState
-        documentCount={sourcesRequest.data.documentCount}
-        readyCount={
-          selectedCollectionId
-            ? (sourcesRequest.data.readyByCollection[selectedCollectionId] ?? 0)
-            : sourcesRequest.data.readyDocumentCount
-        }
-        scopeLabel={scopeLabel}
-      />
+      selectedCollectionId ? (
+        <QuestionSourceState
+          documentCount={sourcesRequest.data.documentCount}
+          readyCount={
+            sourcesRequest.data.readyByCollection[selectedCollectionId] ?? 0
+          }
+          scopeLabel={scopeLabel}
+        />
+      ) : (
+        <p className={styles.selectionNotice} role="status">
+          Select a collection to see which ready documents will be searched.
+        </p>
+      )
     );
 
   const questionError =
@@ -213,7 +221,7 @@ export function AskQuestionScreen({
         )
       : undefined;
   const questionErrorAction =
-    failureAction === "search-all"
+    failureAction === "select-collection"
       ? () => changeContext(null)
       : failureAction === "retry"
         ? submitQuestion
@@ -224,6 +232,7 @@ export function AskQuestionScreen({
     <DashboardPage>
       <div className={styles.pageContent}>
         <AskQuestionForm
+          collectionError={collectionError}
           collections={collections}
           contextFeedback={
             <>
@@ -264,7 +273,7 @@ export function AskQuestionScreen({
               questionRequest.state.status === "failed" &&
               questionRequest.state.error instanceof ApiError &&
               questionRequest.state.error.status === 404
-                ? "Search all documents"
+                ? "Select another collection"
                 : "Try again"
             }
           />
