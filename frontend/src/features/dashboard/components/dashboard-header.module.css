@@ -101,8 +101,8 @@
 }
 
 @media (max-width: 48rem) {
-  .inner {
-    padding-inline: var(--sw-spacing-16);
+  .header {
+    display: none;
   }
 }
 
