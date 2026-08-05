@@ -3,7 +3,7 @@
 import { useRef } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LogOut } from "lucide-react";
+import { LayoutDashboard, LogOut } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
 import { useOverflowState } from "@/features/dashboard/hooks/use-overflow-state";
@@ -27,6 +27,10 @@ import {
 import styles from "./dashboard-sidebar.module.css";
 
 function NavigationIcon({ icon }: Pick<DashboardNavigationItem, "icon">) {
+  if (icon === "overview") {
+    return <LayoutDashboard aria-hidden="true" className={styles.icon} />;
+  }
+
   if (icon === "document") {
     return (
       <svg aria-hidden="true" className={styles.icon} viewBox="52 128 20 20">

@@ -1,16 +1,19 @@
 export type DashboardTopLevelRoute =
+  | "/dashboard"
   | "/dashboard/documents"
   | "/dashboard/collections"
   | "/dashboard/ask-question"
   | "/dashboard/history";
 
 export type DashboardNavigationIcon =
+  | "overview"
   | "document"
   | "collection"
   | "question"
   | "history";
 
 export type DashboardRouteId =
+  | "overview"
   | "documents"
   | "collections"
   | "collection-detail"
@@ -48,6 +51,14 @@ export type DashboardRouteMetadata =
   | DashboardNestedRouteMetadata;
 
 const topLevelRoutes = [
+  {
+    id: "overview",
+    href: "/dashboard",
+    headerTitle: "Overview",
+    icon: "overview",
+    navigationLabel: "Overview",
+    showInSidebar: true,
+  },
   {
     id: "documents",
     href: "/dashboard/documents",
