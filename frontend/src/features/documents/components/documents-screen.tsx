@@ -64,6 +64,8 @@ export function DocumentsScreen() {
   const [uploadCollectionId, setUploadCollectionId] = useState<string | null>(
     null,
   );
+  const [uploadCollectionError, setUploadCollectionError] =
+    useState<string>();
   const [currentPage, setCurrentPage] = useState(1);
   const [dialog, setDialog] = useState<DocumentDialogState>(null);
   const [uploadSuccess, setUploadSuccess] = useState<string>();
@@ -204,6 +206,7 @@ export function DocumentsScreen() {
     if (uploadMutation.isPending) return;
     resetUploadFeedback();
     setUploadCollectionId(nextCollectionId);
+    if (nextCollectionId) setUploadCollectionError(undefined);
   };
   const uploadFiles = () => {
     if (
@@ -213,10 +216,13 @@ export function DocumentsScreen() {
     ) {
       return;
     }
+    if (!uploadCollectionId) {
+      setUploadCollectionError("Select a collection.");
+      return;
+    }
 
     const files = queue.map((item) => item.file);
-    const targetFilter =
-      uploadCollectionId ?? ALL_COLLECTIONS_FILTER;
+    const targetFilter = uploadCollectionId;
     setUploadSuccess(undefined);
     void uploadMutation
       .mutate({ collectionId: uploadCollectionId, files })
@@ -294,6 +300,7 @@ export function DocumentsScreen() {
     <DashboardPage>
       <div className={styles.pageContent}>
         <DocumentUploadCard
+          collectionError={uploadCollectionError}
           collectionOptions={collections}
           collectionsUnavailable={collectionsRequest.status === "error"}
           fileInputRef={fileInputRef}

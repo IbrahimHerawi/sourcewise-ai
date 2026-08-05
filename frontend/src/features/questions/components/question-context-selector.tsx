@@ -8,16 +8,16 @@ import {
 } from "@/components/ui/select";
 import styles from "./ask-question.module.css";
 
-const ALL_DOCUMENTS_VALUE = "all-documents";
-
 export function QuestionContextSelector({
   collections,
   disabled,
+  error,
   onChange,
   selectedCollectionId,
 }: {
   collections: readonly DocumentCollection[];
   disabled: boolean;
+  error?: string;
   onChange: (collectionId: string | null) => void;
   selectedCollectionId: string | null;
 }) {
@@ -26,23 +26,28 @@ export function QuestionContextSelector({
   );
   const selectedLabel = selectedCollectionId
     ? (selectedCollection?.name ?? "Selected collection")
-    : "All documents";
+    : undefined;
 
   return (
     <div className={styles.contextField}>
       <label htmlFor="question-context">Collection</label>
       <Select
         disabled={disabled}
-        onValueChange={(value) =>
-          onChange(value === ALL_DOCUMENTS_VALUE ? null : value)
-        }
-        value={selectedCollectionId ?? ALL_DOCUMENTS_VALUE}
+        onValueChange={onChange}
+        value={selectedCollectionId ?? ""}
       >
-        <SelectTrigger className={styles.contextTrigger} id="question-context">
-          <SelectValue>{selectedLabel}</SelectValue>
+        <SelectTrigger
+          aria-describedby={error ? "question-context-error" : undefined}
+          aria-invalid={Boolean(error)}
+          aria-required="true"
+          className={styles.contextTrigger}
+          id="question-context"
+        >
+          <SelectValue placeholder="Select collection">
+            {selectedLabel}
+          </SelectValue>
         </SelectTrigger>
         <SelectContent className={styles.contextMenu}>
-          <SelectItem value={ALL_DOCUMENTS_VALUE}>All documents</SelectItem>
           {collections.map((collection) => (
             <SelectItem key={collection.id} value={collection.id}>
               {collection.name}
@@ -50,6 +55,15 @@ export function QuestionContextSelector({
           ))}
         </SelectContent>
       </Select>
+      {error ? (
+        <p
+          className={styles.fieldError}
+          id="question-context-error"
+          role="alert"
+        >
+          {error}
+        </p>
+      ) : null}
     </div>
   );
 }

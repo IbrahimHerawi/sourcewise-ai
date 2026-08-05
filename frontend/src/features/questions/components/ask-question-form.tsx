@@ -12,6 +12,7 @@ import styles from "./ask-question.module.css";
 
 export function AskQuestionForm({
   collections,
+  collectionError,
   contextFeedback,
   contextSelectionDisabled,
   inputError,
@@ -25,6 +26,7 @@ export function AskQuestionForm({
   selectedCollectionId,
 }: {
   collections: readonly DocumentCollection[];
+  collectionError?: string;
   contextFeedback?: ReactNode;
   contextSelectionDisabled: boolean;
   inputError?: string;
@@ -91,6 +93,7 @@ export function AskQuestionForm({
           <QuestionContextSelector
             collections={collections}
             disabled={isPending || contextSelectionDisabled}
+            error={collectionError}
             onChange={onContextChange}
             selectedCollectionId={selectedCollectionId}
           />

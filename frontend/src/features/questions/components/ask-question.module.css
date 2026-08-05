@@ -87,6 +87,10 @@
   transition: border-color 140ms ease;
 }
 
+.contextTrigger[aria-invalid="true"] {
+  border-color: var(--sw-color-validation-border);
+}
+
 .contextMenu {
   font-family: var(--font-dashboard);
 }

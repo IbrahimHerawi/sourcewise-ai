@@ -5,14 +5,14 @@ export type QuestionErrorContent = {
   title: string;
 };
 
-export type QuestionFailureAction = "retry" | "search-all" | undefined;
+export type QuestionFailureAction = "retry" | "select-collection" | undefined;
 
 export function getQuestionFailureAction(
   error: unknown,
   collectionId: string | null,
 ): QuestionFailureAction {
   if (!(error instanceof ApiError)) return undefined;
-  if (error.status === 404 && collectionId) return "search-all";
+  if (error.status === 404 && collectionId) return "select-collection";
   if (
     error.status === 429 ||
     error.status === 502 ||
@@ -50,7 +50,7 @@ export function getQuestionErrorContent(error: unknown): QuestionErrorContent {
       return {
         title: "That collection is no longer available",
         description:
-          "Choose another collection or search all documents, then try again.",
+          "Select another collection, then try again.",
       };
     }
     if (error.status === 400 || error.status === 422) {

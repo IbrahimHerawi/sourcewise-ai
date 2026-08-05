@@ -57,8 +57,9 @@
 .uploadAssignment {
   display: flex;
   min-width: 0;
-  align-items: center;
-  gap: var(--sw-spacing-12);
+  align-items: flex-start;
+  flex-direction: column;
+  gap: var(--sw-spacing-8);
 }
 
 .uploadAssignment label,
@@ -71,6 +72,24 @@
 
 .uploadAssignment p {
   margin: 0;
+}
+
+.uploadCollectionField {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--sw-spacing-4);
+}
+
+.uploadAssignment .collectionError {
+  color: var(--sw-color-validation-body);
+  font-size: var(--sw-type-size-metadata);
+  font-weight: 600;
+  line-height: var(--sw-type-line-height-metadata);
+}
+
+.collectionSelect[aria-invalid="true"] {
+  border-color: var(--sw-color-validation-border);
 }
 
 .dropzone {

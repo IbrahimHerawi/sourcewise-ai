@@ -36,6 +36,23 @@ describe("DocumentsScreen accessibility", () => {
     detailsButton.focus();
     expect(detailsButton).toHaveFocus();
 
+    await user.upload(
+      screen.getByLabelText("Choose documents"),
+      new File(["notes"], "notes.txt"),
+    );
+    await user.click(screen.getByRole("button", { name: "Upload 1 file" }));
+    expect(screen.getByText("Select a collection.")).toBeVisible();
+    expect(await getAccessibilityViolations(container)).toEqual([]);
+    await user.click(
+      screen.getByRole("combobox", {
+        name: "Choose a collection for this upload",
+      }),
+    );
+    await user.click(
+      screen.getByRole("option", { name: "Quarterly Research" }),
+    );
+    expect(screen.queryByText("Select a collection.")).not.toBeInTheDocument();
+
     fireEvent.drop(
       screen.getByRole("button", {
         name: "Choose documents or drop files here",

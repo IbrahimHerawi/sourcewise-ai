@@ -73,7 +73,9 @@ describe("Ask Question accessibility", () => {
 
   it("has no detectable axe violations in the loaded no-ready-source state", async () => {
     const view = renderWithDashboardHeader(<AskQuestionScreen />);
-    await screen.findByText("No documents have been uploaded");
+    await screen.findByText(
+      "Select a collection to see which ready documents will be searched.",
+    );
 
     expect(await getAccessibilityViolations(view.container)).toEqual([]);
   });
@@ -81,7 +83,9 @@ describe("Ask Question accessibility", () => {
   it("supports keyboard input, collection selection, and disabled-action semantics", async () => {
     const user = userEvent.setup();
     renderWithDashboardHeader(<AskQuestionScreen />);
-    await screen.findByText("No documents have been uploaded");
+    await screen.findByText(
+      "Select a collection to see which ready documents will be searched.",
+    );
 
     const question = screen.getByLabelText("Ask your question");
     const selector = screen.getByLabelText("Collection");
@@ -94,9 +98,19 @@ describe("Ask Question accessibility", () => {
 
     selector.focus();
     await user.keyboard("{Enter}");
-    expect(await screen.findByRole("option", { name: "All documents" })).toBeVisible();
-    expect(screen.getByRole("option", { name: "Research" })).toBeVisible();
+    const researchOption = await screen.findByRole("option", {
+      name: "Research",
+    });
+    expect(
+      screen.queryByRole("option", { name: "All documents" }),
+    ).not.toBeInTheDocument();
     await user.keyboard("{Escape}");
     expect(selector).toHaveFocus();
+
+    await user.click(submit);
+    expect(screen.getByText("Select a collection.")).toBeVisible();
+    await user.click(selector);
+    await user.click(screen.getByRole("option", { name: "Research" }));
+    expect(screen.queryByText("Select a collection.")).not.toBeInTheDocument();
   });
 });
