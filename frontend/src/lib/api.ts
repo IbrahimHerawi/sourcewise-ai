@@ -51,6 +51,10 @@ export interface ResendVerificationResponse extends MessageResponse {
   verification_token?: string;
 }
 
+export interface ForgotPasswordResponse extends MessageResponse {
+  reset_token?: string;
+}
+
 export interface ApiErrorDetail {
   type: string;
   loc: (string | number)[];
@@ -625,6 +629,20 @@ export const api = {
     return apiRequest<ResendVerificationResponse>("/auth/resend-verification", {
       method: "POST",
       body: JSON.stringify({ email }),
+    }, { auth: "none" });
+  },
+
+  async forgotPassword(email: string): Promise<ForgotPasswordResponse> {
+    return apiRequest<ForgotPasswordResponse>("/auth/forgot-password", {
+      method: "POST",
+      body: JSON.stringify({ email }),
+    }, { auth: "none" });
+  },
+
+  async resetPassword(token: string, newPassword: string): Promise<MessageResponse> {
+    return apiRequest<MessageResponse>("/auth/reset-password", {
+      method: "POST",
+      body: JSON.stringify({ token, new_password: newPassword }),
     }, { auth: "none" });
   },
 
