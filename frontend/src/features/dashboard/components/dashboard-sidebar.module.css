@@ -191,7 +191,7 @@
   height: var(--size-dashboard-nav-icon);
 }
 
-@media (max-width: 48rem) {
+@media (max-width: 64rem) {
   .sidebar {
     display: none;
   }

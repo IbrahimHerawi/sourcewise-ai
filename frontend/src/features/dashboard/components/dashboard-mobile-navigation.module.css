@@ -6,7 +6,7 @@
   display: none;
 }
 
-@media (max-width: 48rem) {
+@media (max-width: 64rem) {
   .topBar {
     position: relative;
     z-index: 20;
@@ -85,6 +85,18 @@
     background: var(--sw-color-background-surface);
     box-shadow: var(--shadow-dashboard-sidebar);
     font-family: var(--font-dashboard);
+    transform-origin: var(--radix-dropdown-menu-content-transform-origin);
+    will-change: opacity, transform;
+  }
+
+  .menuContent.menuContent[data-state="open"] {
+    animation: dashboard-menu-enter var(--duration-dashboard-header-shadow)
+      var(--easing-dashboard-header-shadow) both;
+  }
+
+  .menuContent.menuContent[data-state="closed"] {
+    animation: dashboard-menu-exit var(--duration-dashboard-header-shadow)
+      var(--easing-dashboard-header-shadow) both;
   }
 
   .menuItem,
@@ -174,5 +186,36 @@
   .logout:hover {
     background: var(--color-dashboard-profile-logout-hover);
     color: var(--sw-color-status-destructive-foreground);
+  }
+}
+
+@keyframes dashboard-menu-enter {
+  from {
+    opacity: 0;
+    transform: translateY(calc(var(--sw-spacing-4) * -1));
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes dashboard-menu-exit {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  to {
+    opacity: 0;
+    transform: translateY(calc(var(--sw-spacing-4) * -1));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .menuContent.menuContent[data-state="open"],
+  .menuContent.menuContent[data-state="closed"] {
+    animation: none;
   }
 }

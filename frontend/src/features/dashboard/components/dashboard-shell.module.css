@@ -57,7 +57,7 @@
   outline-offset: -0.125rem;
 }
 
-@media (max-width: 48rem) {
+@media (max-width: 64rem) {
   .shell {
     flex-direction: column;
   }
