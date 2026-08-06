@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { LogOut, Menu } from "lucide-react";
+import { BrandLogo } from "@/components/brand-logo";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   DropdownMenu,
@@ -35,7 +36,7 @@ export function DashboardMobileNavigation() {
 
   return (
     <header aria-label="Mobile header" className={styles.topBar}>
-      <span className={styles.brand}>SourceWise</span>
+      <BrandLogo className={styles.brand} priority sizes="136px" />
       <DropdownMenu modal={false} onOpenChange={setOpen} open={open}>
         <DropdownMenuTrigger asChild>
           <button

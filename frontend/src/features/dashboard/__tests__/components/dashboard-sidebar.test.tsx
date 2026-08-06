@@ -25,6 +25,10 @@ function setNavigationDimensions(
 describe("DashboardSidebar", () => {
   it("keeps fitting navigation visible without enabling internal scrolling", () => {
     render(<DashboardSidebar />);
+    expect(screen.getByRole("img", { name: "SourceWise" })).toHaveAttribute(
+      "src",
+      expect.stringContaining("sourcewise-lockup.png"),
+    );
     const navigation = screen.getByRole("navigation", {
       name: "Dashboard navigation",
     });

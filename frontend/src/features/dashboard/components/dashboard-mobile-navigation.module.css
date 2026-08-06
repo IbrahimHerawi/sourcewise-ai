@@ -25,14 +25,9 @@
   }
 
   .brand {
+    width: 8.5rem;
+    height: auto;
     min-width: 0;
-    overflow: hidden;
-    color: var(--sw-color-brand-default);
-    font-size: var(--sw-type-size-card-title);
-    font-weight: var(--font-weight-dashboard-logo);
-    line-height: var(--sw-type-line-height-card-title);
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
 
   .menuTrigger {
