@@ -2,7 +2,8 @@
 
 import React, { Suspense, useEffect, useRef, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { BrainCircuit, CheckCircle2, XCircle, Loader2 } from "lucide-react";
+import { CheckCircle2, XCircle, Loader2 } from "lucide-react";
+import { BrandLogo } from "@/components/brand-logo";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/use-auth";
 import { getApiErrorMessage } from "@/lib/api";
@@ -95,10 +96,15 @@ export default function VerifyEmailPage() {
     <div className="flex min-h-screen items-center justify-center bg-muted/30 p-4">
       <div className="w-full max-w-md space-y-6 rounded-2xl border border-border bg-card p-6 shadow-lg sm:p-8">
         <div className="flex flex-col items-center space-y-2 text-center">
-          <div className="mb-2 flex size-12 items-center justify-center rounded-xl bg-brand-gradient text-primary-foreground">
-            <BrainCircuit className="size-6" />
-          </div>
-          <h1 className="text-2xl font-bold tracking-tight">SourceWise</h1>
+          <h1>
+            <BrandLogo
+              alt=""
+              className="mb-2 h-auto w-44"
+              priority
+              sizes="176px"
+            />
+            <span className="sr-only">SourceWise</span>
+          </h1>
         </div>
         <Suspense
           fallback={

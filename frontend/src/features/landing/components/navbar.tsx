@@ -2,8 +2,9 @@
 
 import * as React from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { BrainCircuit, Menu, X } from "lucide-react";
+import { Menu, X } from "lucide-react";
 
+import { BrandLogo } from "@/components/brand-logo";
 import { Button } from "@/components/ui/button";
 import { scrollToElement } from "./smooth-scroll";
 
@@ -95,13 +96,12 @@ export function Navbar({ onOpenAuth }: { onOpenAuth: (tab: "signin" | "signup") 
           style={{ minHeight: `${NAVBAR_HEIGHT}px` }}
         >
           {/* Left cluster: brand + nav links, close together */}
-          <a href="#top" className="group flex shrink-0 items-center gap-2.5">
-            <span className="relative flex size-8 items-center justify-center rounded-lg bg-brand-gradient transition-transform group-hover:scale-105">
-              <BrainCircuit className="size-5 text-primary-foreground" />
-            </span>
-            <span className="text-base font-semibold tracking-tight">
-              Source<span className="text-gradient-brand-strong">Wise</span>
-            </span>
+          <a href="#top" className="group flex shrink-0 items-center">
+            <BrandLogo
+              className="h-8 w-auto transition-transform group-hover:scale-[1.02]"
+              priority
+              sizes="142px"
+            />
           </a>
 
           {/* Desktop nav — left-aligned, right after the brand */}
