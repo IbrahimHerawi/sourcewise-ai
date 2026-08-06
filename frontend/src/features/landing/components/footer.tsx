@@ -54,7 +54,7 @@ type SocialLink = {
 
 const SOCIALS: SocialLink[] = [
   { label: "GitHub", href: "https://github.com/IbrahimHerawi", icon: GitHubIcon, color: BRAND.github },
-  { label: "LinkedIn", href: "https://linkedin.com", icon: LinkedInIcon, color: BRAND.linkedin },
+  { label: "LinkedIn", href: "https://www.linkedin.com/in/ibrahim-herawi-63a794312", icon: LinkedInIcon, color: BRAND.linkedin },
   { label: "Email", href: "mailto:hello@sourcewise.app", icon: MailIcon, color: BRAND.email },
 ];
 
