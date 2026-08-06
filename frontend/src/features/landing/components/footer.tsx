@@ -55,7 +55,7 @@ type SocialLink = {
 const SOCIALS: SocialLink[] = [
   { label: "GitHub", href: "https://github.com/IbrahimHerawi", icon: GitHubIcon, color: BRAND.github },
   { label: "LinkedIn", href: "https://www.linkedin.com/in/ibrahim-herawi-63a794312", icon: LinkedInIcon, color: BRAND.linkedin },
-  { label: "Email", href: "mailto:hello@sourcewise.app", icon: MailIcon, color: BRAND.email },
+  { label: "Email", href: "https://mail.google.com/mail/?view=cm&fs=1&to=ibrahimherawi46@gmail.com", icon: MailIcon, color: BRAND.email },
 ];
 
 export function Footer() {
@@ -94,6 +94,7 @@ export function Footer() {
               {SOCIALS.map(({ label, href, icon: Icon, color }) => (
                 <li key={label}>
                   <a
+                    target="_blank"
                     href={href}
                     {...(href.startsWith("mailto:") ? {} : { target: "_blank", rel: "noopener noreferrer" })}
                     className="group inline-flex items-center gap-3 text-base text-foreground transition-colors duration-200"
