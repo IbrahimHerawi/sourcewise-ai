@@ -4,6 +4,7 @@ import { useRef } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { LogOut } from "lucide-react";
+import { BrandLogo } from "@/components/brand-logo";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
 import { useOverflowState } from "@/features/dashboard/hooks/use-overflow-state";
@@ -36,7 +37,7 @@ export function DashboardSidebar() {
 
   return (
     <aside aria-label="Dashboard sidebar" className={styles.sidebar}>
-      <span className={styles.logo}>DocQ&amp;A</span>
+      <BrandLogo className={styles.logo} priority sizes="152px" />
       <nav
         aria-label="Dashboard navigation"
         className={styles.navigation}

@@ -2,9 +2,10 @@
 
 import * as React from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { BrainCircuit, CheckCircle2, Loader2 } from "lucide-react";
+import { CheckCircle2, Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 
+import { BrandLogo } from "@/components/brand-logo";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -41,9 +42,11 @@ export function AuthHeader({
 }) {
   return (
     <div className="flex flex-col items-center gap-2 text-center">
-      <div className="mb-3 flex size-11 items-center justify-center rounded-xl bg-brand-gradient">
-        <BrainCircuit className="size-6 text-primary-foreground" />
-      </div>
+      <BrandLogo
+        className="mb-3 size-11"
+        sizes="44px"
+        variant="mark"
+      />
       <Title className="text-xl leading-none tracking-tight" style={{ fontWeight: 450 }}>
         {title}
       </Title>

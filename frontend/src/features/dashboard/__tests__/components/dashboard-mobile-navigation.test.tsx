@@ -34,6 +34,10 @@ describe("DashboardMobileNavigation", () => {
   it("opens an anchored menu with navigation and profile actions", async () => {
     const user = userEvent.setup();
     render(<DashboardMobileNavigation />);
+    expect(screen.getByRole("img", { name: "SourceWise" })).toHaveAttribute(
+      "src",
+      expect.stringContaining("sourcewise-lockup.png"),
+    );
     const trigger = screen.getByRole("button", {
       name: "Dashboard navigation",
     });

@@ -13,14 +13,11 @@
 
 .logo {
   display: block;
+  width: 9.5rem;
+  height: auto;
   flex: none;
   margin-top: var(--spacing-dashboard-sidebar-logo-block-start);
   margin-left: var(--spacing-dashboard-sidebar-content-inline);
-  color: var(--sw-color-brand-default);
-  font-size: var(--font-size-dashboard-logo);
-  font-weight: var(--font-weight-dashboard-logo);
-  line-height: var(--line-height-dashboard-logo);
-  letter-spacing: 0;
 }
 
 .navigation {
