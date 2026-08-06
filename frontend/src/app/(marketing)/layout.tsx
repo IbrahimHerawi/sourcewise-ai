@@ -7,14 +7,18 @@ export const metadata: Metadata = {
     "Upload PDF, Markdown, and TXT files, then ask anything. SourceWise's AI answers strictly from your documents — accurate, sourced, and instant.",
   keywords: ["SourceWise", "AI document chat", "PDF Q&A", "document AI", "knowledge base", "AI assistant"],
   authors: [{ name: "SourceWise" }],
-  icons: {
-    icon: "https://z-cdn.chatglm.cn/z-ai/static/logo.svg",
-  },
   openGraph: {
     title: "SourceWise — Chat with your documents, powered by AI",
     description:
       "Upload PDF, Markdown, and TXT files, then ask anything. Get AI answers grounded only in your documents.",
-    url: "https://chat.z.ai",
+    images: [
+      {
+        url: "/brand/sourcewise-social-card.png",
+        width: 1200,
+        height: 630,
+        alt: "SourceWise",
+      },
+    ],
     siteName: "SourceWise",
     type: "website",
   },
@@ -23,6 +27,7 @@ export const metadata: Metadata = {
     title: "SourceWise — Chat with your documents, powered by AI",
     description:
       "Upload PDF, Markdown, and TXT files, then ask anything. Get AI answers grounded only in your documents.",
+    images: ["/brand/sourcewise-social-card.png"],
   },
 };
 
