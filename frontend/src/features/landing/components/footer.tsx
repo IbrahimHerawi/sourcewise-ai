@@ -2,6 +2,8 @@
 
 import * as React from "react";
 
+import { BrandLogo } from "@/components/brand-logo";
+
 /**
  * Official brand icons as inline SVGs (paths sourced from the brands' official
  * icon assets). Each icon is a single-color path that inherits `currentColor`,
@@ -71,10 +73,12 @@ export function Footer() {
           <div>
             <a
               href="#top"
-              className="tracking-tight text-foreground"
-              style={{ fontSize: "clamp(2rem, 3.5vw, 42px)", fontWeight: 450, lineHeight: 1.12 }}
+              className="inline-flex"
             >
-              SourceWise
+              <BrandLogo
+                className="h-auto w-[clamp(10.5rem,18vw,13rem)]"
+                sizes="(min-width: 768px) 208px, 168px"
+              />
             </a>
             <p className="mt-4 max-w-sm text-base font-light leading-relaxed text-muted-foreground">
               Chat with your documents. Upload PDF, Markdown, and TXT files, then
