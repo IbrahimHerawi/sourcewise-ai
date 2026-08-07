@@ -287,6 +287,50 @@ def test_embedding_batch_and_read_timeout_defaults() -> None:
     assert settings.ollama_embed_read_timeout_s == 120.0
 
 
+def test_retrieval_evidence_gate_defaults() -> None:
+    settings = Settings(_env_file=None)
+
+    assert settings.retrieval_max_cosine_distance == 0.75
+    assert settings.retrieval_semantic_accept_distance == 0.35
+    assert settings.retrieval_lexical_accept_distance == 0.55
+    assert settings.retrieval_min_query_term_coverage == 0.60
+
+
+@pytest.mark.parametrize(
+    ("setting_name", "invalid_value"),
+    [
+        ("retrieval_semantic_accept_distance", -0.01),
+        ("retrieval_lexical_accept_distance", -0.01),
+        ("retrieval_min_query_term_coverage", -0.01),
+        ("retrieval_min_query_term_coverage", 1.01),
+    ],
+)
+def test_retrieval_evidence_gate_values_have_valid_bounds(
+    setting_name: str,
+    invalid_value: float,
+) -> None:
+    with pytest.raises(ValueError, match=setting_name):
+        Settings(**{setting_name: invalid_value}, _env_file=None)
+
+
+def test_retrieval_semantic_accept_distance_must_not_exceed_lexical_distance() -> None:
+    with pytest.raises(ValueError, match="RETRIEVAL_SEMANTIC_ACCEPT_DISTANCE"):
+        Settings(
+            retrieval_semantic_accept_distance=0.56,
+            retrieval_lexical_accept_distance=0.55,
+            _env_file=None,
+        )
+
+
+def test_retrieval_lexical_accept_distance_must_not_exceed_candidate_cutoff() -> None:
+    with pytest.raises(ValueError, match="RETRIEVAL_LEXICAL_ACCEPT_DISTANCE"):
+        Settings(
+            retrieval_lexical_accept_distance=0.76,
+            retrieval_max_cosine_distance=0.75,
+            _env_file=None,
+        )
+
+
 @pytest.mark.parametrize("batch_size", [0, 129])
 def test_embedding_batch_size_must_be_between_one_and_128(batch_size: int) -> None:
     with pytest.raises(ValueError, match="ollama_embed_batch_size"):

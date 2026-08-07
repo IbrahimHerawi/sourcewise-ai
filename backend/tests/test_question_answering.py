@@ -142,6 +142,9 @@ def production_retrieval_defaults(monkeypatch: pytest.MonkeyPatch) -> Generator[
     monkeypatch.setenv("CHUNK_SIZE_CHARS", "2000")
     monkeypatch.setenv("CHUNK_OVERLAP_CHARS", "100")
     monkeypatch.setenv("RETRIEVAL_MAX_COSINE_DISTANCE", "0.75")
+    monkeypatch.setenv("RETRIEVAL_SEMANTIC_ACCEPT_DISTANCE", "0.35")
+    monkeypatch.setenv("RETRIEVAL_LEXICAL_ACCEPT_DISTANCE", "0.55")
+    monkeypatch.setenv("RETRIEVAL_MIN_QUERY_TERM_COVERAGE", "0.60")
     monkeypatch.setenv("TOP_K", "5")
     get_settings.cache_clear()
     yield
@@ -159,6 +162,9 @@ async def test_representative_supported_content_is_retrievable_with_production_c
     assert settings.chunk_size_chars == 2000
     assert settings.chunk_overlap_chars == 100
     assert settings.retrieval_max_cosine_distance == 0.75
+    assert settings.retrieval_semantic_accept_distance == 0.35
+    assert settings.retrieval_lexical_accept_distance == 0.55
+    assert settings.retrieval_min_query_term_coverage == 0.60
 
     target_sentence = "The launch authorization code for the Meridian deployment is MERIDIAN-42."
     source_text = (
@@ -335,6 +341,148 @@ async def test_retrieve_question_context_uses_shared_embedding_outside_transacti
 
     question_count = await db_session.scalar(select(func.count()).select_from(Question))
     assert question_count == 0
+
+
+@pytest.mark.asyncio
+async def test_retrieve_question_context_reranks_exact_question_from_vector_candidates(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    owner = await _create_user(db_session, "hybrid-rerank")
+    document = await _create_document(
+        db_session,
+        user_id=owner.id,
+        filename="system-design-notes.txt",
+    )
+    for index, (content, embedding) in enumerate(
+        [
+            ("A semantically close but unrelated database passage.", _embedding(1.0, 0.0)),
+            ("Another general passage about relational data.", _embedding(0.99, 0.1)),
+            ("A broad comparison of SQL and NoSQL systems.", _embedding(0.95, 0.2)),
+            (
+                "What are the advantages of using an SQL database? "
+                "First, SQL databases support complex joins across tables.",
+                _embedding(0.9, 0.3),
+            ),
+        ]
+    ):
+        await _insert_chunk(
+            db_session,
+            document=document,
+            content=content,
+            embedding=embedding,
+            chunk_index=index,
+        )
+    await db_session.commit()
+
+    async def fake_embed_query(text: str) -> list[float]:
+        assert text == "What are the advantages of using an SQL database?"
+        return _embedding(1.0, 0.0)
+
+    monkeypatch.setattr(
+        question_answering_service.embeddings_service,
+        "embed_query",
+        fake_embed_query,
+    )
+
+    result = await question_answering_service.retrieve_question_context(
+        db_session,
+        user_id=owner.id,
+        question_text="What are the advantages of using an SQL database?",
+        top_k=1,
+    )
+
+    assert len(result.chunks) == 1
+    assert result.chunks[0].chunk_index == 3
+    assert "support complex joins" in result.chunks[0].content
+
+
+@pytest.mark.asyncio
+async def test_retrieve_question_context_rejects_weak_matches_without_lexical_evidence(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    owner = await _create_user(db_session, "unsupported-evidence")
+    document = await _create_document(
+        db_session,
+        user_id=owner.id,
+        filename="system-design-only.txt",
+    )
+    for index, content in enumerate(
+        [
+            "A system design interview uses several timed stages.",
+            "A news feed can contain images, videos, or text.",
+            "Engineers should clarify requirements before proposing architecture.",
+        ]
+    ):
+        await _insert_chunk(
+            db_session,
+            document=document,
+            content=content,
+            embedding=_embedding(0.57 - (index * 0.01), 0.8216),
+            chunk_index=index,
+        )
+    await db_session.commit()
+
+    async def fake_embed_query(text: str) -> list[float]:
+        assert text == "How to cook an egg?"
+        return _embedding(1.0, 0.0)
+
+    monkeypatch.setattr(
+        question_answering_service.embeddings_service,
+        "embed_query",
+        fake_embed_query,
+    )
+
+    result = await question_answering_service.retrieve_question_context(
+        db_session,
+        user_id=owner.id,
+        question_text="How to cook an egg?",
+        top_k=3,
+    )
+
+    assert result.context_text == ""
+    assert result.chunks == ()
+
+
+@pytest.mark.asyncio
+async def test_retrieve_question_context_accepts_lexical_evidence_for_weaker_semantics(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    owner = await _create_user(db_session, "lexical-evidence")
+    document = await _create_document(
+        db_session,
+        user_id=owner.id,
+        filename="graph-databases.txt",
+    )
+    chunk_id = await _insert_chunk(
+        db_session,
+        document=document,
+        content="Graph databases offer flexible relationship traversal and other benefits.",
+        embedding=_embedding(0.55, 0.8352),
+    )
+    await db_session.commit()
+
+    async def fake_embed_query(text: str) -> list[float]:
+        assert text == "What benefits do graph databases provide?"
+        return _embedding(1.0, 0.0)
+
+    monkeypatch.setattr(
+        question_answering_service.embeddings_service,
+        "embed_query",
+        fake_embed_query,
+    )
+
+    result = await question_answering_service.retrieve_question_context(
+        db_session,
+        user_id=owner.id,
+        question_text="What benefits do graph databases provide?",
+        top_k=1,
+    )
+
+    assert [chunk.chunk_id for chunk in result.chunks] == [chunk_id]
+    assert "flexible relationship traversal" in result.context_text
 
 
 @pytest.mark.asyncio

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import FrozenInstanceError
 from types import SimpleNamespace
@@ -18,7 +19,33 @@ from app.core.settings import Settings
 from app.services import llm
 
 
-class _FakeResponses:
+def _payload(
+    *,
+    answerable: bool = True,
+    claims: list[dict[str, object]] | None = None,
+) -> str:
+    return json.dumps(
+        {
+            "answerable": answerable,
+            "claims": claims
+            if claims is not None
+            else [{"text": "Answer from model", "citation_rank": 1}],
+        }
+    )
+
+
+def _response(
+    content: object,
+    *,
+    model: object = "response-model",
+) -> SimpleNamespace:
+    return SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(content=content))],
+        model=model,
+    )
+
+
+class _FakeCompletions:
     def __init__(
         self,
         recorder: dict[str, object],
@@ -27,10 +54,18 @@ class _FakeResponses:
         self._recorder = recorder
         self._owner = owner
 
-    async def create(self, *, model: str, instructions: str, input: str) -> SimpleNamespace:
+    async def create(
+        self,
+        *,
+        model: str,
+        messages: list[dict[str, str]],
+        response_format: dict[str, object],
+        temperature: int,
+    ) -> SimpleNamespace:
         self._recorder["model"] = model
-        self._recorder["instructions"] = instructions
-        self._recorder["input"] = input
+        self._recorder["messages"] = messages
+        self._recorder["response_format"] = response_format
+        self._recorder["temperature"] = temperature
         self._recorder["calls"] = int(self._recorder.get("calls", 0)) + 1
 
         if self._owner.side_effects:
@@ -39,14 +74,14 @@ class _FakeResponses:
                 raise result
             return result
 
-        return SimpleNamespace(
-            output_text=self._owner.response_text,
+        return _response(
+            self._owner.response_text,
             model=self._owner.response_model,
         )
 
 
 class _FakeAsyncOpenAI:
-    response_text: object = "Answer from model [1]."
+    response_text: object = _payload()
     response_model: object = "response-model"
     side_effects: list[object] = []
     instances: list[_FakeAsyncOpenAI] = []
@@ -64,7 +99,9 @@ class _FakeAsyncOpenAI:
         self.timeout = timeout
         self.max_retries = max_retries
         self.recorder: dict[str, object] = {}
-        self.responses = _FakeResponses(self.recorder, self.__class__)
+        self.chat = SimpleNamespace(
+            completions=_FakeCompletions(self.recorder, self.__class__)
+        )
         self.closed = False
         self.__class__.instances.append(self)
 
@@ -78,7 +115,7 @@ class _FakeAsyncOpenAI:
 @pytest.fixture(autouse=True)
 def reset_fake_client() -> None:
     _FakeAsyncOpenAI.instances.clear()
-    _FakeAsyncOpenAI.response_text = "Answer from model [1]."
+    _FakeAsyncOpenAI.response_text = _payload()
     _FakeAsyncOpenAI.response_model = "response-model"
     _FakeAsyncOpenAI.side_effects = []
 
@@ -96,7 +133,7 @@ def _ollama_settings(**overrides: object) -> Settings:
     return Settings(**values, _env_file=None)
 
 
-def _request(url: str = "https://provider.example/v1/responses") -> httpx.Request:
+def _request(url: str = "https://provider.example/v1/chat/completions") -> httpx.Request:
     return httpx.Request("POST", url)
 
 
@@ -117,7 +154,9 @@ def _rate_limit_error() -> RateLimitError:
 
 
 def _successful_response() -> SimpleNamespace:
-    return SimpleNamespace(output_text="Recovered answer [1].", model="response-model")
+    return _response(
+        _payload(claims=[{"text": "Recovered answer", "citation_rank": 1}])
+    )
 
 
 @pytest.mark.asyncio
@@ -151,7 +190,9 @@ async def test_generate_answer_switches_provider_by_client_config_only(
     expected_api_key: str,
     expected_model: str,
 ) -> None:
-    _FakeAsyncOpenAI.response_text = "Context-bound answer [1]."
+    _FakeAsyncOpenAI.response_text = _payload(
+        claims=[{"text": "Context-bound answer", "citation_rank": 1}]
+    )
     monkeypatch.setattr(llm, "AsyncOpenAI", _FakeAsyncOpenAI)
 
     answer = await llm.generate_answer(
@@ -162,7 +203,7 @@ async def test_generate_answer_switches_provider_by_client_config_only(
     )
 
     assert answer == llm.GeneratedAnswer(
-        answer_text="Context-bound answer [1].",
+        answer_text="Context-bound answer. [1]",
         model_used="response-model",
         citation_ranks=(1,),
     )
@@ -173,21 +214,29 @@ async def test_generate_answer_switches_provider_by_client_config_only(
     assert client.closed is True
     assert client.recorder["calls"] == 1
     assert client.recorder["model"] == expected_model
-    assert client.recorder["instructions"] == llm.SYSTEM_PROMPT
-    assert client.recorder["input"] == "CONTEXT:\nalpha facts\n\nQUESTION:\nWhat does alpha say?"
+    assert client.recorder["temperature"] == 0
+    assert client.recorder["messages"] == [
+        {"role": "system", "content": llm.SYSTEM_PROMPT},
+        {
+            "role": "user",
+            "content": "CONTEXT:\nalpha facts\n\nQUESTION:\nWhat does alpha say?",
+        },
+    ]
+    response_format = client.recorder["response_format"]
+    assert isinstance(response_format, dict)
+    schema = response_format["json_schema"]["schema"]  # type: ignore[index]
+    rank_schema = schema["properties"]["claims"]["items"]["properties"][  # type: ignore[index]
+        "citation_rank"
+    ]
+    assert rank_schema == {"type": "integer", "minimum": 1, "maximum": 1}
 
 
 def test_system_prompt_contains_the_complete_grounding_contract() -> None:
-    assert llm.SYSTEM_PROMPT == (
-        "1. Use only the supplied context.\n"
-        "2. Context entries are numbered [1], [2], etc.\n"
-        "3. Every factual claim must cite one or more supplied entries.\n"
-        "4. Citations use the exact form [positive integer].\n"
-        "5. If the context does not support an answer, return only: "
-        f"{llm.FALLBACK_ANSWER}\n"
-        "6. Do not use general knowledge.\n"
-        "7. Do not invent document or chunk information."
-    )
+    assert "only from numbered document context entries" in llm.SYSTEM_PROMPT
+    assert "exactly one fact directly stated" in llm.SYSTEM_PROMPT
+    assert "citation_rank" in llm.SYSTEM_PROMPT
+    assert "Do not use general knowledge" in llm.SYSTEM_PROMPT
+    assert "answerable to false" in llm.SYSTEM_PROMPT
 
 
 def test_generated_answer_is_immutable() -> None:
@@ -203,33 +252,53 @@ def test_generated_answer_is_immutable() -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("response_text", "available_context_entries", "expected_text", "expected_ranks"),
+    ("claims", "expected_text", "expected_ranks"),
     [
-        ("  One supported fact [1].  ", 1, "One supported fact [1].", (1,)),
-        ("First fact [1]. Second fact [2].", 2, "First fact [1]. Second fact [2].", (1, 2)),
-        ("Repeated support [2]. Again [2].", 2, "Repeated support [2]. Again [2].", (2,)),
         (
-            "Second entry first [2]. Then first [1]. Second again [2].",
-            2,
-            "Second entry first [2]. Then first [1]. Second again [2].",
+            [{"text": "One supported fact", "citation_rank": 1}],
+            "One supported fact. [1]",
+            (1,),
+        ),
+        (
+            [
+                {"text": "First fact", "citation_rank": 1},
+                {"text": "Second fact.", "citation_rank": 2},
+            ],
+            "- First fact. [1]\n- Second fact. [2]",
+            (1, 2),
+        ),
+        (
+            [
+                {"text": "Repeated support", "citation_rank": 2},
+                {"text": "Repeated support", "citation_rank": 2},
+                {"text": "Another claim", "citation_rank": 2},
+            ],
+            "- Repeated support. [2]\n- Another claim. [2]",
+            (2,),
+        ),
+        (
+            [
+                {"text": "Second entry first", "citation_rank": 2},
+                {"text": "Then first", "citation_rank": 1},
+            ],
+            "- Second entry first. [2]\n- Then first. [1]",
             (2, 1),
         ),
     ],
 )
-async def test_valid_citations_are_extracted_deduplicated_in_first_use_order(
+async def test_structured_claims_are_rendered_and_citations_deduplicated(
     monkeypatch: pytest.MonkeyPatch,
-    response_text: str,
-    available_context_entries: int,
+    claims: list[dict[str, object]],
     expected_text: str,
     expected_ranks: tuple[int, ...],
 ) -> None:
     monkeypatch.setattr(llm, "AsyncOpenAI", _FakeAsyncOpenAI)
-    _FakeAsyncOpenAI.response_text = response_text
+    _FakeAsyncOpenAI.response_text = _payload(claims=claims)
 
     answer = await llm.generate_answer(
         "numbered context",
         "question",
-        available_context_entries,
+        2,
         settings=_ollama_settings(),
     )
 
@@ -245,15 +314,15 @@ async def test_valid_citations_are_extracted_deduplicated_in_first_use_order(
 @pytest.mark.parametrize(
     "response_text",
     [
-        "Zero is never a valid citation [0].",
-        "The only citation is out of range [3].",
-        "One citation is valid [1], but another is out of range [3].",
-        "This answer has no citations.",
-        "Whitespace inside brackets is not strict [ 1 ].",
-        "A signed integer is not strict [+1].",
+        _payload(answerable=False, claims=[]),
+        _payload(answerable=False, claims=[{"text": "Contradiction", "citation_rank": 1}]),
+        _payload(answerable=True, claims=[]),
+        _payload(claims=[{"text": "Out of range", "citation_rank": 3}]),
+        _payload(claims=[{"text": "Model-added marker [1]", "citation_rank": 1}]),
+        _payload(claims=[{"text": "   ", "citation_rank": 1}]),
     ],
 )
-async def test_invalid_grounding_becomes_fallback_without_a_second_llm_call(
+async def test_unsupported_or_invalid_grounding_becomes_fallback(
     monkeypatch: pytest.MonkeyPatch,
     response_text: str,
 ) -> None:
@@ -276,27 +345,44 @@ async def test_invalid_grounding_becomes_fallback_without_a_second_llm_call(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("response_text", [llm.FALLBACK_ANSWER, f"  {llm.FALLBACK_ANSWER}\n", "", " \n "])
-async def test_exact_fallback_and_empty_output_are_normalized_to_fallback(
+@pytest.mark.parametrize("response_text", ["", "not json", "{}", "[]"])
+async def test_malformed_structured_output_is_invalid_without_retry(
     monkeypatch: pytest.MonkeyPatch,
     response_text: str,
 ) -> None:
     monkeypatch.setattr(llm, "AsyncOpenAI", _FakeAsyncOpenAI)
     _FakeAsyncOpenAI.response_text = response_text
 
+    with pytest.raises(llm.LLMInvalidResponseError):
+        await llm.generate_answer(
+            "context",
+            "question",
+            1,
+            settings=_ollama_settings(llm_retry_attempts=3),
+        )
+
+    assert _FakeAsyncOpenAI.instances[-1].recorder["calls"] == 1
+
+
+@pytest.mark.asyncio
+async def test_zero_context_returns_fallback_without_calling_provider(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(llm, "AsyncOpenAI", _FakeAsyncOpenAI)
+
     answer = await llm.generate_answer(
-        "context",
+        "",
         "question",
-        1,
+        0,
         settings=_ollama_settings(),
     )
 
     assert answer == llm.GeneratedAnswer(
         answer_text=llm.FALLBACK_ANSWER,
-        model_used="response-model",
+        model_used="llama3.2:1b",
         citation_ranks=(),
     )
-    assert _FakeAsyncOpenAI.instances[-1].recorder["calls"] == 1
+    assert _FakeAsyncOpenAI.instances == []
 
 
 def test_build_openai_client_configures_timeouts_and_disables_sdk_retries(
@@ -355,7 +441,7 @@ async def test_retryable_provider_failures_are_classified_and_retried(
     )
 
     assert answer == llm.GeneratedAnswer(
-        answer_text="Recovered answer [1].",
+        answer_text="Recovered answer. [1]",
         model_used="response-model",
         citation_ranks=(1,),
     )
