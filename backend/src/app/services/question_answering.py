@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+import re
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -25,6 +27,45 @@ DEFAULT_TOP_K: Final[int] = 5
 DEFAULT_MAX_CONTEXT_CHARS: Final[int] = 12_000
 _CHUNK_SEPARATOR: Final[str] = "\n\n---\n\n"
 _TRUNCATION_MARKER: Final[str] = "\n[content truncated]"
+_MAX_RERANK_CANDIDATES: Final[int] = 50
+_RERANK_CANDIDATE_MULTIPLIER: Final[int] = 4
+_EXACT_QUESTION_BONUS: Final[float] = 0.20
+_QUERY_COVERAGE_BONUS: Final[float] = 0.10
+_WORD_PATTERN: Final[re.Pattern[str]] = re.compile(r"[^\W_]+", re.UNICODE)
+_QUERY_STOP_WORDS: Final[frozenset[str]] = frozenset(
+    {
+        "a",
+        "an",
+        "and",
+        "are",
+        "be",
+        "does",
+        "do",
+        "for",
+        "from",
+        "how",
+        "in",
+        "is",
+        "it",
+        "of",
+        "on",
+        "or",
+        "that",
+        "the",
+        "this",
+        "to",
+        "using",
+        "what",
+        "when",
+        "where",
+        "which",
+        "who",
+        "why",
+        "with",
+    }
+)
+
+logger = logging.getLogger(__name__)
 
 
 class QuestionAnsweringError(ValueError):
@@ -63,6 +104,15 @@ class QuestionRetrievalResult:
     chunks: tuple[RetrievedContextChunk, ...]
 
 
+@dataclass(frozen=True, slots=True)
+class _RetrievalEvidenceAssessment:
+    accepted: bool
+    reason: str
+    best_distance: float | None
+    max_query_term_coverage: float
+    exact_question_matches: int
+
+
 def _truncate_text(text: str, *, max_chars: int) -> str:
     if max_chars <= 0:
         return ""
@@ -81,6 +131,116 @@ def _truncate_text(text: str, *, max_chars: int) -> str:
         candidate = candidate[:safe_cut]
 
     return candidate.rstrip() + _TRUNCATION_MARKER
+
+
+def _normalize_phrase(text: str) -> str:
+    return " ".join(_WORD_PATTERN.findall(text.casefold()))
+
+
+def _normalize_term(term: str) -> str:
+    if len(term) > 4 and term.endswith("ies"):
+        return f"{term[:-3]}y"
+    if len(term) > 3 and term.endswith("s") and not term.endswith("ss"):
+        return term[:-1]
+    return term
+
+
+def _content_terms(text: str) -> set[str]:
+    return {_normalize_term(term) for term in _WORD_PATTERN.findall(text.casefold())}
+
+
+def _query_terms(question: str) -> set[str]:
+    return {
+        _normalize_term(term)
+        for term in _WORD_PATTERN.findall(question.casefold())
+        if term not in _QUERY_STOP_WORDS
+    }
+
+
+def _lexical_relevance(question: str, content: str) -> tuple[bool, float]:
+    normalized_question = _normalize_phrase(question)
+    normalized_content = _normalize_phrase(content)
+    exact_question = bool(
+        normalized_question and normalized_question in normalized_content
+    )
+
+    query_terms = _query_terms(question)
+    if not query_terms:
+        return exact_question, 0.0
+    coverage = len(query_terms & _content_terms(content)) / len(query_terms)
+    return exact_question, coverage
+
+
+def _rerank_search_results(
+    question: str,
+    search_results: Sequence[SimilaritySearchResult],
+    *,
+    limit: int,
+) -> list[SimilaritySearchResult]:
+    """Blend semantic distance with lightweight lexical evidence."""
+
+    def sort_key(result: SimilaritySearchResult) -> tuple[float, float, str]:
+        exact_question, coverage = _lexical_relevance(question, result.content)
+        hybrid_distance = (
+            result.distance
+            - (_EXACT_QUESTION_BONUS if exact_question else 0.0)
+            - (_QUERY_COVERAGE_BONUS * coverage)
+        )
+        return hybrid_distance, result.distance, result.chunk_id.hex
+
+    return sorted(search_results, key=sort_key)[:limit]
+
+
+def _assess_retrieval_evidence(
+    question: str,
+    search_results: Sequence[SimilaritySearchResult],
+    *,
+    semantic_accept_distance: float,
+    lexical_accept_distance: float,
+    min_query_term_coverage: float,
+) -> _RetrievalEvidenceAssessment:
+    """Require checkable query-to-context evidence before invoking the LLM."""
+    if not search_results:
+        return _RetrievalEvidenceAssessment(
+            accepted=False,
+            reason="no_candidates",
+            best_distance=None,
+            max_query_term_coverage=0.0,
+            exact_question_matches=0,
+        )
+
+    relevance = [
+        (result, *_lexical_relevance(question, result.content))
+        for result in search_results
+    ]
+    best_distance = min(result.distance for result, _, _ in relevance)
+    max_coverage = max(coverage for _, _, coverage in relevance)
+    exact_matches = sum(exact for _, exact, _ in relevance)
+
+    if exact_matches:
+        accepted = True
+        reason = "exact_question_match"
+    elif best_distance <= semantic_accept_distance:
+        accepted = True
+        reason = "strong_semantic_match"
+    elif any(
+        result.distance <= lexical_accept_distance
+        and coverage >= min_query_term_coverage
+        for result, _, coverage in relevance
+    ):
+        accepted = True
+        reason = "semantic_and_lexical_match"
+    else:
+        accepted = False
+        reason = "insufficient_evidence"
+
+    return _RetrievalEvidenceAssessment(
+        accepted=accepted,
+        reason=reason,
+        best_distance=best_distance,
+        max_query_term_coverage=max_coverage,
+        exact_question_matches=exact_matches,
+    )
 
 
 def _retrieval_section_header(
@@ -196,13 +356,46 @@ async def retrieve_question_context(
             if collection is None:
                 raise CollectionNotFoundError(collection_id)
 
-        search_results = await ChunkRepository(session).similarity_search(
+        candidate_limit = min(
+            _MAX_RERANK_CANDIDATES,
+            effective_top_k * _RERANK_CANDIDATE_MULTIPLIER,
+        )
+        candidate_limit = max(effective_top_k, candidate_limit)
+        candidate_results = await ChunkRepository(session).similarity_search(
             user_id,
             query_embedding,
-            top_k=effective_top_k,
+            top_k=candidate_limit,
             collection_id=collection_id,
             max_distance=resolved_settings.retrieval_max_cosine_distance,
         )
+
+    reranked_results = _rerank_search_results(
+        normalized_question,
+        candidate_results,
+        limit=effective_top_k,
+    )
+    evidence = _assess_retrieval_evidence(
+        normalized_question,
+        reranked_results,
+        semantic_accept_distance=resolved_settings.retrieval_semantic_accept_distance,
+        lexical_accept_distance=resolved_settings.retrieval_lexical_accept_distance,
+        min_query_term_coverage=resolved_settings.retrieval_min_query_term_coverage,
+    )
+    search_results = reranked_results if evidence.accepted else []
+    logger.info(
+        "Retrieval summary candidate_count=%s selected_count=%s top_k=%s "
+        "max_distance=%s best_distance=%s max_query_term_coverage=%.3f "
+        "exact_question_matches=%s evidence_accepted=%s evidence_reason=%s",
+        len(candidate_results),
+        len(search_results),
+        effective_top_k,
+        resolved_settings.retrieval_max_cosine_distance,
+        evidence.best_distance,
+        evidence.max_query_term_coverage,
+        evidence.exact_question_matches,
+        evidence.accepted,
+        evidence.reason,
+    )
 
     context_text, chunks = _build_retrieval_context(
         search_results,

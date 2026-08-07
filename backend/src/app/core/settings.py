@@ -72,6 +72,9 @@ class Settings(BaseSettings):
     chunk_size_chars: int = Field(default=2000, gt=0)
     chunk_overlap_chars: int = Field(default=100, ge=0)
     retrieval_max_cosine_distance: float = Field(default=0.75, ge=0.0, le=2.0)
+    retrieval_semantic_accept_distance: float = Field(default=0.35, ge=0.0, le=2.0)
+    retrieval_lexical_accept_distance: float = Field(default=0.55, ge=0.0, le=2.0)
+    retrieval_min_query_term_coverage: float = Field(default=0.60, ge=0.0, le=1.0)
     top_k: int = Field(default=5, gt=0)
 
     ai_provider: Literal["openai", "ollama"] = "ollama"
@@ -250,6 +253,17 @@ class Settings(BaseSettings):
 
         if self.chunk_overlap_chars >= self.chunk_size_chars:
             raise ValueError("CHUNK_OVERLAP_CHARS must be less than CHUNK_SIZE_CHARS.")
+
+        if self.retrieval_semantic_accept_distance > self.retrieval_lexical_accept_distance:
+            raise ValueError(
+                "RETRIEVAL_SEMANTIC_ACCEPT_DISTANCE must be less than or equal to "
+                "RETRIEVAL_LEXICAL_ACCEPT_DISTANCE."
+            )
+        if self.retrieval_lexical_accept_distance > self.retrieval_max_cosine_distance:
+            raise ValueError(
+                "RETRIEVAL_LEXICAL_ACCEPT_DISTANCE must be less than or equal to "
+                "RETRIEVAL_MAX_COSINE_DISTANCE."
+            )
 
         if self.ollama_embed_retry_max_wait_s < self.ollama_embed_retry_min_wait_s:
             raise ValueError(
