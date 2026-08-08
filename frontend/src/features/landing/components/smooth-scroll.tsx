@@ -8,16 +8,24 @@ import Lenis from "lenis";
 let lenisInstance: Lenis | null = null;
 
 /**
- * Smoothly scroll to an element (by CSS selector or element). Uses Lenis when
- * available for a fluid glide; falls back to native scrollIntoView otherwise.
+ * Smoothly scroll to an element (by CSS selector or element). The same
+ * interpolation used for wheel input is used for anchors, so navigation stays
+ * interruptible and does not impose a fixed-duration wait on short jumps.
  */
 export function scrollToElement(target: string | HTMLElement) {
   const el = typeof target === "string" ? document.querySelector(target) : target;
   if (!el) return;
   if (lenisInstance) {
-    lenisInstance.scrollTo(el as HTMLElement, { offset: 0, duration: 1.2 });
+    lenisInstance.scrollTo(el as HTMLElement, {
+      offset: 0,
+      lerp: 0.18,
+      lock: false,
+    });
   } else {
-    (el as HTMLElement).scrollIntoView({ behavior: "smooth", block: "start" });
+    const behavior = window.matchMedia("(prefers-reduced-motion: reduce)").matches
+      ? "auto"
+      : "smooth";
+    (el as HTMLElement).scrollIntoView({ behavior, block: "start" });
   }
 }
 
@@ -48,35 +56,39 @@ export function startScroll() {
  */
 export function SmoothScroll({ children }: { children: React.ReactNode }) {
   React.useEffect(() => {
-    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (reduceMotion) return;
+    const motionPreference = window.matchMedia("(prefers-reduced-motion: reduce)");
+    let lenis: Lenis | null = null;
 
-    const lenis = new Lenis({
-      // How fast the scroll eases toward the target. Lower = smoother/longer
-      // glide; higher = snappier/more responsive. 0.18 makes the scroll feel
-      // light and closely tied to the input (minimal lag) while still smooth.
-      // Lenis's lerp is an exponential ease-out, so the motion always
-      // decelerates naturally toward the target — never stops abruptly.
-      lerp: 0.18,
-      smoothWheel: true,
-      // A touch more distance per wheel notch so less physical scrolling is
-      // needed to move the content.
-      wheelMultiplier: 1.1,
-      touchMultiplier: 1.5,
-    });
-    lenisInstance = lenis;
-
-    let rafId = 0;
-    const raf = (time: number) => {
-      lenis.raf(time);
-      rafId = requestAnimationFrame(raf);
+    const destroy = () => {
+      lenis?.destroy();
+      if (lenisInstance === lenis) lenisInstance = null;
+      lenis = null;
     };
-    rafId = requestAnimationFrame(raf);
+
+    const configure = () => {
+      destroy();
+      if (motionPreference.matches) return;
+
+      lenis = new Lenis({
+        // A short exponential tail filters wheel steps without putting a
+        // noticeable delay between the gesture and the page.
+        lerp: 0.18,
+        smoothWheel: true,
+        wheelMultiplier: 1,
+        // Preserve direct, platform-native touch tracking and momentum.
+        syncTouch: false,
+        touchMultiplier: 1,
+        autoRaf: true,
+      });
+      lenisInstance = lenis;
+    };
+
+    configure();
+    motionPreference.addEventListener?.("change", configure);
 
     return () => {
-      cancelAnimationFrame(rafId);
-      lenis.destroy();
-      lenisInstance = null;
+      motionPreference.removeEventListener?.("change", configure);
+      destroy();
     };
   }, []);
 

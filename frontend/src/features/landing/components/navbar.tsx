@@ -72,6 +72,9 @@ export function Navbar({ onOpenAuth }: { onOpenAuth: (tab: "signin" | "signup") 
     const el = document.getElementById(id);
     if (el) {
       e.preventDefault();
+      if (window.location.hash !== href) {
+        window.history.pushState(null, "", href);
+      }
       scrollToElement(el);
       setMobileOpen(false);
     }
@@ -80,23 +83,24 @@ export function Navbar({ onOpenAuth }: { onOpenAuth: (tab: "signin" | "signup") 
   return (
     <>
       <motion.header
-        initial={{ y: -NAVBAR_HEIGHT, opacity: 0 }}
-        animate={{
-          y: showNavbar ? 0 : -NAVBAR_HEIGHT,
-          opacity: showNavbar ? 1 : 0,
-        }}
-        transition={{ duration: 0.55, ease: [0.16, 1, 0.3, 1] }}
+        initial={false}
+        animate={{ y: showNavbar ? 0 : -NAVBAR_HEIGHT }}
+        transition={{ duration: 0.3, ease: "easeInOut" }}
         // Full-width, pinned flush to the very top.
         // Solid flat white background — no shadow, no border, no blur/overlay.
         className="fixed inset-x-0 top-0 z-50 w-full bg-background"
-        style={{ willChange: "transform, opacity" }}
+        style={{ willChange: "transform" }}
       >
         <nav
           className="mx-auto flex w-full max-w-7xl items-center gap-5 px-4 sm:px-6 lg:px-8"
           style={{ minHeight: `${NAVBAR_HEIGHT}px` }}
         >
           {/* Left cluster: brand + nav links, close together */}
-          <a href="#top" className="group flex shrink-0 items-center">
+          <a
+            href="#top"
+            onClick={(e) => handleNavClick(e, "#top")}
+            className="group flex shrink-0 items-center"
+          >
             <BrandLogo
               className="h-8 w-auto transition-transform group-hover:scale-[1.02]"
               priority

@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { MotionConfig } from "framer-motion";
 import { Navbar } from "@/features/landing/components/navbar";
 import { Hero } from "@/features/landing/components/hero";
 import { HowItWorks } from "@/features/landing/components/how-it-works";
@@ -20,19 +21,21 @@ export default function Home() {
 
   return (
     <SmoothScroll>
-      <div className="relative flex min-h-[100svh] flex-col bg-background">
-        <Navbar onOpenAuth={openAuth} />
+      <MotionConfig reducedMotion="user">
+        <div className="relative flex min-h-[100svh] flex-col bg-background">
+          <Navbar onOpenAuth={openAuth} />
 
-        <main className="flex-1">
-          <Hero onOpenAuth={openAuth} />
-          <HowItWorks />
-          <Features onOpenAuth={openAuth} />
-        </main>
+          <main className="flex-1">
+            <Hero onOpenAuth={openAuth} />
+            <HowItWorks />
+            <Features onOpenAuth={openAuth} />
+          </main>
 
-        <Footer />
+          <Footer />
 
-        <AuthDialog open={authOpen} onOpenChange={setAuthOpen} defaultTab={authTab} />
-      </div>
+          <AuthDialog open={authOpen} onOpenChange={setAuthOpen} defaultTab={authTab} />
+        </div>
+      </MotionConfig>
     </SmoothScroll>
   );
 }

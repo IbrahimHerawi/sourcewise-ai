@@ -3,6 +3,7 @@
 import * as React from "react";
 
 import { BrandLogo } from "@/components/brand-logo";
+import { scrollToElement } from "./smooth-scroll";
 
 /**
  * Official brand icons as inline SVGs (paths sourced from the brands' official
@@ -73,6 +74,15 @@ export function Footer() {
           <div>
             <a
               href="#top"
+              onClick={(event) => {
+                const top = document.getElementById("top");
+                if (!top) return;
+                event.preventDefault();
+                if (window.location.hash !== "#top") {
+                  window.history.pushState(null, "", "#top");
+                }
+                scrollToElement(top);
+              }}
               className="inline-flex"
             >
               <BrandLogo
