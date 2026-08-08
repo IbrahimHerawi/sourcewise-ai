@@ -102,7 +102,20 @@
 
 @media (max-width: 64rem) {
   .header {
-    display: none;
+    display: block;
+  }
+
+  .inner {
+    height: auto;
+    min-height: 4.5rem;
+    padding-block: var(--sw-spacing-12);
+    padding-inline: max(var(--sw-spacing-16), env(safe-area-inset-left))
+      max(var(--sw-spacing-16), env(safe-area-inset-right));
+  }
+
+  .title {
+    font-size: var(--sw-type-size-section-title);
+    line-height: var(--sw-type-line-height-section-title);
   }
 }
 
@@ -116,6 +129,22 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+}
+
+@media (max-width: 22rem) {
+  .inner {
+    flex-wrap: wrap;
+  }
+
+  .identity {
+    flex-basis: 100%;
+  }
+
+  .actions {
+    width: 100%;
+    max-width: none;
+    justify-content: flex-start;
   }
 }
 
