@@ -774,6 +774,10 @@
 }
 
 @media (max-width: 40rem) {
+  .emptyQueue {
+    display: none;
+  }
+
   .uploadHeader,
   .uploadAssignment,
   .libraryToolbar {
