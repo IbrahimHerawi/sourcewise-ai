@@ -194,7 +194,7 @@
   --sw-radius-large: 9999px;
   --sw-component-height-button: 2rem;
   --sw-component-height-navigation: 3rem;
-  --sw-content-wide-width: 58rem;
+  --sw-content-dashboard-max-width: 96rem;
   --sw-type-size-page-title: 1.5rem;
   --sw-type-size-section-title: 1.5rem;
   --sw-type-size-card-title: 1.25rem;
@@ -212,7 +212,11 @@
   --sw-type-letter-spacing-page-title: -0.015rem;
   --sw-type-letter-spacing-section-title: -0.015rem;
   --sw-type-letter-spacing-button: 0.00875rem;
-  --spacing-dashboard-page-inline: var(--sw-spacing-48);
+  --spacing-dashboard-page-inline: clamp(
+    var(--sw-spacing-16),
+    3vw,
+    var(--sw-spacing-48)
+  );
   --spacing-dashboard-page-block-start: var(--sw-spacing-32);
   --shadow-sw-card: 0 0.25rem 0.75rem var(--sw-primitive-shadow-black-02);
   --shadow-sw-dialog: 0 0.25rem 1.25rem var(--sw-primitive-shadow-black-03);

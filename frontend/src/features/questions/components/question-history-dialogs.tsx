@@ -37,6 +37,11 @@ export function QuestionHistoryDetailsDialog({
   return (
     <CollectionDialog
       description="The saved question, answer, and citation snapshots."
+      footer={
+        <CollectionDialogFooter>
+          <CollectionDialogCancel ref={closeRef}>Close</CollectionDialogCancel>
+        </CollectionDialogFooter>
+      }
       initialFocusRef={closeRef}
       onClose={onClose}
       title="Question details"
@@ -64,9 +69,6 @@ export function QuestionHistoryDetailsDialog({
       ) : (
         <QuestionHistoryDetails item={state.data} />
       )}
-      <CollectionDialogFooter>
-        <CollectionDialogCancel ref={closeRef}>Close</CollectionDialogCancel>
-      </CollectionDialogFooter>
     </CollectionDialog>
   );
 }
@@ -116,28 +118,30 @@ export function DeleteQuestionHistoryDialog({
     <CollectionDialog
       description="Delete this saved question, its answer, and citation snapshots permanently?"
       descriptionVariant="warning"
+      footer={
+        <CollectionDialogFooter>
+          <CollectionDialogCancel disabled={mutation.isPending} ref={cancelRef} />
+          <CollectionButton
+            disabled={mutation.isPending}
+            onClick={() =>
+              void mutation
+                .mutate(item.question_id)
+                .then(onDeleted)
+                .catch(() => undefined)
+            }
+            tone="solid-danger"
+            type="button"
+          >
+            {mutation.isPending ? "Deleting…" : "Delete history item"}
+          </CollectionButton>
+        </CollectionDialogFooter>
+      }
       initialFocusRef={cancelRef}
       onClose={onClose}
       role="alertdialog"
       title="Delete history item?"
     >
       <p className={styles.confirmationSubject}>{item.question}</p>
-      <CollectionDialogFooter>
-        <CollectionDialogCancel disabled={mutation.isPending} ref={cancelRef} />
-        <CollectionButton
-          disabled={mutation.isPending}
-          onClick={() =>
-            void mutation
-              .mutate(item.question_id)
-              .then(onDeleted)
-              .catch(() => undefined)
-          }
-          tone="solid-danger"
-          type="button"
-        >
-          {mutation.isPending ? "Deleting…" : "Delete history item"}
-        </CollectionButton>
-      </CollectionDialogFooter>
       {mutation.error ? (
         <p className={styles.mutationError} role="alert">
           {getQuestionHistoryErrorContent(mutation.error).description}

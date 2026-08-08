@@ -44,6 +44,11 @@ export function DocumentDetailsDialog({
   return (
     <CollectionDialog
       description="Metadata for this uploaded document."
+      footer={
+        <CollectionDialogFooter>
+          <CollectionDialogCancel ref={closeRef}>Close</CollectionDialogCancel>
+        </CollectionDialogFooter>
+      }
       initialFocusRef={closeRef}
       onClose={onClose}
       title="Document details"
@@ -64,9 +69,6 @@ export function DocumentDetailsDialog({
       ) : (
         <DocumentMetadata document={state.data} />
       )}
-      <CollectionDialogFooter>
-        <CollectionDialogCancel ref={closeRef}>Close</CollectionDialogCancel>
-      </CollectionDialogFooter>
     </CollectionDialog>
   );
 }
@@ -131,22 +133,24 @@ export function DeleteDocumentDialog({
     <CollectionDialog
       description={`Delete ${document.filename} permanently? This removes the uploaded document and its processed data. Existing citation snapshots remain in question history.`}
       descriptionVariant="warning"
+      footer={
+        <CollectionDialogFooter>
+          <CollectionDialogCancel disabled={mutation.isPending} ref={cancelRef} />
+          <CollectionButton
+            disabled={mutation.isPending}
+            onClick={submit}
+            tone="solid-danger"
+            type="button"
+          >
+            {mutation.isPending ? "Deleting…" : "Delete document"}
+          </CollectionButton>
+        </CollectionDialogFooter>
+      }
       initialFocusRef={cancelRef}
       onClose={mutation.isPending ? () => undefined : onClose}
       role="alertdialog"
       title="Delete document?"
     >
-      <CollectionDialogFooter>
-        <CollectionDialogCancel disabled={mutation.isPending} ref={cancelRef} />
-        <CollectionButton
-          disabled={mutation.isPending}
-          onClick={submit}
-          tone="solid-danger"
-          type="button"
-        >
-          {mutation.isPending ? "Deleting…" : "Delete document"}
-        </CollectionButton>
-      </CollectionDialogFooter>
       {mutation.error ? (
         <p className={styles.dialogMutationError} role="alert">
           {getDeleteErrorMessage(mutation.error)}
