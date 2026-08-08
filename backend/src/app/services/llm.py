@@ -1,4 +1,4 @@
-"""Unified answer generation via the OpenAI Python client."""
+"""Unified, schema-grounded answer generation via the OpenAI Python client."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import logging
 import re
 from dataclasses import dataclass
 from time import perf_counter
-from typing import Final
+from typing import Any, Final
 
 import httpx
 from openai import (
@@ -17,8 +17,7 @@ from openai import (
     AsyncOpenAI,
     RateLimitError,
 )
-from openai.types.responses import Response
-from pydantic import SecretStr
+from pydantic import BaseModel, ConfigDict, SecretStr, ValidationError
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from app.core.settings import Settings, get_settings
@@ -27,13 +26,17 @@ logger = logging.getLogger(__name__)
 
 FALLBACK_ANSWER: Final[str] = "I could not find the answer in the uploaded documents."
 SYSTEM_PROMPT: Final[str] = (
-    "1. Use only the supplied context.\n"
-    "2. Context entries are numbered [1], [2], etc.\n"
-    "3. Every factual claim must cite one or more supplied entries.\n"
-    "4. Citations use the exact form [positive integer].\n"
-    f"5. If the context does not support an answer, return only: {FALLBACK_ANSWER}\n"
-    "6. Do not use general knowledge.\n"
-    "7. Do not invent document or chunk information."
+    "You answer questions only from numbered document context entries.\n"
+    "Return data matching the required JSON schema.\n"
+    "Set answerable to true only when the context directly answers the question.\n"
+    "When answerable is true, return one or more concise claims. Each claim must contain "
+    "exactly one fact directly stated in its cited context entry. Use that entry's number "
+    "as citation_rank.\n"
+    "Do not combine a fact from one entry with the citation rank of another entry.\n"
+    "Do not put citation markers in claim text; citation_rank is the citation.\n"
+    "Do not use general knowledge, make inferences, or add recommendations.\n"
+    "When the context does not directly answer the question, set answerable to false and "
+    "return an empty claims array."
 )
 _CITATION_PATTERN: Final[re.Pattern[str]] = re.compile(r"\[([0-9]+)\]")
 
@@ -54,7 +57,7 @@ class _LLMError(RuntimeError):
 
 
 class LLMTransientError(_LLMError):
-    """Raised when a transient chat-provider failure exhausts configured attempts."""
+    """Raised when transient chat-provider failures exhaust configured attempts."""
 
     def __init__(self, *, category: str, status_code: int | None = None) -> None:
         super().__init__(
@@ -100,6 +103,20 @@ class GeneratedAnswer:
     answer_text: str
     model_used: str
     citation_ranks: tuple[int, ...]
+
+
+class _GroundedClaimPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    text: str
+    citation_rank: int
+
+
+class _GroundedAnswerPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    answerable: bool
+    claims: list[_GroundedClaimPayload]
 
 
 def _resolve_provider_config(settings: Settings) -> _ProviderConfig:
@@ -159,9 +176,48 @@ def _build_input(context_chunks_text: str, question: str) -> str:
     return f"CONTEXT:\n{context_chunks_text}\n\nQUESTION:\n{question}"
 
 
-def _extract_answer(response: Response, *, configured_model: str) -> tuple[str, str]:
-    output_text = getattr(response, "output_text", None)
-    if not isinstance(output_text, str):
+def _build_response_format(*, available_context_entries: int) -> dict[str, object]:
+    return {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "grounded_document_answer",
+            "strict": True,
+            "schema": {
+                "type": "object",
+                "properties": {
+                    "answerable": {"type": "boolean"},
+                    "claims": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "text": {"type": "string", "minLength": 1},
+                                "citation_rank": {
+                                    "type": "integer",
+                                    "minimum": 1,
+                                    "maximum": max(1, available_context_entries),
+                                },
+                            },
+                            "required": ["text", "citation_rank"],
+                            "additionalProperties": False,
+                        },
+                    },
+                },
+                "required": ["answerable", "claims"],
+                "additionalProperties": False,
+            },
+        },
+    }
+
+
+def _extract_answer(response: Any, *, configured_model: str) -> tuple[str, str]:
+    choices = getattr(response, "choices", None)
+    if not isinstance(choices, list) or len(choices) != 1:
+        raise LLMInvalidResponseError()
+
+    message = getattr(choices[0], "message", None)
+    content = getattr(message, "content", None)
+    if not isinstance(content, str):
         raise LLMInvalidResponseError()
 
     response_model = getattr(response, "model", None)
@@ -172,7 +228,19 @@ def _extract_answer(response: Response, *, configured_model: str) -> tuple[str, 
     else:
         model_used = response_model.strip()
 
-    return output_text, model_used
+    return content, model_used
+
+
+def _fallback(*, model_used: str) -> GeneratedAnswer:
+    return GeneratedAnswer(
+        answer_text=FALLBACK_ANSWER,
+        model_used=model_used,
+        citation_ranks=(),
+    )
+
+
+def _punctuate_claim(text: str) -> str:
+    return text if text.endswith((".", "!", "?")) else f"{text}."
 
 
 def _validate_generated_answer(
@@ -181,33 +249,53 @@ def _validate_generated_answer(
     model_used: str,
     available_context_entries: int,
 ) -> GeneratedAnswer:
-    stripped_answer = answer_text.strip()
-    fallback = GeneratedAnswer(
-        answer_text=FALLBACK_ANSWER,
-        model_used=model_used,
-        citation_ranks=(),
-    )
-    if not stripped_answer or stripped_answer == FALLBACK_ANSWER:
-        return fallback
+    try:
+        payload = _GroundedAnswerPayload.model_validate_json(answer_text)
+    except (ValidationError, ValueError):
+        raise LLMInvalidResponseError() from None
 
+    if not payload.answerable:
+        return _fallback(model_used=model_used)
+    if not payload.claims:
+        return _fallback(model_used=model_used)
+
+    rendered_claims: list[tuple[str, int]] = []
+    seen_claims: set[tuple[str, int]] = set()
     citation_ranks: list[int] = []
     seen_ranks: set[int] = set()
-    for match in _CITATION_PATTERN.finditer(stripped_answer):
-        try:
-            rank = int(match.group(1))
-        except ValueError:
-            return fallback
-        if rank <= 0 or rank > available_context_entries:
-            return fallback
+
+    for claim in payload.claims:
+        text = claim.text.strip()
+        rank = claim.citation_rank
+        if (
+            not text
+            or _CITATION_PATTERN.search(text)
+            or rank <= 0
+            or rank > available_context_entries
+        ):
+            return _fallback(model_used=model_used)
+
+        normalized_claim = (text, rank)
+        if normalized_claim not in seen_claims:
+            seen_claims.add(normalized_claim)
+            rendered_claims.append(normalized_claim)
         if rank not in seen_ranks:
             seen_ranks.add(rank)
             citation_ranks.append(rank)
 
-    if not citation_ranks:
-        return fallback
+    if not rendered_claims:
+        return _fallback(model_used=model_used)
+
+    if len(rendered_claims) == 1:
+        text, rank = rendered_claims[0]
+        rendered_answer = f"{_punctuate_claim(text)} [{rank}]"
+    else:
+        rendered_answer = "\n".join(
+            f"- {_punctuate_claim(text)} [{rank}]" for text, rank in rendered_claims
+        )
 
     return GeneratedAnswer(
-        answer_text=stripped_answer,
+        answer_text=rendered_answer,
         model_used=model_used,
         citation_ranks=tuple(citation_ranks),
     )
@@ -218,12 +306,19 @@ async def _request_generation(
     *,
     model: str,
     prompt_input: str,
-) -> Response:
+    available_context_entries: int,
+) -> Any:
     try:
-        return await client.responses.create(
+        return await client.chat.completions.create(
             model=model,
-            instructions=SYSTEM_PROMPT,
-            input=prompt_input,
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": prompt_input},
+            ],
+            response_format=_build_response_format(
+                available_context_entries=available_context_entries
+            ),
+            temperature=0,
         )
     except APITimeoutError:
         raise LLMTransientError(category="timeout") from None
@@ -272,12 +367,15 @@ async def generate_answer(
     *,
     settings: Settings | None = None,
 ) -> GeneratedAnswer:
-    """Generate an answer from context using the configured provider."""
+    """Generate a schema-constrained, citation-grounded answer."""
     if available_context_entries < 0:
         raise ValueError("available_context_entries must not be negative.")
 
     resolved_settings = settings or get_settings()
     config = _resolve_provider_config(resolved_settings)
+    if available_context_entries == 0:
+        return _fallback(model_used=config.model)
+
     prompt_input = _build_input(context_chunks_text=context_chunks_text, question=question)
     retrying = AsyncRetrying(
         retry=retry_if_exception_type(LLMTransientError),
@@ -300,10 +398,16 @@ async def generate_answer(
                         client,
                         model=config.model,
                         prompt_input=prompt_input,
+                        available_context_entries=available_context_entries,
                     )
                     answer_text, model_used = _extract_answer(
                         response,
                         configured_model=config.model,
+                    )
+                    generated_answer = _validate_generated_answer(
+                        answer_text,
+                        model_used=model_used,
+                        available_context_entries=available_context_entries,
                     )
                 except _LLMError as exc:
                     status: str | int = exc.status_code or (
@@ -327,11 +431,7 @@ async def generate_answer(
                     started_at=started_at,
                     level=logging.INFO,
                 )
-                return _validate_generated_answer(
-                    answer_text,
-                    model_used=model_used,
-                    available_context_entries=available_context_entries,
-                )
+                return generated_answer
 
     raise RuntimeError("LLM retry loop exited without returning a result.")
 

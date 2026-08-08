@@ -36,14 +36,25 @@ This structure is intentional for maintainability and separation of concerns.
 - PostgreSQL/pgvector implementation:
   - cosine operator class: `vector_cosine_ops`
   - retrieval ordering by ascending cosine distance
+- Retrieval uses a hybrid two-stage ranking flow:
+  - pgvector first selects a wider semantic candidate pool while applying the configured cosine-distance cutoff
+  - the application reranks those candidates using semantic distance, exact normalized question matches, and query-term coverage
+  - a deterministic evidence gate accepts an exact question match, a strong semantic match (`RETRIEVAL_SEMANTIC_ACCEPT_DISTANCE`, default `0.35`), or a combined lexical/semantic match (`RETRIEVAL_LEXICAL_ACCEPT_DISTANCE`, default `0.55`, plus `RETRIEVAL_MIN_QUERY_TERM_COVERAGE`, default `0.60`)
+  - when no candidate passes the evidence gate, no context is sent to the chat model and the deterministic unknown-answer fallback is used
+  - only the configured `TOP_K` chunks are passed to answer generation
 - Chunking strategy: deterministic character-based chunking with overlap
 - Chunking parameters are configurable:
   - `CHUNK_SIZE_CHARS` (default: `2000`)
   - `CHUNK_OVERLAP_CHARS` (default: `100`)
 
 ## 6. Answering Behavior
-The chat model is instructed to answer using only retrieved context.  
-If retrieved content is insufficient or irrelevant, the response is a strict unknown-answer fallback: `I could not find the answer in the uploaded documents.`
+The chat model receives numbered retrieved context and must return a schema-constrained list of
+single-fact claims with an explicit context rank for each claim. The service validates the schema and
+rank range, renders the citations deterministically, and persists only the cited chunk snapshots.
+This avoids treating a correct answer as missing merely because a small local model omitted free-form
+bracket syntax. If retrieved content is insufficient or the structured result has no valid grounded
+claims, the response is the strict unknown-answer fallback:
+`I could not find the answer in the uploaded documents.`
 
 ## 7. AI Provider Switching
 `AI_PROVIDER` controls which chat backend is used.
