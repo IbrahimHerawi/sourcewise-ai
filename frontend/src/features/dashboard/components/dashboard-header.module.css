@@ -24,7 +24,7 @@
   gap: var(--sw-spacing-16);
   padding-inline: max(
     var(--spacing-dashboard-page-inline),
-    calc((100% - var(--sw-content-wide-width)) / 2)
+    calc((100% - var(--sw-content-dashboard-max-width)) / 2)
   );
 }
 
@@ -109,8 +109,9 @@
     height: auto;
     min-height: 4.5rem;
     padding-block: var(--sw-spacing-12);
-    padding-inline: max(var(--sw-spacing-16), env(safe-area-inset-left))
-      max(var(--sw-spacing-16), env(safe-area-inset-right));
+    padding-inline:
+      max(var(--spacing-dashboard-page-inline), env(safe-area-inset-left))
+      max(var(--spacing-dashboard-page-inline), env(safe-area-inset-right));
   }
 
   .title {
