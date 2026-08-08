@@ -55,28 +55,30 @@ export function DocumentDetailsPanel({
             Metadata recorded for this uploaded document.
           </SheetDescription>
         </SheetHeader>
-        <div className={styles.detailsStatus}>
-          <span>Status</span>
-          <DocumentStatusBadge status={document.status} />
-        </div>
-        <dl className={styles.metadataList}>
-          {rows.map(([label, value]) => (
-            <div key={label}>
-              <dt>{label}</dt>
-              <dd>{value}</dd>
-            </div>
-          ))}
-        </dl>
-        {document.status === "FAILED" ? (
-          <div className={styles.detailsFailure} role="status">
-            <strong>Processing failed</strong>
-            <p>{safeDocumentFailureMessage(document.error_message)}</p>
+        <div className={styles.detailsScrollRegion}>
+          <div className={styles.detailsStatus}>
+            <span>Status</span>
+            <DocumentStatusBadge status={document.status} />
           </div>
-        ) : status.processingMessage ? (
-          <p className={styles.detailsProcessing} role="status">
-            {status.processingMessage}
-          </p>
-        ) : null}
+          <dl className={styles.metadataList}>
+            {rows.map(([label, value]) => (
+              <div key={label}>
+                <dt>{label}</dt>
+                <dd>{value}</dd>
+              </div>
+            ))}
+          </dl>
+          {document.status === "FAILED" ? (
+            <div className={styles.detailsFailure} role="status">
+              <strong>Processing failed</strong>
+              <p>{safeDocumentFailureMessage(document.error_message)}</p>
+            </div>
+          ) : status.processingMessage ? (
+            <p className={styles.detailsProcessing} role="status">
+              {status.processingMessage}
+            </p>
+          ) : null}
+        </div>
       </SheetContent>
     </Sheet>
   );
@@ -112,24 +114,26 @@ export function DeleteDocumentDialog({
     <CollectionDialog
       description={description}
       descriptionVariant="body"
+      footer={
+        <CollectionDialogFooter>
+          <CollectionDialogCancel disabled={mutation.isPending} ref={cancelRef}>
+            Cancel
+          </CollectionDialogCancel>
+          <CollectionButton
+            disabled={mutation.isPending}
+            onClick={submit}
+            tone="solid-danger"
+            type="button"
+          >
+            {mutation.isPending ? "Deleting…" : "Delete document"}
+          </CollectionButton>
+        </CollectionDialogFooter>
+      }
       initialFocusRef={cancelRef}
       onClose={mutation.isPending ? () => undefined : onClose}
       role="alertdialog"
       title="Delete document?"
     >
-      <CollectionDialogFooter>
-        <CollectionDialogCancel disabled={mutation.isPending} ref={cancelRef}>
-          Cancel
-        </CollectionDialogCancel>
-        <CollectionButton
-          disabled={mutation.isPending}
-          onClick={submit}
-          tone="solid-danger"
-          type="button"
-        >
-          {mutation.isPending ? "Deleting…" : "Delete document"}
-        </CollectionButton>
-      </CollectionDialogFooter>
       {mutation.error ? (
         <p className={styles.dialogError} role="alert">
           {getDeleteErrorMessage(mutation.error)}
