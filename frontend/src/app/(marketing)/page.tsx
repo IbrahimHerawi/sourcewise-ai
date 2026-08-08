@@ -1,13 +1,13 @@
 "use client";
 
 import * as React from "react";
+import { MotionConfig } from "framer-motion";
 import { Navbar } from "@/features/landing/components/navbar";
 import { Hero } from "@/features/landing/components/hero";
 import { HowItWorks } from "@/features/landing/components/how-it-works";
 import { Features } from "@/features/landing/components/features";
 import { Footer } from "@/features/landing/components/footer";
 import { AuthDialog } from "@/features/landing/components/auth-dialog";
-import { SmoothScroll } from "@/features/landing/components/smooth-scroll";
 
 export default function Home() {
   const [authOpen, setAuthOpen] = React.useState(false);
@@ -19,7 +19,7 @@ export default function Home() {
   }, []);
 
   return (
-    <SmoothScroll>
+    <MotionConfig reducedMotion="user">
       <div className="relative flex min-h-[100svh] flex-col bg-background">
         <Navbar onOpenAuth={openAuth} />
 
@@ -33,6 +33,6 @@ export default function Home() {
 
         <AuthDialog open={authOpen} onOpenChange={setAuthOpen} defaultTab={authTab} />
       </div>
-    </SmoothScroll>
+    </MotionConfig>
   );
 }

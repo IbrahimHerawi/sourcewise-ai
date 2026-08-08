@@ -11,6 +11,8 @@ const originalRefreshToken =
   "original-refresh-token-with-at-least-thirty-two-characters";
 const rotatedRefreshToken =
   "rotated-refresh-token-with-at-least-thirty-two-characters";
+const newestRefreshToken =
+  "newest-refresh-token-with-at-least-thirty-two-characters";
 const refreshSessionStorageKey = "sourcewise_refresh_session";
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -103,15 +105,15 @@ describe("authenticated API client", () => {
 
     expect(result).toEqual({ ok: true });
     expect(fetchMock).toHaveBeenCalledTimes(3);
-    expect(localStorage.length).toBe(0);
-    expect(JSON.parse(String(sessionStorage.getItem(refreshSessionStorageKey)))).toEqual({
+    expect(sessionStorage.length).toBe(0);
+    expect(JSON.parse(String(localStorage.getItem(refreshSessionStorageKey)))).toEqual({
       refreshToken: rotatedRefreshToken,
       refreshTokenExpiresAt: expect.any(Number),
     });
   });
 
-  it("restores an in-memory session from tab storage after a page reload", async () => {
-    sessionStorage.setItem(
+  it("restores an in-memory session from shared storage in a new tab or after a reload", async () => {
+    localStorage.setItem(
       refreshSessionStorageKey,
       JSON.stringify({
         refreshToken: originalRefreshToken,
@@ -154,8 +156,32 @@ describe("authenticated API client", () => {
 
     expect(hasAuthSession()).toBe(true);
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(localStorage.length).toBe(0);
-    expect(JSON.parse(String(sessionStorage.getItem(refreshSessionStorageKey)))).toEqual({
+    expect(sessionStorage.length).toBe(0);
+    expect(JSON.parse(String(localStorage.getItem(refreshSessionStorageKey)))).toEqual({
+      refreshToken: rotatedRefreshToken,
+      refreshTokenExpiresAt: expect.any(Number),
+    });
+  });
+
+  it("migrates an existing tab-scoped session to shared storage", async () => {
+    sessionStorage.setItem(
+      refreshSessionStorageKey,
+      JSON.stringify({
+        refreshToken: originalRefreshToken,
+        refreshTokenExpiresAt: Date.now() + 2_592_000_000,
+      }),
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        jsonResponse(tokenPair("restored-access-token", rotatedRefreshToken)),
+      ),
+    );
+
+    await expect(api.restoreSession()).resolves.toBe(true);
+
+    expect(sessionStorage.getItem(refreshSessionStorageKey)).toBeNull();
+    expect(JSON.parse(String(localStorage.getItem(refreshSessionStorageKey)))).toEqual({
       refreshToken: rotatedRefreshToken,
       refreshTokenExpiresAt: expect.any(Number),
     });
@@ -171,7 +197,7 @@ describe("authenticated API client", () => {
   });
 
   it("clears an expired stored refresh session without sending it", async () => {
-    sessionStorage.setItem(
+    localStorage.setItem(
       refreshSessionStorageKey,
       JSON.stringify({
         refreshToken: originalRefreshToken,
@@ -184,11 +210,11 @@ describe("authenticated API client", () => {
     await expect(api.restoreSession()).resolves.toBe(false);
     expect(fetchMock).not.toHaveBeenCalled();
     expect(hasAuthSession()).toBe(false);
-    expect(sessionStorage.getItem(refreshSessionStorageKey)).toBeNull();
+    expect(localStorage.getItem(refreshSessionStorageKey)).toBeNull();
   });
 
   it("shares one refresh while simultaneous consumers restore a reloaded session", async () => {
-    sessionStorage.setItem(
+    localStorage.setItem(
       refreshSessionStorageKey,
       JSON.stringify({
         refreshToken: originalRefreshToken,
@@ -218,7 +244,7 @@ describe("authenticated API client", () => {
   });
 
   it("clears stored authentication when page-reload restoration fails", async () => {
-    sessionStorage.setItem(
+    localStorage.setItem(
       refreshSessionStorageKey,
       JSON.stringify({
         refreshToken: originalRefreshToken,
@@ -242,7 +268,7 @@ describe("authenticated API client", () => {
 
     await expect(api.restoreSession()).resolves.toBe(false);
     expect(hasAuthSession()).toBe(false);
-    expect(sessionStorage.getItem(refreshSessionStorageKey)).toBeNull();
+    expect(localStorage.getItem(refreshSessionStorageKey)).toBeNull();
   });
 
   it("rotates the refresh token and retries the original request exactly once", async () => {
@@ -324,6 +350,73 @@ describe("authenticated API client", () => {
     ]);
     expect(refreshCalls).toBe(1);
     expect(protectedCalls).toBe(4);
+  });
+
+  it("uses the newest cross-tab refresh token while holding the browser refresh lock", async () => {
+    installSession("access-token-a", 1);
+    localStorage.setItem(
+      refreshSessionStorageKey,
+      JSON.stringify({
+        refreshToken: rotatedRefreshToken,
+        refreshTokenExpiresAt: Date.now() + 2_592_000_000,
+      }),
+    );
+
+    const originalLocksDescriptor = Object.getOwnPropertyDescriptor(
+      navigator,
+      "locks",
+    );
+    const lockRequest = vi.fn(
+      async (
+        _name: string,
+        callback: () => Promise<unknown>,
+      ): Promise<unknown> => callback(),
+    );
+    Object.defineProperty(navigator, "locks", {
+      configurable: true,
+      value: { request: lockRequest },
+    });
+
+    const fetchMock = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = requestUrl(input);
+        if (url.endsWith("/auth/refresh")) {
+          expect(init?.body).toBe(
+            JSON.stringify({ refresh_token: rotatedRefreshToken }),
+          );
+          return jsonResponse(
+            tokenPair("access-token-b", newestRefreshToken),
+          );
+        }
+        if (url.endsWith("/protected")) {
+          expect(bearerToken(init)).toBe("Bearer access-token-b");
+          return jsonResponse({ ok: true });
+        }
+        throw new Error(`Unexpected request: ${url}`);
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    try {
+      await expect(apiRequest("/protected")).resolves.toEqual({ ok: true });
+      expect(lockRequest).toHaveBeenCalledTimes(1);
+      expect(lockRequest).toHaveBeenCalledWith(
+        "sourcewise-auth-refresh",
+        expect.any(Function),
+      );
+      expect(
+        JSON.parse(String(localStorage.getItem(refreshSessionStorageKey))),
+      ).toEqual({
+        refreshToken: newestRefreshToken,
+        refreshTokenExpiresAt: expect.any(Number),
+      });
+    } finally {
+      if (originalLocksDescriptor) {
+        Object.defineProperty(navigator, "locks", originalLocksDescriptor);
+      } else {
+        Reflect.deleteProperty(navigator, "locks");
+      }
+    }
   });
 
   it("does not refresh an unrelated 401 response", async () => {
@@ -496,11 +589,11 @@ describe("authenticated API client", () => {
 
     await expect(api.logout()).rejects.toBeInstanceOf(TypeError);
     expect(hasAuthSession()).toBe(false);
-    expect(sessionStorage.getItem(refreshSessionStorageKey)).toBeNull();
+    expect(localStorage.getItem(refreshSessionStorageKey)).toBeNull();
   });
 
   it("logs out with a stored refresh token even before memory is restored", async () => {
-    sessionStorage.setItem(
+    localStorage.setItem(
       refreshSessionStorageKey,
       JSON.stringify({
         refreshToken: originalRefreshToken,
@@ -522,6 +615,6 @@ describe("authenticated API client", () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(hasAuthSession()).toBe(false);
-    expect(sessionStorage.getItem(refreshSessionStorageKey)).toBeNull();
+    expect(localStorage.getItem(refreshSessionStorageKey)).toBeNull();
   });
 });

@@ -77,7 +77,8 @@ export function ParticleField({ className }: { className?: string }) {
     let dpr = 1;
     let particles: Particle[] = [];
     let rafId = 0;
-    let running = true;
+    let running = false;
+    let inView = true;
     const brandColor = resolveSemanticColor(canvas, "--sw-color-brand-hover");
 
     // Pre-rendered glow sprite: solid brand-blue core with a soft halo.
@@ -261,17 +262,40 @@ export function ParticleField({ className }: { className?: string }) {
       rafId = requestAnimationFrame(draw);
     };
 
+    const updateRunning = () => {
+      const shouldRun = !reduceMotion && inView && !document.hidden;
+      if (shouldRun === running) return;
+
+      running = shouldRun;
+      if (running) {
+        rafId = requestAnimationFrame(draw);
+      } else {
+        cancelAnimationFrame(rafId);
+      }
+    };
+
     setup();
 
     if (reduceMotion) {
-      // Render a single calm frame for reduced-motion users (still floating
-      // particles, just no animation loop).
+      // Render one calm frame without leaving an animation loop behind.
+      running = true;
       draw();
       running = false;
       cancelAnimationFrame(rafId);
     } else {
-      draw();
+      updateRunning();
     }
+
+    const visibilityObserver = new IntersectionObserver(
+      ([entry]) => {
+        inView = entry?.isIntersecting ?? false;
+        updateRunning();
+      },
+      { rootMargin: "160px 0px" },
+    );
+    visibilityObserver.observe(canvas);
+
+    const onVisibilityChange = () => updateRunning();
 
     let resizeTimer: ReturnType<typeof setTimeout>;
     const onResize = () => {
@@ -297,19 +321,24 @@ export function ParticleField({ className }: { className?: string }) {
       mouseRef.current.tx = -9999;
       mouseRef.current.ty = -9999;
     };
+    const onMouseOut = (e: MouseEvent) => {
+      if (!e.relatedTarget) onLeave();
+    };
 
     window.addEventListener("resize", onResize);
     window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseout", (e) => {
-      if (!e.relatedTarget) onLeave();
-    });
+    window.addEventListener("mouseout", onMouseOut);
+    document.addEventListener("visibilitychange", onVisibilityChange);
 
     return () => {
       running = false;
       cancelAnimationFrame(rafId);
       clearTimeout(resizeTimer);
+      visibilityObserver.disconnect();
       window.removeEventListener("resize", onResize);
       window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseout", onMouseOut);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
     };
   }, []);
 

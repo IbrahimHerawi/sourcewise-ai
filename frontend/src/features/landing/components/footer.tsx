@@ -53,9 +53,9 @@ type SocialLink = {
 };
 
 const SOCIALS: SocialLink[] = [
-  { label: "GitHub", href: "https://github.com", icon: GitHubIcon, color: BRAND.github },
-  { label: "LinkedIn", href: "https://linkedin.com", icon: LinkedInIcon, color: BRAND.linkedin },
-  { label: "Email", href: "mailto:hello@sourcewise.app", icon: MailIcon, color: BRAND.email },
+  { label: "GitHub", href: "https://github.com/IbrahimHerawi", icon: GitHubIcon, color: BRAND.github },
+  { label: "LinkedIn", href: "https://www.linkedin.com/in/ibrahim-herawi-63a794312", icon: LinkedInIcon, color: BRAND.linkedin },
+  { label: "Email", href: "https://mail.google.com/mail/?view=cm&fs=1&to=ibrahimherawi46@gmail.com", icon: MailIcon, color: BRAND.email },
 ];
 
 export function Footer() {
@@ -73,6 +73,17 @@ export function Footer() {
           <div>
             <a
               href="#top"
+              onClick={(event) => {
+                const top = document.getElementById("top");
+                if (!top) return;
+                event.preventDefault();
+                top.scrollIntoView({
+                  behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+                    ? "auto"
+                    : "smooth",
+                  block: "start",
+                });
+              }}
               className="inline-flex"
             >
               <BrandLogo
@@ -94,6 +105,7 @@ export function Footer() {
               {SOCIALS.map(({ label, href, icon: Icon, color }) => (
                 <li key={label}>
                   <a
+                    target="_blank"
                     href={href}
                     {...(href.startsWith("mailto:") ? {} : { target: "_blank", rel: "noopener noreferrer" })}
                     className="group inline-flex items-center gap-3 text-base text-foreground transition-colors duration-200"

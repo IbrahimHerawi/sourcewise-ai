@@ -9,7 +9,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { AuthPanel, type AuthTab } from "@/features/auth/components/auth-panel";
-import { startScroll, stopScroll } from "./smooth-scroll";
 
 type AuthDialogProps = {
   open: boolean;
@@ -27,11 +26,9 @@ export function AuthDialog({
 
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    stopScroll();
 
     return () => {
       document.body.style.overflow = previousOverflow;
-      startScroll();
     };
   }, [open]);
 

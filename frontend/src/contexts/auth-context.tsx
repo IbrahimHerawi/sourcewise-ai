@@ -10,6 +10,7 @@ import React, {
 } from "react";
 import { useRouter } from "next/navigation";
 import {
+  AUTH_SESSION_STORAGE_KEY,
   api,
   clearAuthSession,
   clearLegacyAuthStorage,
@@ -46,11 +47,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     clearLegacyAuthStorage();
 
-    return setAuthFailureHandler(() => {
+    const handleAuthFailure = () => {
       setUser(null);
       setIsLoading(false);
       router.replace("/");
-    });
+    };
+    const removeAuthFailureHandler = setAuthFailureHandler(handleAuthFailure);
+    const handleStorage = (event: StorageEvent) => {
+      if (
+        (event.key === AUTH_SESSION_STORAGE_KEY || event.key === null) &&
+        event.newValue === null
+      ) {
+        clearAuthSession();
+        handleAuthFailure();
+      }
+    };
+
+    window.addEventListener("storage", handleStorage);
+    return () => {
+      window.removeEventListener("storage", handleStorage);
+      removeAuthFailureHandler();
+    };
   }, [router]);
 
   useEffect(() => {
