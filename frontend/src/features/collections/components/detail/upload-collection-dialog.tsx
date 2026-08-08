@@ -101,6 +101,23 @@ export function UploadCollectionDialog({
   return (
     <CollectionDialog
       description={`Upload one to ${DOCUMENT_UPLOAD_LIMITS.maxFiles} TXT, Markdown, or PDF documents directly to this collection.`}
+      footer={
+        <CollectionDialogFooter>
+          <CollectionDialogCancel disabled={mutation.isPending} />
+          <CollectionButton
+            disabled={
+              mutation.isPending ||
+              confirmationUnknown ||
+              Boolean(validationError) ||
+              files.length === 0
+            }
+            onClick={submit}
+            type="button"
+          >
+            {mutation.isPending ? "Uploading…" : `Upload ${files.length || ""} ${files.length === 1 ? "document" : "documents"}`.trim()}
+          </CollectionButton>
+        </CollectionDialogFooter>
+      }
       initialFocusRef={chooseFilesRef}
       onClose={mutation.isPending ? () => undefined : onClose}
       title="Upload to collection"
@@ -176,21 +193,6 @@ export function UploadCollectionDialog({
           </p>
         ) : null}
       </div>
-      <CollectionDialogFooter>
-        <CollectionDialogCancel disabled={mutation.isPending} />
-        <CollectionButton
-          disabled={
-            mutation.isPending ||
-            confirmationUnknown ||
-            Boolean(validationError) ||
-            files.length === 0
-          }
-          onClick={submit}
-          type="button"
-        >
-          {mutation.isPending ? "Uploading…" : `Upload ${files.length || ""} ${files.length === 1 ? "document" : "documents"}`.trim()}
-        </CollectionButton>
-      </CollectionDialogFooter>
     </CollectionDialog>
   );
 }

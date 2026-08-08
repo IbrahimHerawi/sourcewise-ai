@@ -19,6 +19,7 @@ type CollectionDialogProps = {
   children: ReactNode;
   description: string;
   descriptionVariant?: "body" | "hidden" | "warning";
+  footer?: ReactNode;
   initialFocusRef: RefObject<HTMLElement | null>;
   onClose: () => void;
   role?: "dialog" | "alertdialog";
@@ -29,6 +30,7 @@ export function CollectionDialog({
   children,
   description,
   descriptionVariant = "hidden",
+  footer,
   initialFocusRef,
   onClose,
   role = "dialog",
@@ -53,18 +55,21 @@ export function CollectionDialog({
             </button>
           </DialogClose>
         </DialogHeader>
-        <DialogDescription
-          className={
-            descriptionVariant === "warning"
-              ? styles.retentionWarning
-              : descriptionVariant === "body"
-                ? styles.descriptionBody
-                : "sr-only"
-          }
-        >
-          {description}
-        </DialogDescription>
-        {children}
+        <div className={styles.scrollRegion}>
+          <DialogDescription
+            className={
+              descriptionVariant === "warning"
+                ? styles.retentionWarning
+                : descriptionVariant === "body"
+                  ? styles.descriptionBody
+                  : "sr-only"
+            }
+          >
+            {description}
+          </DialogDescription>
+          {children}
+        </div>
+        {footer}
       </DialogContent>
     </Dialog>
   );

@@ -38,22 +38,24 @@ export function DeleteCollectionDialog({
     <CollectionDialog
       description="Deleting a collection does not delete its documents or question history. Those records remain and become unassigned."
       descriptionVariant="warning"
+      footer={
+        <CollectionDialogFooter>
+          <CollectionDialogCancel disabled={mutation.isPending} ref={cancelButtonRef} />
+          <CollectionButton
+            disabled={mutation.isPending}
+            onClick={submit}
+            tone="danger"
+            type="button"
+          >
+            {mutation.isPending ? "Deleting…" : "Delete collection"}
+          </CollectionButton>
+        </CollectionDialogFooter>
+      }
       initialFocusRef={cancelButtonRef}
       onClose={onClose}
       role="alertdialog"
       title="Delete collection?"
     >
-      <CollectionDialogFooter>
-        <CollectionDialogCancel disabled={mutation.isPending} ref={cancelButtonRef} />
-        <CollectionButton
-          disabled={mutation.isPending}
-          onClick={submit}
-          tone="danger"
-          type="button"
-        >
-          {mutation.isPending ? "Deleting…" : "Delete collection"}
-        </CollectionButton>
-      </CollectionDialogFooter>
       {mutation.error ? (
         <p className="text-sm text-destructive" role="alert">
           {getApiErrorMessage(
