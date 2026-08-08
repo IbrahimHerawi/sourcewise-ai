@@ -6,12 +6,12 @@ import { Menu, X } from "lucide-react";
 
 import { BrandLogo } from "@/components/brand-logo";
 import { Button } from "@/components/ui/button";
-import { scrollToElement } from "./smooth-scroll";
+import { scrollFromHeaderNavigation } from "./navigation-scroll";
 
 const NAV_LINKS = [
-  { label: "How It Works", href: "#how-it-works" },
-  { label: "Features", href: "#features" },
-  { label: "Contact", href: "#footer" },
+  { label: "How It Works", targetId: "how-it-works" },
+  { label: "Features", targetId: "features" },
+  { label: "Contact", targetId: "footer" },
 ];
 
 const NAVBAR_HEIGHT = 52; // px — kept in sync with the min-height below
@@ -64,20 +64,15 @@ export function Navbar({ onOpenAuth }: { onOpenAuth: (tab: "signin" | "signup") 
     onOpenAuth(tab);
   };
 
-  // Smooth-scroll to the target section (e.g. the footer via "Contact").
-  // Routed through Lenis when available for a fluid glide that matches the
-  // site's smooth-scroll feel.
-  const handleNavClick = (e: React.MouseEvent, href: string) => {
-    const id = href.replace("#", "");
-    const el = document.getElementById(id);
-    if (el) {
-      e.preventDefault();
-      if (window.location.hash !== href) {
-        window.history.pushState(null, "", href);
-      }
-      scrollToElement(el);
-      setMobileOpen(false);
-    }
+  const handleNavClick = (targetId: string) => {
+    const target = document.getElementById(targetId);
+    if (!target) return;
+
+    setMobileOpen(false);
+    scrollFromHeaderNavigation(
+      target,
+      targetId === "top" ? 0 : NAVBAR_HEIGHT,
+    );
   };
 
   return (
@@ -96,9 +91,10 @@ export function Navbar({ onOpenAuth }: { onOpenAuth: (tab: "signin" | "signup") 
           style={{ minHeight: `${NAVBAR_HEIGHT}px` }}
         >
           {/* Left cluster: brand + nav links, close together */}
-          <a
-            href="#top"
-            onClick={(e) => handleNavClick(e, "#top")}
+          <button
+            type="button"
+            onClick={() => handleNavClick("top")}
+            aria-label="Back to top"
             className="group flex shrink-0 items-center"
           >
             <BrandLogo
@@ -106,19 +102,19 @@ export function Navbar({ onOpenAuth }: { onOpenAuth: (tab: "signin" | "signup") 
               priority
               sizes="142px"
             />
-          </a>
+          </button>
 
           {/* Desktop nav — left-aligned, right after the brand */}
           <div className="hidden items-center gap-0.5 md:flex">
             {NAV_LINKS.map((link) => (
-              <a
-                key={link.href}
-                href={link.href}
-                onClick={(e) => handleNavClick(e, link.href)}
+              <button
+                key={link.targetId}
+                type="button"
+                onClick={() => handleNavClick(link.targetId)}
                 className="rounded-md px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
               >
                 {link.label}
-              </a>
+              </button>
             ))}
           </div>
 
@@ -179,14 +175,14 @@ export function Navbar({ onOpenAuth }: { onOpenAuth: (tab: "signin" | "signup") 
             >
               <div className="flex flex-col gap-1">
                 {NAV_LINKS.map((link) => (
-                  <a
-                    key={link.href}
-                    href={link.href}
-                    onClick={(e) => handleNavClick(e, link.href)}
-                    className="rounded-lg px-4 py-3 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  <button
+                    key={link.targetId}
+                    type="button"
+                    onClick={() => handleNavClick(link.targetId)}
+                    className="rounded-lg px-4 py-3 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                   >
                     {link.label}
-                  </a>
+                  </button>
                 ))}
               </div>
               <div className="mt-3 flex flex-col gap-2 border-t border-border pt-3">
