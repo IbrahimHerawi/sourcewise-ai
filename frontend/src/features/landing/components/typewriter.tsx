@@ -30,6 +30,7 @@ export function Typewriter({
   caretColor,
   reserveHeight = false,
   startWhenVisible = false,
+  showCaret = true,
 }: {
   text: string;
   highlight?: string;
@@ -50,6 +51,9 @@ export function Typewriter({
   // When true, the typing animation does NOT start on mount. It waits until
   // the element scrolls into the viewport (IntersectionObserver), then starts.
   startWhenVisible?: boolean;
+  // Descriptive viewport-entry reveals can hide the caret while headline
+  // treatments keep the existing cursor behavior.
+  showCaret?: boolean;
 }) {
   const rootRef = React.useRef<HTMLSpanElement>(null);
   const [inView, setInView] = React.useState(!startWhenVisible);
@@ -161,20 +165,22 @@ export function Typewriter({
       {after}
       {/* Blinking caret. By default it fades out when typing is done; with
           persistentCaret it stays visible and keeps blinking indefinitely. */}
-      <span
-        aria-hidden="true"
-        style={{
-          display: "inline-block",
-          width: "0.04em",
-          marginLeft: "0.06em",
-          height: "0.9em",
-          verticalAlign: "-0.08em",
-          backgroundColor: caretColor || "currentColor",
-          opacity: done && !persistentCaret ? 0 : 1,
-          transition: "opacity 400ms ease",
-          animation: done && !persistentCaret ? "none" : "tw-caret 1s steps(1) infinite",
-        }}
-      />
+      {showCaret && (
+        <span
+          aria-hidden="true"
+          style={{
+            display: "inline-block",
+            width: "0.04em",
+            marginLeft: "0.06em",
+            height: "0.9em",
+            verticalAlign: "-0.08em",
+            backgroundColor: caretColor || "currentColor",
+            opacity: done && !persistentCaret ? 0 : 1,
+            transition: "opacity 400ms ease",
+            animation: done && !persistentCaret ? "none" : "tw-caret 1s steps(1) infinite",
+          }}
+        />
+      )}
     </>
   );
 
