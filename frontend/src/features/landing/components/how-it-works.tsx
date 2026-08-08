@@ -1,5 +1,7 @@
 "use client";
 
+import Image from "next/image";
+
 import { Typewriter } from "./typewriter";
 
 const STEPS = [
@@ -7,49 +9,38 @@ const STEPS = [
     num: "01",
     title: "Upload your documents",
     desc: "Drag & drop PDF, Markdown, or TXT files. SourceWise parses, chunks, and indexes every page in seconds — no setup required.",
+    image: "/images/how-it-works/upload-documents.png",
+    imageAlt: "SourceWise document upload interface with a selected handbook file",
   },
   {
     num: "02",
     title: "Ask any question",
     desc: "Type your question in plain language. Ask across a single file or your entire library — the AI understands context and intent.",
+    image: "/images/how-it-works/ask-question.png",
+    imageAlt: "SourceWise question form asking who the company manager is",
   },
   {
     num: "03",
     title: "Get grounded answers",
     desc: "Receive precise answers drawn only from your documents — with inline citations pointing back to the exact source passage.",
+    image: "/images/how-it-works/get-answer.png",
+    imageAlt: "SourceWise grounded answer with two cited names",
   },
 ];
 
-/**
- * A product-preview placeholder that keeps SourceWise's existing visual
- * language while adopting the reference showcase's media proportions.
- */
-function VisualPlaceholder({ label }: { label: string }) {
+function ProductPreview({ src, alt }: { src: string; alt: string }) {
   return (
     <div
-      className="relative flex aspect-square w-full max-w-[580px] items-center justify-center overflow-hidden border border-border bg-muted"
+      className="relative aspect-square w-full max-w-[580px] overflow-hidden border border-border bg-muted"
       style={{ borderRadius: "clamp(24px, 2.66vw, 36px)" }}
-      aria-label={`${label} preview placeholder`}
     >
-      <div className="absolute inset-0 flex flex-col gap-5 p-8 opacity-[0.55]">
-        <div className="flex items-center gap-2">
-          <span className="size-2.5 rounded-full bg-border" />
-          <span className="size-2.5 rounded-full bg-border" />
-          <span className="size-2.5 rounded-full bg-border" />
-        </div>
-        <div className="mt-2 space-y-3">
-          <div className="h-3 w-2/3 rounded-full bg-border" />
-          <div className="h-3 w-1/2 rounded-full bg-border" />
-        </div>
-        <div className="mt-auto space-y-3">
-          <div className="h-3 w-full rounded-full bg-border" />
-          <div className="h-3 w-5/6 rounded-full bg-border" />
-          <div className="h-3 w-4/6 rounded-full bg-border" />
-        </div>
-      </div>
-      <span className="relative text-xs font-medium tracking-wide text-muted-foreground/70 uppercase">
-        {label}
-      </span>
+      <Image
+        src={src}
+        alt={alt}
+        fill
+        sizes="(min-width: 1352px) 580px, (min-width: 1024px) 43vw, (min-width: 640px) min(580px, calc(100vw - 64px)), calc(100vw - 32px)"
+        className="object-cover"
+      />
     </div>
   );
 }
@@ -145,7 +136,7 @@ function StepPanel({ step }: { step: (typeof STEPS)[number] }) {
       </div>
 
       <div className="flex justify-center lg:justify-end">
-        <VisualPlaceholder label={`${step.title} preview`} />
+        <ProductPreview src={step.image} alt={step.imageAlt} />
       </div>
     </article>
   );
