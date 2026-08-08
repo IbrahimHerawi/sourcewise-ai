@@ -34,15 +34,17 @@ export function AuthDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="border-border bg-card p-0 sm:max-w-md">
+      <DialogContent className="border-border bg-card overflow-hidden p-0 sm:max-w-md">
         <DialogTitle className="sr-only">SourceWise authentication</DialogTitle>
         <DialogDescription className="sr-only">
           Sign in, create an account, or request a password reset.
         </DialogDescription>
-        <AuthPanel
-          defaultTab={defaultTab}
-          onAuthenticated={() => onOpenChange(false)}
-        />
+        <div className="min-h-0 overflow-y-auto overscroll-contain">
+          <AuthPanel
+            defaultTab={defaultTab}
+            onAuthenticated={() => onOpenChange(false)}
+          />
+        </div>
       </DialogContent>
     </Dialog>
   );
