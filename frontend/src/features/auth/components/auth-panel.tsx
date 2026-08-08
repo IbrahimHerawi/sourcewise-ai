@@ -198,7 +198,7 @@ export function AuthPanel({
         description: "Launching your SourceWise workspace…",
       });
       onAuthenticated?.();
-      router.replace("/dashboard/documents");
+      router.replace("/dashboard");
     } catch (error: unknown) {
       console.error("Login error:", error);
       setCanResendVerification(
