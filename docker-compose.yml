@@ -8,10 +8,9 @@ services:
     secrets:
       - postgres_password
     ports:
-      - "5432:5432"  
+      - "5434:5432"  
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./docker/db/init.sql:/docker-entrypoint-initdb.d/01-init-vector.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
       interval: 5s
@@ -21,10 +20,8 @@ services:
 
   migrate:
     build:
-      context: .
+      context: ./backend
       dockerfile: Dockerfile
-    profiles:
-      - tools
     depends_on:
       db:
         condition: service_healthy
@@ -32,11 +29,8 @@ services:
       - path: ./.env
         required: true
     environment:
-      APP_ENV: docker
       POSTGRES_HOST: db
       POSTGRES_PORT: "5432"
-      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
-      OPENAI_API_KEY_FILE: /app-secrets/openai_api_key.txt
     secrets:
       - postgres_password
     volumes:
@@ -55,25 +49,33 @@ services:
       retries: 30
       start_period: 10s
 
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - "8025:8025"
+      - "1025:1025"
+    restart: unless-stopped
+
   api:
     build:
-      context: .
+      context: ./backend
       dockerfile: Dockerfile
     depends_on:
       db:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
       ollama:
         condition: service_healthy
+      mailpit:
+        condition: service_started
     env_file:
       - path: ./.env
         required: true
     environment:
-      APP_ENV: docker
       POSTGRES_HOST: db
       POSTGRES_PORT: "5432"
       OLLAMA_OPENAI_BASE_URL: http://ollama:11434/v1
-      OPENAI_API_KEY_FILE: /app-secrets/openai_api_key.txt
-      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
       UPLOAD_ROOT_DIR: /data/uploads
     secrets:
       - postgres_password
@@ -84,6 +86,27 @@ services:
       - ./secrets:/app-secrets:ro
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=2)\""]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000/api/v1}
+      BACKEND_INTERNAL_URL: ${BACKEND_INTERNAL_URL:-http://api:8000/api/v1}
+      NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-http://localhost:3000}
+    ports:
+      - "3000:3000"
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3000').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))\""]
       interval: 10s
       timeout: 5s
       retries: 10

@@ -1,0 +1,17 @@
+.page {
+  width: 100%;
+  min-width: 0;
+  padding-block-start: var(--spacing-dashboard-page-block-start);
+  padding-inline: max(
+    var(--spacing-dashboard-page-inline),
+    calc((100% - var(--sw-content-dashboard-max-width)) / 2)
+  );
+  font-family: var(--font-dashboard);
+  padding-block-end: var(--sw-spacing-48);
+}
+
+@media (max-width: 48rem) {
+  .page {
+    padding-block-start: var(--sw-spacing-24);
+  }
+}

@@ -21,6 +21,19 @@ dist/
 .coverage
 htmlcov/
 
+# Frontend artifacts
+node_modules/
+.next/
+out/
+.pnpm-store/
+.eslintcache
+coverage/
+*.tsbuildinfo
+
+# Logs
+*.log
+*.log.*
+
 # Environment files
 .env
 .env.*

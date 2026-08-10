@@ -4,4 +4,4 @@ The health check endpoint is available at /api/v1/health.
 Retrieval ranks chunks by cosine distance (smaller distance is better).
 The default retrieval setting uses TOP_K=5 chunks.
 If context is missing, the assistant should reply:
-I don't know based on the uploaded documents.
+I could not find the answer in the uploaded documents.

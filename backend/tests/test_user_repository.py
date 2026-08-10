@@ -1,0 +1,311 @@
+from __future__ import annotations
+
+from datetime import UTC, datetime, timedelta
+from uuid import uuid4
+
+import pytest
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.db.models import RefreshToken
+from app.repositories.user_repository import DuplicateUserEmailError, UserRepository
+
+
+@pytest.mark.asyncio
+async def test_user_repository_creates_gets_and_updates_user(db_session: AsyncSession) -> None:
+    repository = UserRepository(db_session)
+
+    created = await repository.create_user(
+        "user@example.com",
+        "hash-v1",
+        first_name="Source",
+        last_name="Wise",
+    )
+    by_email = await repository.get_user_by_email("user@example.com")
+    by_id = await repository.get_user_by_id(created.id)
+    verified = await repository.mark_email_verified(created.id)
+    updated_password = await repository.update_password(created.id, "hash-v2")
+
+    assert by_email is not None
+    assert by_email.id == created.id
+    assert by_id is not None
+    assert by_id.email == "user@example.com"
+    assert created.first_name == "Source"
+    assert created.last_name == "Wise"
+    assert verified is not None
+    assert verified.is_email_verified is True
+    assert updated_password is not None
+    assert updated_password.password_hash == "hash-v2"
+
+
+@pytest.mark.asyncio
+async def test_user_repository_duplicate_email_raises_clean_error(
+    db_session: AsyncSession,
+) -> None:
+    repository = UserRepository(db_session)
+
+    created = await repository.create_user("duplicate@example.com", "hash-v1")
+
+    with pytest.raises(DuplicateUserEmailError) as exc_info:
+        await repository.create_user("duplicate@example.com", "hash-v2")
+
+    fetched = await repository.get_user_by_email("duplicate@example.com")
+    assert exc_info.value.email == "duplicate@example.com"
+    assert fetched is not None
+    assert fetched.id == created.id
+    assert fetched.password_hash == "hash-v1"
+
+
+@pytest.mark.asyncio
+async def test_user_repository_valid_email_verification_token_lookup(
+    db_session: AsyncSession,
+) -> None:
+    repository = UserRepository(db_session)
+    user = await repository.create_user("verify@example.com", "hash")
+    expires_at = datetime.now(UTC) + timedelta(hours=1)
+
+    token = await repository.create_email_verification_token(
+        user.id,
+        "valid-email-token-hash",
+        expires_at,
+    )
+    valid = await repository.get_valid_email_verification_token("valid-email-token-hash")
+
+    assert valid is not None
+    assert valid.id == token.id
+    assert valid.user.id == user.id
+
+
+@pytest.mark.asyncio
+async def test_user_repository_used_email_verification_token_is_not_valid(
+    db_session: AsyncSession,
+) -> None:
+    repository = UserRepository(db_session)
+    user = await repository.create_user("used-email-token@example.com", "hash")
+    token = await repository.create_email_verification_token(
+        user.id,
+        "used-email-token-hash",
+        datetime.now(UTC) + timedelta(hours=1),
+    )
+
+    used = await repository.mark_email_verification_token_used(token.id)
+    valid_after_use = await repository.get_valid_email_verification_token("used-email-token-hash")
+
+    assert used is not None
+    assert used.used_at is not None
+    assert valid_after_use is None
+
+
+@pytest.mark.asyncio
+async def test_user_repository_expired_email_verification_token_is_not_valid(
+    db_session: AsyncSession,
+) -> None:
+    repository = UserRepository(db_session)
+    user = await repository.create_user("expired-email-token@example.com", "hash")
+
+    await repository.create_email_verification_token(
+        user.id,
+        "expired-email-token-hash",
+        datetime.now(UTC) - timedelta(seconds=1),
+    )
+    valid = await repository.get_valid_email_verification_token("expired-email-token-hash")
+
+    assert valid is None
+
+
+@pytest.mark.asyncio
+async def test_user_repository_consumes_and_invalidates_email_verification_tokens(
+    db_session: AsyncSession,
+) -> None:
+    repository = UserRepository(db_session)
+    user = await repository.create_user("consume-email-token@example.com", "hash")
+    consumed_token = await repository.create_email_verification_token(
+        user.id,
+        "consume-email-token-hash",
+        datetime.now(UTC) + timedelta(hours=1),
+    )
+    invalidated_token = await repository.create_email_verification_token(
+        user.id,
+        "invalidate-email-token-hash",
+        datetime.now(UTC) + timedelta(hours=1),
+    )
+
+    consumed = await repository.consume_valid_email_verification_token(consumed_token.token_hash)
+    consumed_again = await repository.consume_valid_email_verification_token(
+        consumed_token.token_hash
+    )
+    invalidated_count = await repository.invalidate_unused_email_verification_tokens(user.id)
+    await db_session.refresh(invalidated_token)
+
+    assert consumed is not None
+    assert consumed.id == consumed_token.id
+    assert consumed.used_at is not None
+    assert consumed_again is None
+    assert invalidated_count == 1
+    assert invalidated_token.used_at is not None
+
+
+@pytest.mark.asyncio
+async def test_user_repository_password_reset_token_validity_and_invalidation(
+    db_session: AsyncSession,
+) -> None:
+    repository = UserRepository(db_session)
+    user = await repository.create_user("reset@example.com", "hash")
+    valid_token = await repository.create_password_reset_token(
+        user.id,
+        "valid-reset-token-hash",
+        datetime.now(UTC) + timedelta(hours=1),
+    )
+    expired_token = await repository.create_password_reset_token(
+        user.id,
+        "expired-reset-token-hash",
+        datetime.now(UTC) - timedelta(seconds=1),
+    )
+
+    valid = await repository.get_valid_password_reset_token("valid-reset-token-hash")
+    expired = await repository.get_valid_password_reset_token("expired-reset-token-hash")
+    used = await repository.mark_password_reset_token_used(valid_token.id)
+    valid_after_use = await repository.get_valid_password_reset_token("valid-reset-token-hash")
+    invalidated_count = await repository.invalidate_unused_password_reset_tokens(user.id)
+    expired_after_invalidation = await repository.get_valid_password_reset_token(
+        expired_token.token_hash
+    )
+
+    assert valid is not None
+    assert valid.id == valid_token.id
+    assert valid.user.id == user.id
+    assert expired is None
+    assert used is not None
+    assert used.used_at is not None
+    assert valid_after_use is None
+    assert invalidated_count == 1
+    assert expired_after_invalidation is None
+
+
+@pytest.mark.asyncio
+async def test_user_repository_atomically_consumes_password_reset_token(
+    db_session: AsyncSession,
+) -> None:
+    repository = UserRepository(db_session)
+    user = await repository.create_user("consume-reset@example.com", "hash")
+    token = await repository.create_password_reset_token(
+        user.id,
+        "consume-reset-token-hash",
+        datetime.now(UTC) + timedelta(hours=1),
+    )
+
+    consumed = await repository.consume_valid_password_reset_token(token.token_hash)
+    consumed_again = await repository.consume_valid_password_reset_token(token.token_hash)
+
+    assert consumed is not None
+    assert consumed.id == token.id
+    assert consumed.used_at is not None
+    assert consumed_again is None
+
+
+@pytest.mark.asyncio
+async def test_user_repository_creates_locks_and_links_refresh_replacement(
+    db_session: AsyncSession,
+) -> None:
+    repository = UserRepository(db_session)
+    user = await repository.create_user("refresh-repository@example.com", "hash")
+    family_id = uuid4()
+    expires_at = datetime.now(UTC) + timedelta(days=30)
+    original = await repository.create_refresh_token(
+        user.id,
+        family_id,
+        "original-refresh-hash",
+        expires_at,
+    )
+
+    locked = await repository.get_refresh_token_for_update("original-refresh-hash")
+    replacement = await repository.create_refresh_token(
+        user.id,
+        family_id,
+        "replacement-refresh-hash",
+        expires_at,
+    )
+    consumed = await repository.mark_refresh_token_used(original.id, replacement.id)
+    consumed_again = await repository.mark_refresh_token_used(original.id, replacement.id)
+
+    assert locked is not None
+    assert locked.id == original.id
+    assert locked.user.id == user.id
+    assert consumed is not None
+    assert consumed.used_at is not None
+    assert consumed.replaced_by_id == replacement.id
+    assert consumed_again is None
+
+
+@pytest.mark.asyncio
+async def test_user_repository_refresh_revocation_is_scoped_by_family_and_user(
+    db_session: AsyncSession,
+) -> None:
+    repository = UserRepository(db_session)
+    first_user = await repository.create_user("refresh-family-a@example.com", "hash")
+    second_user = await repository.create_user("refresh-family-b@example.com", "hash")
+    first_family = uuid4()
+    second_family = uuid4()
+    other_user_family = uuid4()
+    expires_at = datetime.now(UTC) + timedelta(days=30)
+    first_token = await repository.create_refresh_token(
+        first_user.id, first_family, "first-family-hash", expires_at
+    )
+    second_token = await repository.create_refresh_token(
+        first_user.id, second_family, "second-family-hash", expires_at
+    )
+    other_user_token = await repository.create_refresh_token(
+        second_user.id, other_user_family, "other-user-family-hash", expires_at
+    )
+
+    assert await repository.revoke_refresh_token_family(first_family) == 1
+    await db_session.refresh(first_token)
+    await db_session.refresh(second_token)
+    await db_session.refresh(other_user_token)
+    assert first_token.revoked_at is not None
+    assert second_token.revoked_at is None
+    assert other_user_token.revoked_at is None
+
+    assert await repository.revoke_all_refresh_tokens_for_user(first_user.id) == 1
+    await db_session.refresh(second_token)
+    await db_session.refresh(other_user_token)
+    assert second_token.revoked_at is not None
+    assert other_user_token.revoked_at is None
+
+
+@pytest.mark.asyncio
+async def test_user_repository_refresh_cleanup_deletes_only_expired_rows(
+    db_session: AsyncSession,
+) -> None:
+    repository = UserRepository(db_session)
+    user = await repository.create_user("refresh-cleanup@example.com", "hash")
+    family_id = uuid4()
+    expired = await repository.create_refresh_token(
+        user.id,
+        family_id,
+        "expired-refresh-hash",
+        datetime.now(UTC) - timedelta(seconds=1),
+    )
+    unexpired_used = await repository.create_refresh_token(
+        user.id,
+        family_id,
+        "unexpired-used-refresh-hash",
+        datetime.now(UTC) + timedelta(days=1),
+    )
+    replacement = await repository.create_refresh_token(
+        user.id,
+        family_id,
+        "unexpired-replacement-hash",
+        datetime.now(UTC) + timedelta(days=1),
+    )
+    await repository.mark_refresh_token_used(unexpired_used.id, replacement.id)
+
+    deleted = await repository.delete_expired_refresh_tokens_for_user(user.id)
+    remaining_count = await db_session.scalar(
+        select(func.count()).select_from(RefreshToken).where(RefreshToken.user_id == user.id)
+    )
+
+    assert deleted == 1
+    assert await db_session.get(RefreshToken, expired.id) is None
+    assert remaining_count == 2
+    assert await repository.get_refresh_token_for_update(unexpired_used.token_hash) is not None

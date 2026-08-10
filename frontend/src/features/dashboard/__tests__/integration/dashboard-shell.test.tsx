@@ -1,0 +1,58 @@
+import { render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
+import { DashboardShell } from "@/features/dashboard/components/dashboard-shell";
+
+vi.mock("next/font/google", () => ({
+  Inter: () => ({ variable: "font-inter" }),
+}));
+
+vi.mock("next/navigation", () => ({
+  usePathname: () => "/dashboard/collections",
+  useSearchParams: () => new URLSearchParams(),
+}));
+
+vi.mock("@/features/dashboard/components/dashboard-sidebar", () => ({
+  DashboardSidebar: () => <aside aria-label="Dashboard sidebar" />,
+}));
+
+vi.mock("@/features/dashboard/components/dashboard-mobile-navigation", () => ({
+  DashboardMobileNavigation: () => (
+    <header aria-label="Mobile header">SourceWise</header>
+  ),
+}));
+
+describe("DashboardShell", () => {
+  it("keeps one sidebar beside the shared main content region", () => {
+    render(
+      <DashboardShell>
+        <div>Dashboard content</div>
+      </DashboardShell>,
+    );
+
+    const shell = screen.getByText("Dashboard content").closest(
+      '[data-slot="dashboard-shell"]',
+    );
+    const sidebar = screen.getByRole("complementary", {
+      name: "Dashboard sidebar",
+    });
+    const content = screen.getByRole("main", { name: "Dashboard content" });
+
+    expect(shell).toContainElement(sidebar);
+    expect(shell).toContainElement(content);
+    expect(content).toHaveAttribute("data-slot", "dashboard-content");
+    expect(content).toHaveAttribute("id", "dashboard-main-content");
+    expect(content).toHaveAttribute("tabindex", "0");
+    expect(content).toHaveTextContent("Dashboard content");
+    expect(screen.getByText("Collections").closest("header")).toHaveAttribute(
+      "data-slot",
+      "dashboard-header",
+    );
+    expect(screen.getByRole("banner", { name: "Mobile header" })).toHaveTextContent(
+      "SourceWise",
+    );
+    expect(screen.getByRole("link", { name: "Skip to main content" })).toHaveAttribute(
+      "href",
+      "#dashboard-main-content",
+    );
+  });
+});

@@ -1,0 +1,101 @@
+.citationList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sw-spacing-8);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.citationItem {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--sw-spacing-8) var(--sw-spacing-12);
+  border: 1px solid var(--sw-color-border-default);
+  border-radius: var(--sw-radius-medium);
+  padding: var(--sw-spacing-12);
+}
+
+.citationBody {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--sw-spacing-8);
+}
+
+.citationRank {
+  display: inline-flex;
+  width: 1.5rem;
+  height: 1.5rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--sw-radius-large);
+  background: var(--sw-color-background-selected);
+  color: var(--sw-color-brand-default);
+  font-size: var(--sw-type-size-caption);
+  font-weight: 700;
+}
+
+.citationHeader {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sw-spacing-8);
+}
+
+.citationHeader svg {
+  width: 1rem;
+  height: 1rem;
+  flex: none;
+  color: var(--sw-color-brand-default);
+}
+
+.citationHeader strong {
+  min-width: 0;
+  overflow: hidden;
+  flex: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.citationMetadata {
+  display: inline-flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--sw-spacing-4);
+}
+
+.citationHeader .citationMetadata,
+.noCitations {
+  color: var(--sw-color-text-secondary);
+  font-size: var(--sw-type-size-metadata);
+}
+
+.citationItem blockquote {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--sw-color-text-primary);
+  font-size: var(--sw-type-size-metadata);
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+.noCitations {
+  margin: 0;
+}
+
+@media (max-width: 40rem) {
+  .citationHeader strong {
+    flex-basis: calc(100% - 1.5rem);
+  }
+
+  .citationMetadata {
+    width: 100%;
+    justify-content: flex-start;
+    padding-inline-start: calc(1rem + var(--sw-spacing-8));
+  }
+}
