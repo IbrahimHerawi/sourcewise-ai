@@ -1,289 +1,379 @@
-# Sourcewise API
+# SourceWise backend
 
-## 1. Overview
-This service accepts document uploads, extracts text, chunks it, and stores embeddings for vector retrieval.  
-Questions are answered with a retrieval-augmented generation (RAG) flow that first performs embeddings/vector-search and then calls a chat model with the retrieved context.  
-Ingestion runs asynchronously, and each question/answer is persisted with source chunks so question history can be queried later.
+The SourceWise backend is an asynchronous FastAPI service responsible for authentication,
+document ingestion, vector retrieval, grounded answer generation, and persistent question history.
+It exposes a versioned JSON API under `/api/v1` and stores application state in PostgreSQL with
+pgvector.
 
-## 2. Tech Stack
-- FastAPI (Python 3.13)
-- PostgreSQL + pgvector for embedding storage and similarity search
-- Pydantic + pydantic-settings for configuration
-- `uv` for dependency management and execution
-- Ollama for local embedding model (`nomic-embed-text`)
-- Chat generation via OpenAI Python client with provider switching (`AI_PROVIDER`)
+[← Project overview](../README.md) · [Frontend guide](../frontend/README.md) ·
+[Swagger UI](http://localhost:8000/docs)
 
-## 3. Project Layout
-The backend uses a `backend/src/app` package layout with layered architecture.
+## Responsibilities
 
-- `api/`: FastAPI routers and request/response schemas
-- `services/`: application logic (RAG orchestration, embeddings, chat calls)
-- `repositories/`: database data-access logic
-- `workers/`: in-process async ingestion workers
-- `utils/`: file extraction and chunking helpers
-- `db/`: SQLAlchemy models and session wiring
+- Register, verify, authenticate, and recover user accounts.
+- Issue short-lived JWT access tokens and rotate opaque refresh-token families.
+- Validate and persist all-or-nothing document upload batches.
+- Extract text from `.txt`, `.md`, and text-based `.pdf` files.
+- Process durable ingestion jobs with bounded asynchronous workers.
+- Generate Ollama embeddings and store fixed-dimension vectors in pgvector.
+- Retrieve owner-scoped evidence and generate citation-grounded answers.
+- Organize documents and questions with optional user-owned collections.
+- Deliver local email through SMTP/Mailpit and production email through Resend.
 
-This structure is intentional for maintainability and separation of concerns.
+## Architecture
 
-## 4. Supported File Types
-- Supported extensions: `.txt`, `.md`, `.pdf`
-- PDF extraction is text-only (no OCR), implemented via `pypdf`
-- Upload size limit is controlled by `MAX_UPLOAD_MB` (default: `10`)
-- In Docker, files are stored under `/data/uploads/<document_id>/<filename>` (mounted from `./data`)
+The service uses a layered `src` layout:
 
-## 5. RAG Retrieval Details
-- Similarity metric: cosine distance (not L2)
-- PostgreSQL/pgvector implementation:
-  - cosine operator class: `vector_cosine_ops`
-  - retrieval ordering by ascending cosine distance
-- Retrieval uses a hybrid two-stage ranking flow:
-  - pgvector first selects a wider semantic candidate pool while applying the configured cosine-distance cutoff
-  - the application reranks those candidates using semantic distance, exact normalized question matches, and query-term coverage
-  - a deterministic evidence gate accepts an exact question match, a strong semantic match (`RETRIEVAL_SEMANTIC_ACCEPT_DISTANCE`, default `0.35`), or a combined lexical/semantic match (`RETRIEVAL_LEXICAL_ACCEPT_DISTANCE`, default `0.55`, plus `RETRIEVAL_MIN_QUERY_TERM_COVERAGE`, default `0.60`)
-  - when no candidate passes the evidence gate, no context is sent to the chat model and the deterministic unknown-answer fallback is used
-  - only the configured `TOP_K` chunks are passed to answer generation
-- Chunking strategy: deterministic character-based chunking with overlap
-- Chunking parameters are configurable:
-  - `CHUNK_SIZE_CHARS` (default: `2000`)
-  - `CHUNK_OVERLAP_CHARS` (default: `100`)
-
-## 6. Answering Behavior
-The chat model receives numbered retrieved context and must return a schema-constrained list of
-single-fact claims with an explicit context rank for each claim. The service validates the schema and
-rank range, renders the citations deterministically, and persists only the cited chunk snapshots.
-This avoids treating a correct answer as missing merely because a small local model omitted free-form
-bracket syntax. If retrieved content is insufficient or the structured result has no valid grounded
-claims, the response is the strict unknown-answer fallback:
-`I could not find the answer in the uploaded documents.`
-
-## 7. AI Provider Switching
-`AI_PROVIDER` controls which chat backend is used.
-
-- `AI_PROVIDER=openai`
-  - Uses the external OpenAI API (requires `OPENAI_API_KEY`)
-  - Uses `OPENAI_CHAT_MODEL`
-- `AI_PROVIDER=ollama`
-  - Uses your local Ollama model set in `OLLAMA_CHAT_MODEL` (default `llama3.2:1b`)
-  - Requires a running local Ollama service (`OLLAMA_OPENAI_BASE_URL`)
-
-Embeddings are served by Ollama (`OLLAMA_EMBED_MODEL`, default `nomic-embed-text`) for both provider modes. Document chunks use ordered, sequential requests to Ollama's native `/api/embed` endpoint, with up to `OLLAMA_EMBED_BATCH_SIZE` inputs per request (default: `32`). `EMBED_CONCURRENCY` limits concurrent embedding HTTP requests process-wide across ingestion workers and queries, and `OLLAMA_EMBED_READ_TIMEOUT_S` defaults to `120` seconds. Ollama receives `truncate=false`, so oversized inputs fail instead of being silently truncated.
-
-## 8. Email Verification Delivery
-Registration and verification-email resends store only hashed verification tokens and send verification emails. Clients consume the raw one-time token through `POST /api/v1/auth/verify-email` and can request a replacement through `POST /api/v1/auth/resend-verification`.
-
-`APP_ENV` selects the email provider:
-
-- `APP_ENV=test` or `APP_ENV=testing`: email sending is disabled for tests.
-- `APP_ENV=local` or `APP_ENV=docker`: email is sent through SMTP to Mailpit.
-- `APP_ENV=staging` or `APP_ENV=production`: email is sent through Resend.
-
-Local Docker development uses Mailpit:
-
-- SMTP host: `mailpit`
-- SMTP port: `1025`
-- SMTP TLS: `false`
-- Mailpit UI: `http://localhost:8025`
-- These values should come from the root `.env` file used by Docker Compose.
-
-Staging and production use Resend:
-
-- Required sender domain: `notifications.ibrahimherawi.com`
-- Required sender: `Sourcewise <no-reply@notifications.ibrahimherawi.com>`
-- Required secret file in containers: `/app-secrets/resend_api_key.txt`
-- Production frontend URL: `https://sourcewise.ibrahimherawi.com`
-- Do not put the Resend API key value in `.env`; put it in `secrets/resend_api_key.txt`.
-
-Local Docker Mailpit `.env` values:
-
-```bash
-APP_ENV=docker
-FRONTEND_BASE_URL=http://localhost:3000
-EMAIL_FROM=Sourcewise <no-reply@notifications.ibrahimherawi.com>
-SMTP_HOST=mailpit
-SMTP_PORT=1025
-SMTP_USE_TLS=false
-RESEND_API_KEY_FILE=/app-secrets/resend_api_key.txt
+```text
+backend/
+├── alembic/                  Database migration environment and revisions
+├── src/app/
+│   ├── api/                  FastAPI routers, dependencies, and schemas
+│   ├── core/                 Settings, security, logging, middleware, and errors
+│   ├── db/                   Async engine, session wiring, and ORM models
+│   ├── repositories/         Owner-scoped persistence and query operations
+│   ├── services/             Embeddings, email, LLM, and question orchestration
+│   ├── utils/                File extraction and deterministic chunking
+│   ├── workers/              Durable in-process ingestion workers
+│   └── main.py               Application construction and lifecycle
+├── tests/                    Unit, API, migration, repository, and smoke tests
+├── alembic.ini
+├── pyproject.toml
+└── uv.lock
 ```
 
-Production container environments should use:
+The boundaries are intentional:
+
+| Layer | Owns | Does not own |
+| --- | --- | --- |
+| API | HTTP contracts, authentication dependencies, status codes | SQL queries or provider logic |
+| Services | Application workflows and external AI/email calls | HTTP response construction |
+| Repositories | SQLAlchemy reads, writes, locks, and ownership filters | Request validation |
+| Workers | Ingestion scheduling, recovery, and state transitions | API presentation |
+| Core | Cross-cutting configuration, security, logging, errors | Feature-specific workflows |
+
+## Core flows
+
+### Document ingestion
+
+1. `POST /api/v1/documents/upload` authenticates a verified user and validates the complete upload
+   batch.
+2. Files are staged under `UPLOAD_ROOT_DIR/<document_id>/` before their document and ingestion-job
+   rows are committed.
+3. The endpoint returns `202 Accepted` with documents in `PENDING` state and enqueues their jobs.
+4. A worker moves each document and job to `PROCESSING`, extracts text, creates deterministic
+   overlapping chunks, and requests ordered Ollama embedding batches.
+5. Chunks and vectors are committed atomically before the document becomes `READY` and the job
+   becomes `DONE`.
+6. Processing failures are recorded on both records. Interrupted `PROCESSING` work is returned to
+   `PENDING` and recovered when the API starts again.
+
+Supported input is deliberately narrow:
+
+- `.txt` and `.md` are decoded text documents.
+- `.pdf` requires an extractable text layer; OCR is not included.
+- `MAX_UPLOAD_MB` limits each file, and an invalid member rejects the entire upload batch.
+
+### Retrieval and answering
+
+1. The question is embedded with Ollama and scoped to the authenticated user and optional
+   `collection_id`.
+2. pgvector selects a wider candidate set using cosine distance and `vector_cosine_ops`.
+3. Candidates are reranked using semantic distance, exact normalized matches, and query-term
+   coverage.
+4. An evidence gate rejects weak context before an LLM is called. Rejected retrieval produces the
+   deterministic response `I could not find the answer in the uploaded documents.`
+5. Accepted chunks are packed into a bounded context. The chat provider returns structured claims
+   with citation ranks.
+6. The service validates those ranks, renders the answer, and atomically persists the answer and
+   immutable citation snapshots.
+
+Chat generation is selected with `AI_PROVIDER=ollama` or `AI_PROVIDER=openai`. Embeddings always use
+Ollama's native `/api/embed` endpoint so retrieval remains provider-independent.
+
+### Authentication
+
+- Registration stores password hashes and hashed one-time verification tokens.
+- Verified, active users receive a short-lived JWT access token and an opaque refresh token.
+- Refresh tokens rotate on every successful exchange. Reuse of a consumed token revokes its token
+  family.
+- Logout revokes the submitted refresh-token family without revealing whether the token existed.
+- Password reset invalidates all refresh-token families for the affected user.
+- Token-bearing responses use no-store cache headers, and request logs redact sensitive fields.
+
+For local and Docker environments, verification and password-reset messages go to SMTP/Mailpit. In
+staging and production, they go through Resend.
+
+## API surface
+
+All paths below are relative to `/api/v1`. Except for health and the account-entry endpoints,
+resource operations require `Authorization: Bearer <access_token>` from a verified user.
+
+| Area | Method and path | Purpose |
+| --- | --- | --- |
+| Health | `GET /health` | Liveness response |
+| Authentication | `POST /auth/register` | Create an unverified account |
+| Authentication | `POST /auth/verify-email` | Consume a verification token |
+| Authentication | `POST /auth/resend-verification` | Replace and resend a verification token |
+| Authentication | `POST /auth/login` | Issue an access/refresh token pair |
+| Authentication | `POST /auth/refresh` | Rotate a refresh token and issue a new pair |
+| Authentication | `POST /auth/logout` | Revoke a refresh-token family |
+| Authentication | `GET /auth/me` | Return the authenticated user |
+| Authentication | `POST /auth/forgot-password` | Request a password-reset message |
+| Authentication | `POST /auth/reset-password` | Consume a reset token and change the password |
+| Overview | `GET /auth/overview` | Return owner-scoped resource totals |
+| Collections | `POST /collections` | Create a collection |
+| Collections | `GET /collections` | List collections with pagination |
+| Collections | `GET /collections/{id}` | Return one collection |
+| Collections | `PATCH /collections/{id}` | Update a collection |
+| Collections | `DELETE /collections/{id}` | Delete a collection without deleting its content |
+| Documents | `POST /documents/upload` | Upload one or more documents |
+| Documents | `GET /documents` | List documents, optionally by collection |
+| Documents | `GET /documents/{id}` | Return document details and processing state |
+| Documents | `DELETE /documents/{id}` | Delete a document and its stored file |
+| Questions | `POST /questions/ask` | Generate and persist an answer |
+| Questions | `GET /questions/history` | List question history, optionally by collection |
+| Questions | `GET /questions/history/{id}` | Return an answer and citation snapshots |
+| Questions | `DELETE /questions/history/{id}` | Delete one history entry |
+
+Pagination uses `limit` and `offset`; list limits are constrained to `1..100`. Swagger UI at
+`/docs` is the authoritative interactive description of request and response schemas.
+
+### Example requests
+
+Check health:
 
 ```bash
-APP_ENV=production
-RESEND_API_KEY_FILE=/app-secrets/resend_api_key.txt
-FRONTEND_BASE_URL=https://sourcewise.ibrahimherawi.com
-EMAIL_FROM=Sourcewise <no-reply@notifications.ibrahimherawi.com>
+curl http://localhost:8000/api/v1/health
 ```
 
-Do not use `APP_ENV=docker` for a publicly deployed container. That value is only for local Docker Compose development.
-
-## 9. Authentication and Refresh Tokens
-
-Verified, active users sign in with `POST /api/v1/auth/login`. A successful response contains a
-short-lived JWT access token and a longer-lived opaque refresh token. Access-token lifetime is
-configured with `ACCESS_TOKEN_EXPIRE_MINUTES` (default `30`); the refresh-token family lifetime is
-configured with `REFRESH_TOKEN_EXPIRE_DAYS` (default `30`) and must be strictly longer.
+Sign in and copy the returned `access_token`:
 
 ```bash
-curl -X POST "http://localhost:8000/api/v1/auth/login" \
+curl -X POST http://localhost:8000/api/v1/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"email":"verified@example.com","password":"<PASSWORD>"}'
+  -d '{"email":"verified@example.com","password":"your-password"}'
 ```
 
-Exchange the returned refresh token exactly once. Each successful exchange returns a new access
-token and refresh token while retaining the login family's original absolute expiration:
+Ask across every ready document owned by the user:
 
 ```bash
-curl -X POST "http://localhost:8000/api/v1/auth/refresh" \
+curl -X POST http://localhost:8000/api/v1/questions/ask \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"refresh_token":"<REFRESH_TOKEN>"}'
+  -d '{"question":"What are the main conclusions?","collection_id":null}'
 ```
 
-Logout revokes only the family identified by the supplied refresh token and intentionally returns
-the same `204` response whether that token exists or has already been revoked:
-
-```bash
-curl -X POST "http://localhost:8000/api/v1/auth/logout" \
-  -H "Content-Type: application/json" \
-  -d '{"refresh_token":"<REFRESH_TOKEN>"}'
-```
-
-Store access tokens only in short-lived application memory. Treat refresh tokens as credentials:
-use platform-protected secure storage (or a backend-managed `Secure`, `HttpOnly`, `SameSite`
-cookie in a browser architecture), never put them in URLs, logs, analytics, or ordinary local
-storage, and replace the stored value immediately after every successful refresh. The database
-stores only HMAC hashes. Reusing a consumed token is treated as replay and revokes its complete
-family. Password reset revokes every refresh-token family for that user; existing JWT access tokens
-remain usable only until their normal short expiration.
-
-### Authenticated user overview
-
-`GET /api/v1/auth/overview` returns current resource totals for the verified, active user represented
-by the access token. Supply `Authorization: Bearer <access_token>`; opaque refresh tokens cannot be
-used as bearer credentials.
-
-```bash
-curl "http://localhost:8000/api/v1/auth/overview" \
-  -H "Authorization: Bearer <access_token>"
-```
-
-Example response:
+Errors have one stable envelope:
 
 ```json
 {
-  "total_documents": 12,
-  "total_questions": 31,
-  "total_collections": 4
+  "error": {
+    "code": "validation_error",
+    "message": "Request validation failed.",
+    "details": {
+      "errors": []
+    }
+  }
 }
 ```
 
-All three values are scoped to the authenticated user. `total_documents` counts every current
-document row, including collected and uncollected documents in `PENDING`, `PROCESSING`, `READY`,
-and `FAILED` status. `total_questions` counts current grounded and deterministic-fallback history
-records, whether collected or uncollected; deleting a source document does not delete retained
-question history. `total_collections` counts current collection rows. Deleting a collection reduces
-only the collection total because its documents and questions become uncollected, while deleting a
-document reduces only the document total. Deleted rows are not counted.
+## Running the backend
 
-## 10. Running with Docker
-Docker Compose remains at the repository root.
+### Complete Docker stack
 
-1. Copy environment template:
-   ```bash
-   cp backend/.env.example .env
-   ```
-   The `.env` file should contain configuration and secret-file paths only. Keep actual secret values in files under `secrets/`.
-2. Create secret files:
-   - `secrets/postgres_password.txt`  The file must contain a non-empty value; empty files will fail startup.
-   - `secrets/secret_key.txt`  Required for Docker/non-local runs; use a high-entropy value of at least 32 characters.
-   - `secrets/openai_api_key.txt`   is optional and only needed when `AI_PROVIDER=openai`.
-   - `secrets/resend_api_key.txt` is required only when `APP_ENV=staging` or `APP_ENV=production`, and is mounted as `/app-secrets/resend_api_key.txt`.
-3. Run services in this order:
-   ```bash
-   docker compose up -d --build db ollama
-   docker compose run --rm migrate
-   docker compose up -d api
-   ```
-4. Pull Ollama models (usually once per machine, after `ollama` is running):
-   ```bash
-   docker compose exec ollama ollama pull nomic-embed-text
-   docker compose exec ollama ollama pull llama3.2:1b
-   ```
+Use the [root quick start](../README.md#quick-start) for the supported full application. Compose
+builds this backend image for both `api` and `migrate`:
 
-Service URLs:
-- API: `http://localhost:8000`
-- Swagger UI: `http://localhost:8000/docs`
-- Mailpit UI: `http://localhost:8025`
+- `migrate` waits for a healthy database, runs `uv run alembic upgrade head`, and exits.
+- `api` starts only after that migration container exits successfully.
+- Uploaded files are bind-mounted from root `data/`; PostgreSQL data lives in a named volume.
 
-## 11. API Usage Examples
-Set base URL:
+### Native development
+
+Native development requires:
+
+- Python 3.13 and [`uv`](https://docs.astral.sh/uv/)
+- PostgreSQL with the pgvector extension available
+- Ollama reachable from the host
+- An SMTP service if you need to inspect account emails
+
+Install dependencies:
 
 ```bash
-API_BASE=http://localhost:8000/api/v1
-ACCESS_TOKEN=<VERIFIED_USER_ACCESS_TOKEN>
-REFRESH_TOKEN=<OPAQUE_REFRESH_TOKEN>
-COLLECTION_ID=<COLLECTION_UUID_OPTIONAL>
+cd backend
+uv sync --dev
 ```
 
-Upload document:
+Copy the combined root template into the backend working directory:
 
 ```bash
-curl -X POST "$API_BASE/documents/upload" \
-  -H "Authorization: Bearer $ACCESS_TOKEN" \
-  -F "files=@./backend/tests/assets/sample.pdf" \
-  -F "files=@./demo/sample.txt" \
-  -F "collection_id=$COLLECTION_ID"
+cp ../.env.example .env
 ```
 
-List documents:
+On PowerShell:
+
+```powershell
+Copy-Item ../.env.example .env
+```
+
+The root template targets Docker, so replace at least these container paths and service names in
+`backend/.env` for host-native development:
+
+```dotenv
+APP_ENV=local
+LOG_LEVEL=INFO
+
+SECRET_KEY_FILE=
+
+POSTGRES_HOST=localhost
+POSTGRES_PORT=5432
+POSTGRES_USER=postgres
+POSTGRES_DB=app_db
+POSTGRES_PASSWORD=replace-with-your-local-password
+POSTGRES_PASSWORD_FILE=
+
+AI_PROVIDER=ollama
+OLLAMA_OPENAI_BASE_URL=http://localhost:11434/v1
+OLLAMA_CHAT_MODEL=llama3.2:1b
+OLLAMA_EMBED_MODEL=nomic-embed-text
+
+SMTP_HOST=localhost
+SMTP_PORT=1025
+UPLOAD_ROOT_DIR=./data/uploads
+```
+
+Pull the configured Ollama models, apply migrations, and start the API:
 
 ```bash
-curl "$API_BASE/documents?limit=20&offset=0"
+ollama pull nomic-embed-text
+ollama pull llama3.2:1b
+uv run alembic upgrade head
+uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-Ask a question:
+Local mode provides a development-only default signing key when neither `SECRET_KEY` nor
+`SECRET_KEY_FILE` is set. Never use that default outside `local`, `test`, or `testing`.
+
+## Configuration
+
+The combined [root `.env.example`](../.env.example) is the source of truth for Docker, backend, and
+frontend configuration. Backend settings are case-insensitive and can be supplied through process
+environment variables or the `backend/.env` file used during native development. Secret-file
+settings take precedence over matching inline secret values.
+
+### Runtime and security
+
+| Setting | Default | Purpose |
+| --- | --- | --- |
+| `APP_ENV` | `local` in code | Selects local/test SMTP behavior or staging/production Resend behavior |
+| `LOG_LEVEL` | `INFO` | Application and request log level |
+| `SECRET_KEY` / `SECRET_KEY_FILE` | Local-only fallback | JWT signing and token hashing secret |
+| `JWT_ALGORITHM` | `HS256` | JWT signing algorithm |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | `30` | Access-token lifetime |
+| `REFRESH_TOKEN_EXPIRE_DAYS` | `30` | Absolute refresh-family lifetime |
+| `EMAIL_VERIFICATION_TOKEN_EXPIRE_MINUTES` | `1440` | Verification-token lifetime |
+| `PASSWORD_RESET_TOKEN_EXPIRE_MINUTES` | `60` | Password-reset-token lifetime |
+| `APP_BASE_URL` | `http://localhost:8000` | Public API origin used by the application |
+| `FRONTEND_BASE_URL` | `http://localhost:3000` | Origin used to build verification/reset links |
+
+Non-local signing secrets must contain at least 32 characters. The refresh lifetime must be longer
+than the access-token lifetime.
+
+### Database, files, and ingestion
+
+| Setting | Default | Purpose |
+| --- | --- | --- |
+| `POSTGRES_HOST`, `POSTGRES_PORT` | `localhost`, `5432` | PostgreSQL address |
+| `POSTGRES_USER`, `POSTGRES_DB` | `postgres`, `app_db` | Database identity |
+| `POSTGRES_PASSWORD` / `POSTGRES_PASSWORD_FILE` | Required | Database credential |
+| `UPLOAD_ROOT_DIR` | `/data/uploads` | Durable uploaded-file root |
+| `MAX_UPLOAD_MB` | `10` | Per-file upload limit |
+| `INGEST_WORKERS` | `2` | Concurrent ingestion workers |
+| `INGEST_SHUTDOWN_TIMEOUT_S` | `30` | Graceful worker drain timeout |
+| `CHUNK_SIZE_CHARS` | `2000` | Deterministic chunk size |
+| `CHUNK_OVERLAP_CHARS` | `100` | Character overlap between chunks |
+
+### Retrieval and AI
+
+| Setting | Default | Purpose |
+| --- | --- | --- |
+| `AI_PROVIDER` | `ollama` | Selects Ollama or OpenAI-compatible chat generation |
+| `OLLAMA_CHAT_MODEL` | `llama3.2:1b` | Local chat model |
+| `OLLAMA_EMBED_MODEL` | `nomic-embed-text` | Embedding model used for documents and questions |
+| `EMBEDDING_DIM` | `768` | Expected vector length and database column dimension |
+| `EMBED_CONCURRENCY` | `4` | Process-wide embedding request concurrency |
+| `OLLAMA_EMBED_BATCH_SIZE` | `32` | Ordered document inputs per embedding request |
+| `TOP_K` | `5` | Maximum chunks selected for answer context |
+| `RETRIEVAL_MAX_COSINE_DISTANCE` | `0.75` | Candidate search cutoff |
+| `RETRIEVAL_SEMANTIC_ACCEPT_DISTANCE` | `0.35` | Strong semantic evidence threshold |
+| `RETRIEVAL_LEXICAL_ACCEPT_DISTANCE` | `0.55` | Maximum distance eligible for combined lexical evidence |
+| `RETRIEVAL_MIN_QUERY_TERM_COVERAGE` | `0.60` | Required lexical term coverage |
+| `OPENAI_BASE_URL`, `OPENAI_CHAT_MODEL` | Provider-specific | OpenAI-compatible endpoint and model |
+| `OPENAI_API_KEY` / `OPENAI_API_KEY_FILE` | Required for OpenAI | Chat-provider credential |
+
+The embedding client validates response cardinality and vector dimensions. Changing
+`EMBEDDING_DIM` after data exists requires a deliberate migration and re-embedding strategy.
+
+### Email
+
+| Environment | Delivery | Required settings |
+| --- | --- | --- |
+| `test`, `testing` | Disabled | None |
+| `local`, `docker` | SMTP | `SMTP_HOST`, `SMTP_PORT`, optional TLS/credentials |
+| `staging`, `production` | Resend | `RESEND_API_KEY` or `RESEND_API_KEY_FILE` |
+
+`EMAIL_FROM` controls the sender identity. Production secret files are mounted from the root
+`secrets/` directory; see [`secrets/README.md`](../secrets/README.md).
+
+## Database migrations
+
+Run migration commands from `backend/` so Alembic can resolve its configuration and application
+package:
 
 ```bash
-curl -X POST "$API_BASE/questions/ask" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "question": "What does the uploaded document say about office hours?",
-    "document_ids": ["<DOCUMENT_UUID_OPTIONAL>"]
-  }'
+uv run alembic current
+uv run alembic upgrade head
+uv run alembic history
 ```
 
-Question history:
+Create a candidate migration after changing ORM metadata:
 
 ```bash
-curl "$API_BASE/questions/history?limit=20&offset=0"
+uv run alembic revision --autogenerate -m "describe the schema change"
 ```
 
-## Demo
-- Run (Bash): `API_URL=http://localhost:8000 bash scripts/demo.sh`
-- Demonstrates the full flow: upload -> ingestion -> ask -> history
-- `demo/` contains the sample `.txt`, `.md`, and `.pdf` files used by the script
+Always review generated migrations, verify downgrade behavior, and test upgrades against a real
+PostgreSQL/pgvector instance. In Compose, normal API startup runs migrations automatically through
+the dedicated one-shot service. `docker compose run --rm migrate` is reserved for an explicit
+manual migration run.
 
-## 12. Testing
-Run all tests from the backend directory:
+## Testing and quality checks
+
+The backend test suite uses Pytest and creates an isolated `pgvector/pgvector:pg16` database with
+Testcontainers. A running Docker daemon is therefore required for the complete suite.
 
 ```bash
 cd backend
 uv run pytest -q
+uv run pytest tests/test_integration_smoke.py -q
+uv run ruff check .
+uv run ruff format --check .
 ```
 
-Testing approach:
-- Unit tests for utilities (file extraction and chunking)
-- API tests with mocks for deterministic embeddings/LLM behavior where appropriate
-- Integration smoke test for the primary flow (upload -> ingest -> ask -> history)
+The suite covers settings and security validation, authentication and refresh rotation, database
+migrations, repositories and ownership boundaries, ingestion recovery, embedding/provider failure
+modes, retrieval and citation grounding, API contracts, and the end-to-end upload-to-answer flow.
 
-## 13. Design Decisions Beyond The Evaluation Brief
-The evaluation brief requires embeddings/vector-search based retrieval and a README, but it does not explicitly define several implementation details. The following were deliberate choices made to complete the solution reliably:
+## Operational notes
 
-- Supported file extensions are explicitly constrained to `.txt`, `.md`, `.pdf`
-- PDF ingestion uses text-layer extraction only (`pypdf`), with no OCR pipeline
-- Similarity metric is cosine distance (chosen instead of L2) and enforced in pgvector query/index configuration
-- The assistant is explicitly instructed to return an unknown-answer fallback when context is insufficient, to reduce hallucinations
-- Ingestion is handled by an in-process async worker pool with persisted `ingestion_jobs` status for crash recovery and observability
-- Worker shutdown drains for up to `INGEST_SHUTDOWN_TIMEOUT_S` (default `30`) before cancelling workers; interrupted `PROCESSING` jobs are recovered on the next startup
-- Vector index strategy prefers HNSW when pgvector version supports it, with IVFFlat fallback (`lists=100`) for compatibility
-- Embedding dimension is configurable (`EMBEDDING_DIM`, default `768`) and validated against model output
-- Retrieved context is capped before chat generation (`DEFAULT_MAX_CONTEXT_CHARS = 12000`) to keep prompts bounded and predictable
+- `GET /api/v1/health` is a liveness check; Compose separately waits for PostgreSQL and Ollama
+  health before starting the API.
+- Every response includes or preserves an `X-Request-ID`, and structured request logs record method,
+  path, status, and duration.
+- The API image runs the in-process ingestion manager. Scaling API replicas requires a separate
+  decision about job claiming, worker ownership, and migration execution.
+- Collection deletion sets associated documents and questions to uncollected; it does not delete
+  their content.
+- Citation snapshots are persisted with question history so answers remain explainable after source
+  data changes.
